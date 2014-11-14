@@ -20,6 +20,26 @@
 #include <unistd.h>
 #include <getopt.h>
 
+/* Our own custom pack header which is written to the output file when
+ * -H option is specified. In addition, a CRC16-CCITT is computed over 
+ * the entire output file and written in an extra two bytes at the end. 
+ * All fields (and the trailing CRC) are big endian. */
+struct pack_header {
+    /* Total size of this compressed file, in bytes, including this header and 
+     * the trailing 2-byte CRC. */
+    uint32_t in_bytes;
+    /* Size of decompressed output, in bytes. */
+    uint32_t out_bytes;
+    /* CRC16-CCITT over the decompressed output. */
+    uint16_t out_crc;
+    /* Leeway which must be given to the decompressor if input and output 
+     * share the same memory. If the compressed DEFLATE stream is placed at 
+     * the end of the output buffer, then that buffer must be sized 
+     * (out_bytes + leeway) to correctly decompress without overwriting 
+     * the remaining tail of the input stream. */
+    uint16_t leeway;
+} __packed;
+
 #define __packed __attribute__((packed))
 #define ASSERT(p) do { \
     if (!(p)) errx(1, "Assertion at %u", __LINE__); } while (0)
@@ -100,6 +120,7 @@ struct deflate_stream {
         uint8_t *p, *end;
     } in, out;
     uint32_t cur, nr; /* input bit tracking */
+    uint32_t leeway;
 };
 
 static uint32_t deflate_stream_next_bits(
@@ -266,6 +287,7 @@ static void huffman(struct deflate_stream *main, struct deflate_stream *prefix)
 
     s = main;
     while ((litlen_sym = deflate_stream_next_symbol(s, litlen_tree)) != 256) {
+        int32_t overtake;
         uint16_t dist_sym, cplen, cpdst;
         uint8_t *p;
 
@@ -273,20 +295,26 @@ static void huffman(struct deflate_stream *main, struct deflate_stream *prefix)
             ASSERT(s->out.p < s->out.end);
             *(s->out.p++) = litlen_sym;
             nr__lit++;
-            continue;
+        } else {
+            /* 257+ */
+            nr__len++;
+            cplen = length_base[litlen_sym-257] +
+                deflate_stream_next_bits(s, length_extrabits[litlen_sym-257]);
+            dist_sym = deflate_stream_next_symbol(s, dist_tree);
+            cpdst = dist_base[dist_sym] +
+                deflate_stream_next_bits(s, dist_extrabits[dist_sym]);
+            p = s->out.p - cpdst;
+            ASSERT((s->out.p + cplen) <= s->out.end);
+            tot__cplen += cplen;
+            while (cplen--)
+                *(s->out.p++) = *p++;
         }
-        /* 257+ */
-        nr__len++;
-        cplen = length_base[litlen_sym-257] +
-            deflate_stream_next_bits(s, length_extrabits[litlen_sym-257]);
-        dist_sym = deflate_stream_next_symbol(s, dist_tree);
-        cpdst = dist_base[dist_sym] +
-            deflate_stream_next_bits(s, dist_extrabits[dist_sym]);
-        p = s->out.p - cpdst;
-        ASSERT((s->out.p + cplen) <= s->out.end);
-        tot__cplen += cplen;
-        while (cplen--)
-            *(s->out.p++) = *p++;
+        /* Calculate the amount by which the output has overtaken the 
+         * remaining input stream, if the input stream were located at the 
+         * far end of the output buffer. Track the max of that value. */
+        overtake = (s->in.end - s->in.p) - (s->out.end - s->out.p);
+        if (overtake > (int32_t)s->leeway)
+            s->leeway = overtake;
     }
 }
 
@@ -454,6 +482,7 @@ int main(int argc, char **argv)
     dfls.in.end = buf + insz - 8;
     dfls.out.p = outbuf;
     dfls.out.end = outbuf + outsz;
+    dfls.leeway = 0;
     deflate_process_block(&dfls);
     ASSERT(dfls.in.p == dfls.in.end);
     ASSERT(dfls.out.p == dfls.out.end);
@@ -472,6 +501,7 @@ int main(int argc, char **argv)
     printf("Nr Codes: %u, Av bits: %f, Longcodes Ratio: %f\n",
            nr__codes, nr__codes ? (float)nr__codebits/nr__codes : 0.0,
            nr__codes ? (float)nr__longcodes/nr__codes : 0.0);
+    printf("Decompression requires leeway of %u bytes\n", dfls.leeway);
 
     fd = open(out, O_WRONLY|O_CREAT|O_TRUNC, 0644);
     if (fd == -1)
@@ -480,15 +510,15 @@ int main(int argc, char **argv)
     switch (output_type) {
     case output_header: {
         uint16_t crc16;
-        struct header {
-            uint32_t insz, outsz;
-            uint16_t decomp_crc;
-        } __packed hdr;
-        hdr.outsz = htobe32(outsz);
+        struct pack_header hdr;
+        if (dfls.leeway != (uint16_t)dfls.leeway)
+            errx(1, "Leeway too lareg to fit in pack header");
+        hdr.leeway = htobe16(dfls.leeway);
+        hdr.out_bytes = htobe32(outsz);
         outsz = dfls.in.end-dflp;
-        hdr.insz = htobe32(outsz + sizeof(hdr) + 2/*crc16*/);
-        hdr.decomp_crc = htobe16(crc16_ccitt(outbuf, be32toh(hdr.outsz),
-                                             0xffff));
+        hdr.in_bytes = htobe32(outsz + sizeof(hdr) + 2/*crc16*/);
+        hdr.out_crc = htobe16(crc16_ccitt(outbuf, be32toh(hdr.out_bytes),
+                                          0xffff));
         crc16 = crc16_ccitt(&hdr, sizeof(hdr), 0xffff);
         crc16 = crc16_ccitt(dflp, outsz, crc16);
         crc16 = htobe16(crc16);
