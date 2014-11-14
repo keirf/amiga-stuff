@@ -20,6 +20,9 @@
 #include <unistd.h>
 #include <getopt.h>
 
+/* __packed: Given struct should not include ABI-compliant padding. */
+#define __packed __attribute__((packed))
+
 /* Our own custom pack header which is written to the output file when
  * -H option is specified. In addition, a CRC16-CCITT is computed over 
  * the entire output file and written in an extra two bytes at the end. 
@@ -40,7 +43,6 @@ struct pack_header {
     uint16_t leeway;
 } __packed;
 
-#define __packed __attribute__((packed))
 #define ASSERT(p) do { \
     if (!(p)) errx(1, "Assertion at %u", __LINE__); } while (0)
 
