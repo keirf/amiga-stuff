@@ -16,9 +16,9 @@
 *       area, see OPT_STORAGE_OFFSTACK below)
 *
 * Timings: With all Optimisation Options enabled (see below) this routine
-* will decompress on a basic 7MHz 68000 at just over 23kB/s. An AmigaDOS
-* track of data (5.5kB) is processed in 237ms. This is only fractionally
-* slower than the track can be fetched from disk, hence there is scope for a
+* will decompress on a basic 7MHz 68000 at ~23kB/s. An AmigaDOS track of
+* data (5.5kB) is processed in ~240ms. This is only fractionally slower than
+* the track can be fetched from disk, hence there is scope for a
 * decompressing loader to keep CPU and disk both at near 100% utilisation.
 * 
 * Written & released by Keir Fraser <keir.xen@gmail.com>
