@@ -10,7 +10,7 @@
 *    a6 = *end* of temporary storage area (only if OPT_STORAGE_OFFSTACK)
 * All register values (including arguments) are preserved.
 *
-* Space requirements: 646-928 bytes code; 2044-2940 bytes stack.
+* Space requirements: 650-932 bytes code; 2044-2940 bytes stack.
 * (NB1. Above ranges are [No Optimisations]-[All Optimisations])
 * (NB2. Stack space can be relocated to a separately-specified storage
 *       area, see OPT_STORAGE_OFFSTACK below)
@@ -95,6 +95,7 @@ LOOKUP_BYTES_LITLEN	= 256*2+(nr_litlen_symbols-9)*4
 LOOKUP_BYTES_DISTANCE	= 256*2+(nr_distance_symbols-9)*4
 
         ; a0 = len[], a1 = nodes[], d0 = nr_symbols
+        ; d1 = symbol beyond which all symbols get <<2
         ; a2-a3 are scratched
 build_code:
         movem.l d0-d7,-(aS)
@@ -147,7 +148,10 @@ build_code_loop:
         add.w   d3,d3           ; d3 = table offset
         move.w  d0,d6
         sub.w   d1,d6           ; d6 = symbol
-        cmp.b   #9-1,d5
+        cmp.w   (((MAX_CODE_LEN+1)/2)+1)*4+6(aS),d6 ; symbol > saved d1.w?
+        bls     .2
+        lsl.w   #2,d6           ; symbol <<= 2 if so
+.2:     cmp.b   #9-1,d5
         bpl     codelen_gt_8
 
 codelen_le_8: ; codelen <= 8: leaf in table entry(s)
@@ -246,6 +250,7 @@ LOOKUP_BYTES_LITLEN	= ((nr_litlen_symbols)-1)*4
 LOOKUP_BYTES_DISTANCE	= ((nr_distance_symbols)-1)*4
 
         ; a0 = len[], a1 = nodes[], d0 = nr_symbols
+        ; d1 = symbol beyond which all symbols get <<2
         ; a2-a3 are scratched
 build_code:
         movem.l d0-d5,-(aS)
@@ -311,7 +316,10 @@ build_code_loop:
         ; Insert the current symbol as a new leaf node
         move.w  d0,d2
         sub.w   d1,d2
-        move.w  d2,(a3)         ; *pnode = sym
+        cmp.w   (((MAX_CODE_LEN+1)/2)+1)*4+6(aS),d2 ; symbol > saved d1.w?
+        bls     .4
+        lsl.w   #2,d2           ; symbol <<= 2 if so
+.4:     move.w  d2,(a3)         ; *pnode = sym
 build_code_next:
         dbf     d1,build_code_loop
 
@@ -422,7 +430,7 @@ o_dist_extra = o_mode+4
 o_length_extra = o_dist_extra+30*4
 
         ; d5-d6/a5 = stream, a4 = output
-        ; d0-d3,a0-a3 are scratched
+        ; d0-d4,a0-a3 are scratched
 static_huffman:
         movem.l d5-d6/a5,-(aS)
         moveq   #0,d5
@@ -432,7 +440,7 @@ static_huffman:
         bra     huffman
 
         ; d5-d6/a5 = stream, a4 = output
-        ; d0-d3,a0-a3 are scratched
+        ; d0-d4,a0-a3 are scratched
 dynamic_huffman:
         ; Allocate stack space for len[] and node[] arrays
         move.w  #o_frame/4-2,d0
@@ -467,6 +475,7 @@ huffman:
         ; Build the codelen_tree
         lea     o_codelen_tree(aS),a1
         moveq   #nr_codelen_symbols,d0
+        moveq   #127,d1         ; don't left-shift any symbols
         bsr     build_code      ; build_code(codelen_tree)
         ; Read the literal/length & distance code lengths
         move.w  o_hlit(aS),d2
@@ -517,10 +526,13 @@ c_loop:
 	endc
         lea     o_lens(aS),a0
         move.w  o_hlit(aS),d0
+        move.w  #256,d1
+        move.w  d1,d4           ; left-shift symbols >127 (i.e., lengths)
         bsr     build_code      ; build_code(litlen_tree)
-        lea     (a0,d0.w),a0
+        add.w   d0,a0
         lea     o_dist_tree(aS),a1
         move.w  o_hdist(aS),d0
+        moveq   #0,d1           ; left-shift all symbols (i.e., distances)
         bsr     build_code      ; build_code(dist_tree)
         ; Reinstate the main stream if we used the static prefix
         tst.l   o_stream+8(aS)
@@ -531,31 +543,31 @@ decode_loop:
         lea     o_litlen_tree(aS),a0
         ; START OF HOT LOOP
 .1:     INLINE_stream_next_symbol ; litlen_sym
-        cmp.w   #256,d0  ;  8 cy
+        cmp.w   d4,d0    ;  8 cy (d4.w = 256)
         bpl     .2       ;  8 cy
         ; 0-255: Byte literal
         move.b  d0,(a4)+ ;  8 cy
         bra     .1       ; 10 cy
-        ; END OF HOT LOOP -- 34 + ~108 + [34] = ~160 CYCLES
+        ; END OF HOT LOOP -- 30 + ~108 + [34] = ~160 CYCLES
 .2:     beq     done
         ; 257+: <length,distance> pair
-        lsl.w   #2,d0
+        ;lsl.w   #2,d0   (already left shifted)
         lea     o_length_extra-257*4(aS),a2
-        lea     (a2,d0.w),a2
+        add.w   d0,a2
         move.w  (a2)+,d1
         INLINE_stream_next_bits
         add.w   (a2),d0
         move.w  d0,d3           ; d3 = cplen
         lea     o_dist_tree(aS),a0
         INLINE_stream_next_symbol ; dist_sym
-        lsl.w   #2,d0
+        ;lsl.w   #2,d0   (already left shifted)
         lea     o_dist_extra(aS),a2
-        lea     (a2,d0.w),a2
+        add.w   d0,a2
         move.w  (a2)+,d1
         INLINE_stream_next_bits
         add.w   (a2),d0         ; d0 = cpdst
-        neg.w   d0
-        lea     (a4,d0.w),a0    ; a0 = outp - cpdst
+        move.l  a4,a0
+        sub.w   d0,a0           ; a0 = outp - cpdst
 	ifne	OPT_UNROLL_COPY_LOOP
         lsr.w   #1,d3
         bcs     .4
