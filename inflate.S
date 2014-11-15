@@ -59,7 +59,7 @@
  * on whether OPT_TABLE_LOOKUP is enabled).
  * SPEEDUP: none; COST: -2 bytes code (makes code slightly smaller) */
 #ifndef OPT_STORAGE_OFFSTACK
-#define OPT_STORAGE_OFFSTACK 1
+#define OPT_STORAGE_OFFSTACK 0
 #endif
 
 #if OPT_STORAGE_OFFSTACK
