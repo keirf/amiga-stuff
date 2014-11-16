@@ -549,7 +549,10 @@ decode_loop:
         move.b  d0,(a4)+ ;  8 cy
         bra     .1       ; 10 cy
         ; END OF HOT LOOP -- 30 + ~108 + [34] = ~160 CYCLES
-.2:     beq     done
+.done:  ; 256: End-of-block: we're done
+        lea     o_frame(aS),aS
+        rts
+.2:     beq     .done
         ; 257+: <length,distance> pair
         ;lsl.w   #2,d0   (already left shifted)
         lea     o_length_extra-257*4(aS),a2
@@ -580,10 +583,6 @@ decode_loop:
 	endc
         dbf     d3,.3
         bra     decode_loop
-done:
-        ; 256: End-of-block: we're done
-        lea     o_frame(aS),aS
-        rts
 
 	ifeq	OPT_INLINE_FUNCTIONS
 stream_next_symbol:

@@ -530,7 +530,10 @@ c_lit:  /* 0-16: Literal symbol */
         move.b  d0,(a4)+ /*  8 cy */
         jra     2b       /* 10 cy */
         /* END OF HOT LOOP -- 30 + ~108 + [34] = ~160 CYCLES */
-2:      jeq     9f
+9:      /* 256: End-of-block: we're done */
+        lea     o_frame(aS),aS
+        rts
+2:      jeq     9b
         /* 257+: <length,distance> pair */
         /*lsl.w #2,d0*/ /* already left shifted */
         lea     o_length_extra-257*4(aS),a2
@@ -561,9 +564,6 @@ c_lit:  /* 0-16: Literal symbol */
 #endif
         dbf     d3,3b
         jra     1b
-9:      /* 256: End-of-block: we're done */
-        lea     o_frame(aS),aS
-        rts
 #undef o_hdist
 #undef o_hlit
 #undef o_lens
