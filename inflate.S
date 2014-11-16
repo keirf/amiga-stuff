@@ -10,7 +10,7 @@
  *    a6 = *end* of temporary storage area (only if OPT_STORAGE_OFFSTACK)
  * All register values (including arguments) are preserved.
  *
- * Space requirements: 650-932 bytes code; 2044-2940 bytes stack.
+ * Space requirements: 638-930 bytes code; 2044-2940 bytes stack.
  * (NB1. Above ranges are [No Optimisations]-[All Optimisations])
  * (NB2. Stack space can be relocated to a separately-specified storage
  *       area, see OPT_STORAGE_OFFSTACK below)
@@ -31,14 +31,16 @@
  * Avoid long Huffman-tree walks by indexing the first 8 bits of each codeword
  * in a 256-entry lookup table. This shortens all walks by 8 steps and since
  * the most common codes are less than 8 bits, most tree walks are avoided.
- * SPEEDUP: 41% (c.w. no Options); COST: 110 bytes code, 896 bytes stack */
+ * Also pre-shifts selected symbols in the code->symbol table, ready to be used
+ * as indexes into further lookup tables.
+ * SPEEDUP: 41% (c.w. no Options); COST: 122 bytes code, 896 bytes stack */
 #ifndef OPT_TABLE_LOOKUP
 #define OPT_TABLE_LOOKUP 1
 #endif
 
 /* Optimisation Option #2:
  * Inline functions in the main decode loop to avoid all BSR/RTS pairs.
- * SPEEDUP: 15% (on top of Option #1); COST: 166 bytes code */
+ * SPEEDUP: 15% (on top of Option #1); COST: 164 bytes code */
 #ifndef OPT_INLINE_FUNCTIONS
 #define OPT_INLINE_FUNCTIONS 1
 #endif
@@ -244,7 +246,6 @@ codelen_gt_8: /* codelen > 8: requires a tree walk */
 #define LOOKUP_BYTES(nr_syms) (((nr_syms)-1)*4)
 
         /* a0 = len[], a1 = nodes[], d0 = nr_symbols */
-        /* d1 = symbol beyond which all symbols get <<2 */
         /* a2-a3 are scratched */
 build_code:
         movem.l d0-d5,-(aS)
@@ -309,10 +310,7 @@ build_code:
         /* Insert the current symbol as a new leaf node */
         move.w  d0,d2
         sub.w   d1,d2
-        cmp.w   (((MAX_CODE_LEN+1)/2)+1)*4+6(aS),d2 /* symbol > saved d1.w? */
-        jls     9f
-        lsl.w   #2,d2           /* symbol <<= 2 if so */
-9:      move.w  d2,(a3)         /* *pnode = sym */
+        move.w  d2,(a3)         /* *pnode = sym */
 4:      dbf     d1,1b
 
         lea     (((MAX_CODE_LEN+1)/2)+1)*4(aS),aS
@@ -458,7 +456,9 @@ dynamic_huffman:
         /* Build the codelen_tree */
         lea     o_codelen_tree(aS),a1
         moveq   #nr_codelen_symbols,d0
+#if OPT_TABLE_LOOKUP
         moveq   #127,d1         /* don't left-shift any symbols */
+#endif
         jbsr    build_code      /* build_code(codelen_tree) */
         /* Read the literal/length & distance code lengths */
         move.w  o_hlit(aS),d2
@@ -508,13 +508,17 @@ c_lit:  /* 0-16: Literal symbol */
 #endif
         lea     o_lens(aS),a0
         move.w  o_hlit(aS),d0
+#if OPT_TABLE_LOOKUP
         move.w  #256,d1
         move.w  d1,d4           /* left-shift symbols >127 (i.e., lengths) */
+#endif
         jbsr    build_code      /* build_code(litlen_tree) */
         add.w   d0,a0
         lea     o_dist_tree(aS),a1
         move.w  o_hdist(aS),d0
+#if OPT_TABLE_LOOKUP
         moveq   #0,d1           /* left-shift all symbols (i.e., distances) */
+#endif
         jbsr    build_code      /* build_code(dist_tree) */
         /* Reinstate the main stream if we used the static prefix */
         tst.l   o_stream+8(aS)
@@ -524,7 +528,11 @@ c_lit:  /* 0-16: Literal symbol */
 1:      lea     o_litlen_tree(aS),a0
         /* START OF HOT LOOP */
 2:      INLINE_stream_next_symbol /* litlen_sym */
+#if OPT_TABLE_LOOKUP
         cmp.w   d4,d0    /*  4 cy (d4.w = 256) */
+#else
+        cmp.w   #256,d0  /*  8 cy */
+#endif
         jpl     2f       /*  8 cy */
         /* 0-255: Byte literal */
         move.b  d0,(a4)+ /*  8 cy */
@@ -535,7 +543,9 @@ c_lit:  /* 0-16: Literal symbol */
         rts
 2:      jeq     9b
         /* 257+: <length,distance> pair */
-        /*lsl.w #2,d0*/ /* already left shifted */
+#if !OPT_TABLE_LOOKUP /* Already shifted in case of OPT_TABLE_LOOKUP */
+        lsl.w   #2,d0
+#endif
         lea     o_length_extra-257*4(aS),a2
         add.w   d0,a2
         move.w  (a2)+,d1
@@ -544,7 +554,9 @@ c_lit:  /* 0-16: Literal symbol */
         move.w  d0,d3           /* d3 = cplen */
         lea     o_dist_tree(aS),a0
         INLINE_stream_next_symbol /* dist_sym */
-        /*lsl.w #2,d0*/ /* already left shifted */
+#if !OPT_TABLE_LOOKUP /* Already shifted in case of OPT_TABLE_LOOKUP */
+        lsl.w   #2,d0
+#endif
         lea     o_dist_extra(aS),a2
         add.w   d0,a2
         move.w  (a2)+,d1

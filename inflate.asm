@@ -10,7 +10,7 @@
 *    a6 = *end* of temporary storage area (only if OPT_STORAGE_OFFSTACK)
 * All register values (including arguments) are preserved.
 *
-* Space requirements: 650-932 bytes code; 2044-2940 bytes stack.
+* Space requirements: 638-930 bytes code; 2044-2940 bytes stack.
 * (NB1. Above ranges are [No Optimisations]-[All Optimisations])
 * (NB2. Stack space can be relocated to a separately-specified storage
 *       area, see OPT_STORAGE_OFFSTACK below)
@@ -31,14 +31,16 @@
 * Avoid long Huffman-tree walks by indexing the first 8 bits of each codeword
 * in a 256-entry lookup table. This shortens all walks by 8 steps and since
 * the most common codes are less than 8 bits, most tree walks are avoided.
-* SPEEDUP: 41% (c.w. no Options); COST: 110 bytes code, 896 bytes stack
+* Also pre-shifts selected symbols in the code->symbol table, ready to be used
+* as indexes into further lookup tables.
+* SPEEDUP: 41% (c.w. no Options); COST: 122 bytes code, 896 bytes stack */
 	ifnd	OPT_TABLE_LOOKUP
 OPT_TABLE_LOOKUP	= 1
 	endc
 
 * Optimisation Option #2:
 * Inline functions in the main decode loop to avoid all BSR/RTS pairs.
-* SPEEDUP: 15% (on top of Option #1); COST: 166 bytes code
+* SPEEDUP: 15% (on top of Option #1); COST: 164 bytes code
 	ifnd	OPT_INLINE_FUNCTIONS
 OPT_INLINE_FUNCTIONS	= 1
 	endc
@@ -132,7 +134,7 @@ build_code:
 build_code_loop:
         moveq   #0,d5
         move.b  (a2)+,d5        ; d5 = len[i] / *len++
-        beq     build_code_next
+        beq.b   build_code_next
         subq.w  #1,d5
         move.w  d5,d6
         add.w   d6,d6
@@ -250,7 +252,6 @@ LOOKUP_BYTES_LITLEN	= ((nr_litlen_symbols)-1)*4
 LOOKUP_BYTES_DISTANCE	= ((nr_distance_symbols)-1)*4
 
         ; a0 = len[], a1 = nodes[], d0 = nr_symbols
-        ; d1 = symbol beyond which all symbols get <<2
         ; a2-a3 are scratched
 build_code:
         movem.l d0-d5,-(aS)
@@ -316,10 +317,7 @@ build_code_loop:
         ; Insert the current symbol as a new leaf node
         move.w  d0,d2
         sub.w   d1,d2
-        cmp.w   (((MAX_CODE_LEN+1)/2)+1)*4+6(aS),d2 ; symbol > saved d1.w?
-        bls     .4
-        lsl.w   #2,d2           ; symbol <<= 2 if so
-.4:     move.w  d2,(a3)         ; *pnode = sym
+        move.w  d2,(a3)         ; *pnode = sym
 build_code_next:
         dbf     d1,build_code_loop
 
@@ -475,7 +473,9 @@ huffman:
         ; Build the codelen_tree
         lea     o_codelen_tree(aS),a1
         moveq   #nr_codelen_symbols,d0
+	ifne	OPT_TABLE_LOOKUP
         moveq   #127,d1         ; don't left-shift any symbols
+	endc
         bsr     build_code      ; build_code(codelen_tree)
         ; Read the literal/length & distance code lengths
         move.w  o_hlit(aS),d2
@@ -526,13 +526,17 @@ c_loop:
 	endc
         lea     o_lens(aS),a0
         move.w  o_hlit(aS),d0
+	ifne	OPT_TABLE_LOOKUP
         move.w  #256,d1
         move.w  d1,d4           ; left-shift symbols >127 (i.e., lengths)
+	endc
         bsr     build_code      ; build_code(litlen_tree)
         add.w   d0,a0
         lea     o_dist_tree(aS),a1
         move.w  o_hdist(aS),d0
+	ifne	OPT_TABLE_LOOKUP
         moveq   #0,d1           ; left-shift all symbols (i.e., distances)
+	endc
         bsr     build_code      ; build_code(dist_tree)
         ; Reinstate the main stream if we used the static prefix
         tst.l   o_stream+8(aS)
@@ -543,7 +547,11 @@ decode_loop:
         lea     o_litlen_tree(aS),a0
         ; START OF HOT LOOP
 .1:     INLINE_stream_next_symbol ; litlen_sym
-        cmp.w   d4,d0    ;  8 cy (d4.w = 256)
+	ifne	OPT_TABLE_LOOKUP
+        cmp.w   d4,d0    ;  4 cy (d4.w = 256)
+        else
+        cmp.w   #256,d0  ;  8 cy
+	endc
         bpl     .2       ;  8 cy
         ; 0-255: Byte literal
         move.b  d0,(a4)+ ;  8 cy
@@ -554,7 +562,9 @@ decode_loop:
         rts
 .2:     beq     .done
         ; 257+: <length,distance> pair
-        ;lsl.w   #2,d0   (already left shifted)
+	ifeq	OPT_TABLE_LOOKUP
+        lsl.w   #2,d0
+	endc
         lea     o_length_extra-257*4(aS),a2
         add.w   d0,a2
         move.w  (a2)+,d1
@@ -563,7 +573,9 @@ decode_loop:
         move.w  d0,d3           ; d3 = cplen
         lea     o_dist_tree(aS),a0
         INLINE_stream_next_symbol ; dist_sym
-        ;lsl.w   #2,d0   (already left shifted)
+	ifeq	OPT_TABLE_LOOKUP
+        lsl.w   #2,d0
+	endc
         lea     o_dist_extra(aS),a2
         add.w   d0,a2
         move.w  (a2)+,d1
