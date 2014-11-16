@@ -34,24 +34,24 @@
 * Also pre-shifts selected symbols in the code->symbol table, ready to be used
 * as indexes into further lookup tables.
 * SPEEDUP: 41% (c.w. no Options); COST: 122 bytes code, 896 bytes stack */
-	ifnd	OPT_TABLE_LOOKUP
+        ifnd	OPT_TABLE_LOOKUP
 OPT_TABLE_LOOKUP	= 1
-	endc
+        endc
 
 * Optimisation Option #2:
 * Inline functions in the main decode loop to avoid all BSR/RTS pairs.
 * SPEEDUP: 15% (on top of Option #1); COST: 164 bytes code
-	ifnd	OPT_INLINE_FUNCTIONS
+        ifnd	OPT_INLINE_FUNCTIONS
 OPT_INLINE_FUNCTIONS	= 1
-	endc
+        endc
 
 * Optimisation Option #3:
 * Unroll the copy loop for <distance,length> tuples by one iteration
 * (so two bytes are copied per iteration).
 * SPEEDUP: ~1% (on top of Options #1 and #2); COST: 6 bytes code
-	ifnd	OPT_UNROLL_COPY_LOOP
+        ifnd	OPT_UNROLL_COPY_LOOP
 OPT_UNROLL_COPY_LOOP	= 1
-	endc
+        endc
 
 * Storage Option:
 * All but 12 bytes of this routine's space requirement can be allocated
@@ -60,15 +60,15 @@ OPT_UNROLL_COPY_LOOP	= 1
 * the *end* of the reserved storage area (+2032 or +2928 bytes, depending
 * on whether OPT_TABLE_LOOKUP is enabled).
 * SPEEDUP: none; COST: -2 bytes code (makes code slightly smaller)
-	ifnd	OPT_STORAGE_OFFSTACK
+        ifnd	OPT_STORAGE_OFFSTACK
 OPT_STORAGE_OFFSTACK	= 0
-	endc
+        endc
 
-	ifne	OPT_STORAGE_OFFSTACK
+        ifne	OPT_STORAGE_OFFSTACK
 aS	equr	a6
-	else
+        else
 aS	equr	sp
-	endc
+        endc
 
 ; Longest possible code.
 MAX_CODE_LEN		= 16
@@ -85,7 +85,7 @@ static_huffman_prefix:
         dc.b $cd,$db,$b6,$6d,$db,$b6,$6d
         dc.b $db,$a8,$6d,$ce,$8b,$6d,$3b
 
-	ifne	OPT_TABLE_LOOKUP
+        ifne	OPT_TABLE_LOOKUP
 
 * Number of bytes required for code-lookup table/tree:
 *  - 256 2-byte entries for the 8-bit lookup table
@@ -240,9 +240,9 @@ STREAM_NEXTSYMBOL macro
         sub.b   d1,d6   ; 4
         lsr.w   #3,d0   ; 12  d0 = symbol
 .5\@:                   ; ~94 CYCLES TOTAL [+ 34]
-	endm
+        endm
 
-	else ; !OPT_TABLE_LOOKUP
+        else ; !OPT_TABLE_LOOKUP
 
 * Number of bytes required for code-lookup tree:
 *   - Every binary tree with N leaves has N-1 internal nodes.
@@ -340,9 +340,9 @@ STREAM_NEXTSYMBOL macro
         move.w  (a0,d0.w),d0    ; 14 cy
         bmi     .1\@            ; 10 cy (taken) loop on INTERNAL flag set
                                 ; TOTAL LOOP CYCLES ~= 54
-	endm
+        endm
 
-	endc
+        endc
 
         ; d1.b = nr, d5-d6/a5 = stream [fetched_bits/nr_fetched_bits/inp]
         ; d0.w = result
@@ -360,23 +360,23 @@ STREAM_NEXTBITS macro
         and.w   d5,d0           ; d0 = s->cur & ((1<<nr)-1)
         lsr.l   d1,d5           ; s->cur >>= nr
         sub.b   d1,d6           ; s->nr -= nr
-	endm
+        endm
 
-	ifne	OPT_INLINE_FUNCTIONS
+        ifne	OPT_INLINE_FUNCTIONS
 INLINE_stream_next_bits macro
-	STREAM_NEXTBITS
-	endm
+        STREAM_NEXTBITS
+        endm
 INLINE_stream_next_symbol macro
-	STREAM_NEXTSYMBOL
-	endm
-	else
+        STREAM_NEXTSYMBOL
+        endm
+        else
 INLINE_stream_next_bits macro
-	bsr	stream_next_bits
-	endm
+        bsr	stream_next_bits
+        endm
 INLINE_stream_next_symbol macro
-	bsr	stream_next_symbol
-	endm
-	endc
+        bsr	stream_next_symbol
+        endm
+        endc
 
 stream_next_bits:
         STREAM_NEXTBITS
@@ -385,14 +385,14 @@ stream_next_bits:
         ; d5-d6/a5 = stream, a4 = output
         ; d0-d1 are scratched
 uncompressed_block:
-	ifne	OPT_TABLE_LOOKUP
+        ifne	OPT_TABLE_LOOKUP
         ; Push whole bytes back into input stream.
         lsr.w   #3,d6
         sub.w   d6,a5
-	else
+        else
         ; No need to push bytes back into input stream because stream_next_
         ; {bits,symbol} will never leave more than 7 bits cached.
-	endc
+        endc
         ; Snap input stream up to byte boundary.
         moveq   #0,d5
         moveq   #0,d6
@@ -409,21 +409,21 @@ o_hdist = 0
 o_hlit = 2
 o_lens = o_hlit+2
 o_codelen_tree = o_lens+nr_litlen_symbols+nr_distance_symbols
-	ifne	OPT_TABLE_LOOKUP
+        ifne	OPT_TABLE_LOOKUP
 ; Lit/len and codelen lookup structures share space.
 o_litlen_tree = o_codelen_tree
-	else
+        else
 o_litlen_tree = o_codelen_tree+LOOKUP_BYTES_CODELEN
-	endc
+        endc
 o_dist_tree = o_litlen_tree+LOOKUP_BYTES_LITLEN
 o_stream = o_dist_tree+LOOKUP_BYTES_DISTANCE
 o_frame = o_stream+3*4
-	ifne	OPT_STORAGE_OFFSTACK
+        ifne	OPT_STORAGE_OFFSTACK
 o_mode = o_frame
-	else
+        else
 ; Allow for BSR return address from decoder
 o_mode = o_frame+4
-	endc
+        endc
 o_dist_extra = o_mode+4
 o_length_extra = o_dist_extra+30*4
 
@@ -473,9 +473,9 @@ huffman:
         ; Build the codelen_tree
         lea     o_codelen_tree(aS),a1
         moveq   #nr_codelen_symbols,d0
-	ifne	OPT_TABLE_LOOKUP
+        ifne	OPT_TABLE_LOOKUP
         moveq   #127,d1         ; don't left-shift any symbols
-	endc
+        endc
         bsr     build_code      ; build_code(codelen_tree)
         ; Read the literal/length & distance code lengths
         move.w  o_hlit(aS),d2
@@ -513,7 +513,7 @@ c_loop:
         move.b  d0,(a2)+
 .4:     dbf     d2,c_loop
         ; Build the lit/len and distance trees
-	ifne	OPT_TABLE_LOOKUP
+        ifne	OPT_TABLE_LOOKUP
         ; Clear the codelen tree (shared space with lit/len tree).
         ; NB. a0 = a1 = codelen_tree = litlen_tree
         moveq   #0,d0
@@ -521,22 +521,22 @@ c_loop:
 .5:     move.l  d0,(a0)+
         dbf     d1,.5
         ; litlen_tree (= codelen_tree) is already in a1, and now zeroed.
-	else
+        else
         lea     o_litlen_tree(aS),a1
-	endc
+        endc
         lea     o_lens(aS),a0
         move.w  o_hlit(aS),d0
-	ifne	OPT_TABLE_LOOKUP
+        ifne	OPT_TABLE_LOOKUP
         move.w  #256,d1
         move.w  d1,d4           ; left-shift symbols >127 (i.e., lengths)
-	endc
+        endc
         bsr     build_code      ; build_code(litlen_tree)
         add.w   d0,a0
         lea     o_dist_tree(aS),a1
         move.w  o_hdist(aS),d0
-	ifne	OPT_TABLE_LOOKUP
+        ifne	OPT_TABLE_LOOKUP
         moveq   #0,d1           ; left-shift all symbols (i.e., distances)
-	endc
+        endc
         bsr     build_code      ; build_code(dist_tree)
         ; Reinstate the main stream if we used the static prefix
         tst.l   o_stream+8(aS)
@@ -547,11 +547,11 @@ decode_loop:
         lea     o_litlen_tree(aS),a0
         ; START OF HOT LOOP
 .1:     INLINE_stream_next_symbol ; litlen_sym
-	ifne	OPT_TABLE_LOOKUP
+        ifne	OPT_TABLE_LOOKUP
         cmp.w   d4,d0    ;  4 cy (d4.w = 256)
         else
         cmp.w   #256,d0  ;  8 cy
-	endc
+        endc
         bpl     .2       ;  8 cy
         ; 0-255: Byte literal
         move.b  d0,(a4)+ ;  8 cy
@@ -562,9 +562,9 @@ decode_loop:
         rts
 .2:     beq     .done
         ; 257+: <length,distance> pair
-	ifeq	OPT_TABLE_LOOKUP
+        ifeq	OPT_TABLE_LOOKUP
         lsl.w   #2,d0
-	endc
+        endc
         lea     o_length_extra-257*4(aS),a2
         add.w   d0,a2
         move.w  (a2)+,d1
@@ -573,9 +573,9 @@ decode_loop:
         move.w  d0,d3           ; d3 = cplen
         lea     o_dist_tree(aS),a0
         INLINE_stream_next_symbol ; dist_sym
-	ifeq	OPT_TABLE_LOOKUP
+        ifeq	OPT_TABLE_LOOKUP
         lsl.w   #2,d0
-	endc
+        endc
         lea     o_dist_extra(aS),a2
         add.w   d0,a2
         move.w  (a2)+,d1
@@ -583,30 +583,30 @@ decode_loop:
         add.w   (a2),d0         ; d0 = cpdst
         move.l  a4,a0
         sub.w   d0,a0           ; a0 = outp - cpdst
-	ifne	OPT_UNROLL_COPY_LOOP
+        ifne	OPT_UNROLL_COPY_LOOP
         lsr.w   #1,d3
         bcs     .4
         subq.w  #1,d3
 .3:     move.b  (a0)+,(a4)+
 .4:     move.b  (a0)+,(a4)+
-	else
+        else
         subq.w  #1,d3
 .3:     move.b  (a0)+,(a4)+
-	endc
+        endc
         dbf     d3,.3
         bra     decode_loop
 
-	ifeq	OPT_INLINE_FUNCTIONS
+        ifeq	OPT_INLINE_FUNCTIONS
 stream_next_symbol:
         STREAM_NEXTSYMBOL
         rts
-	endc
+        endc
 
         ; Build a base/extra-bits table on the stack
 build_base_extrabits:
-	ifeq	OPT_STORAGE_OFFSTACK
+        ifeq	OPT_STORAGE_OFFSTACK
         move.l  (sp)+,a0
-	endc
+        endc
 .1:     move.w  d0,d3
         lsr.w   d4,d3
         subq.w  #1,d3
@@ -618,11 +618,11 @@ build_base_extrabits:
         move.w  d2,-(aS)
         move.w  d3,-(aS)
         dbf     d0,.1
-	ifeq	OPT_STORAGE_OFFSTACK
+        ifeq	OPT_STORAGE_OFFSTACK
         jmp     (a0)
-	else
+        else
         rts
-	endc
+        endc
 
 dispatch: ; Decoder dispatch table.
         dc.b uncompressed_block-uncompressed_block
@@ -675,4 +675,4 @@ inflate:
         movem.l (aS)+,d0-d6/a0-a5
         rts
 
-	end
+        end
