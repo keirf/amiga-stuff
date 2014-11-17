@@ -64,6 +64,17 @@
 #define OPT_STORAGE_OFFSTACK 0
 #endif
 
+/* By default all lookup/conversion tables are generated on-the-fly on every
+ * call to inflate. In some cases this can be very inefficient.
+ * If this option is enabled then two new routines are generated: At start-of-
+ * day call 'inflate_gentables' with a6 pointing to the *end* of a 6000-byte
+ * block of memory. Then call 'inflate_fromtables' instead of 'inflate', with
+ * a6 still pointing to the end of the pre-generated memory block.
+ * SPEEDUP: variable; COST: 116 bytes code */
+#ifndef OPT_PREGENERATE_TABLES
+#define OPT_PREGENERATE_TABLES 0
+#endif
+
 #if OPT_STORAGE_OFFSTACK
 #define aS a6
 #else
@@ -522,10 +533,11 @@ c_lit:  /* 0-16: Literal symbol */
         jbsr    build_code      /* build_code(dist_tree) */
         /* Reinstate the main stream if we used the static prefix */
         tst.l   o_stream+8(aS)
-        jeq     1f
+        jeq     decode_loop
         movem.l o_stream(aS),d5-d6/a5
         /* Now decode the compressed data stream up to EOB */
-1:      lea     o_litlen_tree(aS),a0
+decode_loop:
+        lea     o_litlen_tree(aS),a0
         /* START OF HOT LOOP */
 2:      INLINE_stream_next_symbol /* litlen_sym */
 #if OPT_TABLE_LOOKUP
@@ -575,14 +587,7 @@ c_lit:  /* 0-16: Literal symbol */
 3:      move.b  (a0)+,(a4)+
 #endif
         dbf     d3,3b
-        jra     1b
-#undef o_hdist
-#undef o_hlit
-#undef o_lens
-#undef o_codelen_tree
-#undef o_litlen_tree
-#undef o_dist_tree
-#undef o_frame
+        jra     decode_loop
 
 #if !OPT_INLINE_FUNCTIONS
 stream_next_symbol:
@@ -662,3 +667,78 @@ inflate:
 
         movem.l (aS)+,d0-d6/a0-a5
         rts
+
+#if OPT_PREGENERATE_TABLES
+pregen_static_huffman:
+        lea     -o_frame(aS),aS         /* frame pre-generated; skip over it */
+        move.w  #256,d4
+        jra     decode_loop
+pregen_dynamic_huffman:
+        move.l  (aS),d0
+        lea     -3000(aS),aS            /* move to dynamic-huffman frame */
+        move.l  d0,(aS)                 /* copy o_mode into it */
+        jbsr    dynamic_huffman
+        lea     3000(aS),aS
+        rts
+
+        /* Pre-generate conversion tables for Inflate. */
+        /* a6 = Pointer to end of 6000-byte block of memory to contain
+         * pre-generated tables. All registers preserved. */
+inflate_gentables:
+        movem.l a5-a6,-(sp)
+        lea     pregen_dummy_block(pc),a5
+        jbsr    inflate                 /* static block */
+        lea     -3000(aS),aS
+        lea     pregen_dummy_block(pc),a5
+        jbsr    inflate                 /* dynamic block */
+        movem.l (sp)+,a5-a6
+        rts
+
+        /* Inflate, using pre-generated tables. */
+        /* a4 = output, a5 = input, all regs preserved
+         * a6 = *end* of 6000-byte pre-generated storage area */
+inflate_fromtables:
+        movem.l d0-d6/a0-a5,-(aS)
+
+        /* Skip the pre-generated base/extra-bits lookup tables */
+        lea     -(30+29)*4(aS),aS
+
+        /* Initialise the stream */
+        moveq   #0,d5           /* d5 = stream: fetched data */
+        moveq   #0,d6           /* d6 = stream: nr fetched bits */
+
+1:      /* Process a block: Grab the BTYPE|BFINAL 3-bit code */
+        moveq   #3,d1
+        jbsr    stream_next_bits
+        move.l  d0,-(aS)
+        /* Dispatch to the correct decoder for this block */
+        and.b   #0xfe,d0
+        move.w  pregen_dispatch(pc,d0.w),d0
+        lea     uncompressed_block(pc),a0
+        jsr     (a0,d0.w)
+        /* Keep going until we see BFINAL=1 */
+        move.l  (aS)+,d0
+        lsr.b   #1,d0
+        jcc     1b
+
+        /* Pop the base/extra-bits lookup tables */
+        lea     (30+29)*4(aS),aS
+
+        movem.l (aS)+,d0-d6/a0-a5
+        rts
+
+pregen_dispatch:
+        dc.w uncompressed_block - uncompressed_block
+        dc.w pregen_static_huffman - uncompressed_block
+        dc.w pregen_dynamic_huffman - uncompressed_block
+pregen_dummy_block: /* A single static block containing EOB symbol only */
+        dc.b    0x03,0x00
+#endif /* OPT_PREGENERATE_TABLES */
+
+#undef o_hdist
+#undef o_hlit
+#undef o_lens
+#undef o_codelen_tree
+#undef o_litlen_tree
+#undef o_dist_tree
+#undef o_frame
