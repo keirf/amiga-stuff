@@ -124,8 +124,12 @@ build_code:
         move.w  d0,d1
         move.l  a0,a2           ; a2 = &len[0]
 .2:     move.b  (a2)+,d2        ; d2 = len[i]
+        ifd MC68020
+        addq.w  #1,(aS,d2.w*2)
+        else
         add.b   d2,d2
         addq.w  #1,(aS,d2.w)    ; bl_count[len[i]]++
+        endif
         dbf     d1,.2
 
         ; Calculate next_code[] start values for each code length.
@@ -148,11 +152,16 @@ build_code_loop:
         beq.b   build_code_next
         subq.w  #1,d5
         move.w  d5,d6
+        ifd MC68020
+        move.w  (aS,d6.w*2),d3
+        addq.w  #1,(aS,d6.w*2)
+        else
         add.w   d6,d6
         move.w  (aS,d6.w),d3    ; d3 = code = next_code[len[i]]++
         addq.w  #1,(aS,d6.w)
-
         move.w  d5,d6
+        endif
+
         moveq   #0,d2
 .1:     lsr.w   #1,d3
         roxl.w  #1,d2
@@ -170,17 +179,16 @@ build_code_loop:
 codelen_le_8: ; codelen <= 8: leaf in table entry(s)
         lsl.w   #3,d6
         or.b    d5,d6           ; d6 = (symbol<<3) | (codelen-1)
-        moveq   #7,d2
-        sub.b   d5,d2
-        moveq   #0,d7
-        bset    d2,d7
-        subq.b  #1,d7           ; d7 = 1<<(8-codelen)-1
         moveq   #0,d2
         addq.b  #2,d5
-        bset    d5,d2           ; d2 = 1<<(codelen+1)
+        bset    d5,d2           ; d2 = 1<<(codelen+1) [table step]
+        move.w  d2,d7
+        neg.w   d7
+        and.w   #511,d7
+        or.w    d7,d3           ; d3 = last table offset
 .1:     move.w  d6,(a1,d3.w)
-        add.w   d2,d3
-        dbf     d7,.1
+        sub.w   d2,d3
+        bpl     .1
         bra     build_code_next
 
 codelen_gt_8: ; codelen > 8: requires a tree walk
@@ -199,8 +207,12 @@ codelen_gt_8: ; codelen > 8: requires a tree walk
 .2:     ; Take left or right branch depending on next code bit
         lsr.b   #1,d2
         addx.w  d7,d7
+        ifd MC68020
+        lea     (a1,d7.w*2),a3
+        else
         add.w   d7,d7
         lea     (a1,d7.w),a3    ; pnode = next_bit ? &node->r : &node->l
+        endif
         dbf     d5,.1
 
         ; Insert the current symbol as a new leaf node
@@ -227,8 +239,12 @@ STREAM_NEXTSYMBOL macro
         moveq   #0,d0   ; [4]
 .1\@:   ; Use next input byte as index into code lookup table
         move.b  d5,d0   ; 4
+        ifd MC68020
+        move.w  (a0,d0.w*2),d0
+        else
         add.w   d0,d0   ; 4
         move.w  (a0,d0.w),d0 ; 14
+        endif
         bpl     .4\@    ; 10 (taken)
         ; Code is longer than 8 bits: do the remainder via a tree walk
         lsr.w   #8,d5
@@ -240,8 +256,12 @@ STREAM_NEXTSYMBOL macro
         moveq   #7,d6           ; [4 cy]
 .3\@:   lsr.w   #1,d5           ; 8 cy
         addx.w  d0,d0           ; 4 cy
+        ifd MC68020
+        move.w  (a0,d0.w*2),d0
+        else
         add.w   d0,d0           ; 4 cy
         move.w  (a0,d0.w),d0    ; 14 cy
+        endif
         bmi     .2\@            ; 10 cy (taken); loop on INTERNAL flag
         bra     .5\@            ; TOTAL LOOP CYCLES ~= 54
 .4\@:   ; Symbol found directly: consume bits and return symbol

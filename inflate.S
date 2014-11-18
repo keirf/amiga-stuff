@@ -122,8 +122,12 @@ build_code:
         move.w  d0,d1
         move.l  a0,a2           /* a2 = &len[0] */
 1:      move.b  (a2)+,d2        /* d2 = len[i] */
+#if MC68020
+        addq.w  #1,(aS,d2.w*2)
+#else
         add.b   d2,d2
         addq.w  #1,(aS,d2.w)    /* bl_count[len[i]]++ */
+#endif
         dbf     d1,1b
 
         /* Calculate next_code[] start values for each code length. */
@@ -145,11 +149,16 @@ build_code:
         jeq     4f
         subq.w  #1,d5
         move.w  d5,d6
+#if MC68020
+        move.w  (aS,d6.w*2),d3
+        addq.w  #1,(aS,d6.w*2)
+#else
         add.w   d6,d6
         move.w  (aS,d6.w),d3    /* d3 = code = next_code[len[i]]++ */
         addq.w  #1,(aS,d6.w)
-
         move.w  d5,d6
+#endif
+
         moveq   #0,d2
 9:      lsr.w   #1,d3
         roxl.w  #1,d2
@@ -167,17 +176,16 @@ build_code:
 codelen_le_8: /* codelen <= 8: leaf in table entry(s) */
         lsl.w   #3,d6
         or.b    d5,d6           /* d6 = (symbol<<3) | (codelen-1) */
-        moveq   #7,d2
-        sub.b   d5,d2
-        moveq   #0,d7
-        bset    d2,d7
-        subq.b  #1,d7           /* d7 = 1<<(8-codelen)-1 */
         moveq   #0,d2
         addq.b  #2,d5
-        bset    d5,d2           /* d2 = 1<<(codelen+1) */
+        bset    d5,d2           /* d2 = 1<<(codelen+1) [table step] */
+        move.w  d2,d7
+        neg.w   d7
+        and.w   #511,d7
+        or.w    d7,d3           /* d3 = last table offset */
 9:      move.w  d6,(a1,d3.w)
-        add.w   d2,d3
-        dbf     d7,9b
+        sub.w   d2,d3
+        jpl     9b
         jra     4f
 
 codelen_gt_8: /* codelen > 8: requires a tree walk */
@@ -196,8 +204,12 @@ codelen_gt_8: /* codelen > 8: requires a tree walk */
 3:      /* Take left or right branch depending on next code bit */
         lsr.b   #1,d2
         addx.w  d7,d7
+#if MC68020
+        lea     (a1,d7.w*2),a3
+#else
         add.w   d7,d7
         lea     (a1,d7.w),a3    /* pnode = next_bit ? &node->r : &node->l */
+#endif
 3:      dbf     d5,2b
 
         /* Insert the current symbol as a new leaf node */
@@ -223,8 +235,12 @@ codelen_gt_8: /* codelen > 8: requires a tree walk */
         moveq   #0,d0   /* [4] */
 99:     /* Use next input byte as index into code lookup table */
         move.b  d5,d0   /* 4 */
+#if MC68020
+        move.w  (a0,d0.w*2),d0
+#else
         add.w   d0,d0   /* 4 */
         move.w  (a0,d0.w),d0 /* 14 */
+#endif
         jpl     99f     /* 10 (taken) */
         /* Code is longer than 8 bits: do the remainder via a tree walk */
         lsr.w   #8,d5
@@ -236,8 +252,12 @@ codelen_gt_8: /* codelen > 8: requires a tree walk */
         moveq   #7,d6           /* [4 cy] */
 97:     lsr.w   #1,d5           /* 8 cy */
         addx.w  d0,d0           /* 4 cy */
+#if MC68020
+        move.w  (a0,d0.w*2),d0
+#else
         add.w   d0,d0           /* 4 cy */
         move.w  (a0,d0.w),d0    /* 14 cy */
+#endif
         jmi     98b             /* 10 cy (taken); loop on INTERNAL flag */
         jra     98f             /* TOTAL LOOP CYCLES ~= 54 */
 99:     /* Symbol found directly: consume bits and return symbol */
