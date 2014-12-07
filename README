@@ -19,9 +19,10 @@ Makefile/Rules.mk
 crc16_ccitt.S
   Table-driven CRC16-CCITT implementation.
 
-degzip.c
+degzip_{gnu,portable}.c
   Analyse gzip files, extract and write out their raw Deflate streams
   (can then be processed by inflate, see below).
+  Original version for GNU/Linux, and portable version fixed by phx / EAB.
 
 inflate.{S,asm}
   Small and efficient implementation of Inflate, as specified
