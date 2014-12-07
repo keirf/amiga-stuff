@@ -1,6 +1,8 @@
 *
 * inflate.asm
 * 
+* Fixed for Amiga native asm syntax by phx / English Amiga Board.
+*
 * Decompression of DEFLATE streams, as produced by zip/gzip/pkzip and
 * specified in RFC 1951 "DEFLATE Compressed Data Format Specification".
 *

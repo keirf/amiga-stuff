@@ -1,7 +1,9 @@
 /*
- * degzip.c
+ * degzip_portable.c
  * 
  * Analyse and extract DEFLATE streams from gzip archives.
+ * Modified for portability by phx / English Amiga Board.
+ * Built and tested using vbcc on Amiga 68k.
  * 
  * Written & released by Keir Fraser <keir.xen@gmail.com>
  * 
@@ -13,15 +15,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <err.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <getopt.h>
+#include <stdarg.h>
+#include <errno.h>
 
-/* __packed: Given struct should not include ABI-compliant padding. */
-#define __packed __attribute__((packed))
+static char *progname;
 
 /* Our own custom pack header which is written to the output file when
  * -H option is specified. In addition, a CRC16-CCITT is computed over 
@@ -30,18 +27,18 @@
 struct pack_header {
     /* Total size of this compressed file, in bytes, including this header and 
      * the trailing 2-byte CRC. */
-    uint32_t in_bytes;
+    uint8_t in_bytes[4];
     /* Size of decompressed output, in bytes. */
-    uint32_t out_bytes;
+    uint8_t out_bytes[4];
     /* CRC16-CCITT over the decompressed output. */
-    uint16_t out_crc;
+    uint8_t out_crc[2];
     /* Leeway which must be given to the decompressor if input and output 
      * share the same memory. If the compressed DEFLATE stream is placed at 
      * the end of the output buffer, then that buffer must be sized 
      * (out_bytes + leeway) to correctly decompress without overwriting 
      * the remaining tail of the input stream. */
-    uint16_t leeway;
-} __packed;
+    uint8_t leeway[2];
+};
 
 #define ASSERT(p) do { \
     if (!(p)) errx(1, "Assertion at %u", __LINE__); } while (0)
@@ -59,15 +56,81 @@ struct gzip_header {
 #define FNAME    (1u<<3)
 #define FCOMMENT (1u<<4)
 #define FRSRVD   (0xe0u)
-    uint32_t mtime;
+    uint8_t mtime[4];
     uint8_t xfl;
     uint8_t os;
-} __packed;
+};
 
 struct gzip_extra {
-    uint16_t xlen;
-    uint8_t xdat[0];
-} __packed;
+    uint8_t xlen[2];
+    /*uint8_t xdat[0];*/
+};
+
+static void myhtobe16(void *be, uint16_t h)
+{
+    uint8_t *p = (uint8_t *)be;
+    p[0] = h >> 8;
+    p[1] = h & 0xff;
+}
+
+static void myhtobe32(void *be, uint32_t h)
+{
+    uint8_t *p = (uint8_t *)be;
+    p[0] = h >> 24;
+    p[1] = (h >> 16) & 0xff;
+    p[2] = (h >> 8) & 0xff;
+    p[3] = h & 0xff;
+}
+
+static uint16_t myle16toh(void *le)
+{
+    uint8_t *p = (uint8_t *)le;
+    return ((uint16_t)p[1] << 8) | (uint16_t)p[0];
+}
+
+static uint32_t myle32toh(void *le)
+{
+    uint8_t *p = (uint8_t *)le;
+    return ((uint32_t)p[3] << 24) | ((uint32_t)p[2] << 16) |
+           ((uint32_t)p[1] << 8) | (uint32_t)p[0];
+}
+
+static void showerr(int status, int xflag, const char *fmt, va_list vl)
+{
+    int sverrno = errno;
+
+    fprintf(stderr, "%s: ", progname);
+    if (fmt) {
+        vfprintf(stderr, fmt, vl);
+        if (!xflag)
+            fprintf(stderr, ": ");
+    }
+    if (xflag)
+        fprintf(stderr, "\n");
+    else
+        fprintf(stderr, "%s\n", strerror(sverrno));
+    exit(status);
+}
+
+static void err(int status, const char *fmt, ...)
+{
+    va_list vl;
+
+printf("err errno=%d\n",errno);
+    va_start(vl, fmt);
+    showerr(status, 0, fmt, vl);
+    va_end(vl);
+}
+
+static void errx(int status, const char *fmt, ...)
+{
+    va_list vl;
+
+printf("errx errno=%d\n",errno);
+    va_start(vl, fmt);
+    showerr(status, 1, fmt, vl);
+    va_end(vl);
+}
 
 static uint32_t crc32_tab[256];
 static void crc32_tab_init(void)
@@ -243,7 +306,7 @@ static void huffman(struct deflate_stream *main, struct deflate_stream *prefix)
     struct node codelen_tree[nr_codelen_symbols];
     struct node litlen_tree[nr_litlen_symbols];
     struct node dist_tree[nr_distance_symbols];
-    struct deflate_stream *s = prefix ?: main;
+    struct deflate_stream *s = prefix ? prefix : main;
 
     memset(codelen_tree, 0, sizeof(codelen_tree));
     memset(litlen_tree, 0, sizeof(litlen_tree));
@@ -352,9 +415,11 @@ static void deflate_process_block(struct deflate_stream *s)
                 0xb6, 0x6d, 0xdb, 0xb6, 0x6d, 0xdb, 0xb6,
                 0xcd, 0xdb, 0xb6, 0x6d, 0xdb, 0xb6, 0x6d,
                 0xdb, 0xa8, 0x6d, 0xce, 0x8b, 0x6d, 0x3b };
-            struct deflate_stream dfls_prefix = {
-                .in.p = (uint8_t *)static_prefix,
-                .in.end = (uint8_t *)static_prefix + sizeof(static_prefix) };
+            struct deflate_stream dfls_prefix;
+            memset(&dfls_prefix, 0, sizeof(struct deflate_stream));
+            dfls_prefix.in.p = (uint8_t *)static_prefix;
+            dfls_prefix.in.end = (uint8_t *)static_prefix +
+                                 sizeof(static_prefix);
             huffman(s, &dfls_prefix);
             break;
         }
@@ -369,7 +434,7 @@ static void deflate_process_block(struct deflate_stream *s)
 
 static void usage(int rc)
 {
-    printf("Usage: degzip [options] in_file out_file\n");
+    printf("Usage: %s [options] in_file out_file\n",progname);
     printf("Options:\n");
     printf("  -h, --help    Display this information\n");
     printf("  -H, --header  Output DEFLATE stream with a useful header\n");
@@ -383,66 +448,63 @@ int main(int argc, char **argv)
     struct deflate_stream dfls;
     struct gzip_header *hdr;
     unsigned char *buf, *p, *outbuf, *dflp;
-    int ch, fd, insz, outsz, i;
+    uint32_t insz, outsz;
+    int ch, i;
+    FILE *fd;
     uint32_t crc = 0;
-    char *in, *out;
+    char *in = NULL, *out = NULL;
     enum {
         output_header, output_raw, output_uncompressed
     } output_type = output_raw;
 
-    const static char sopts[] = "hHru";
-    const static struct option lopts[] = {
-        { "help", 0, NULL, 'h' },
-        { "header", 0, NULL, 'H' },
-        { "raw", 0, NULL, 'r' },
-        { "uncompressed", 0, NULL, 'u' },
-        { 0, 0, 0, 0 }
-    };
-
-    while ((ch = getopt_long(argc, argv, sopts, lopts, NULL)) != -1) {
-        switch (ch) {
-        case 'h':
-            usage(0);
-            break;
-        case 'H':
-            output_type = output_header;
-            break;
-        case 'r':
-            output_type = output_raw;
-            break;
-        case 'u':
-            output_type = output_uncompressed;
-            break;
-        default:
-            usage(1);
-            break;
-        }
-    }
-
-    if (argc != (optind + 2))
+    progname = argv[0];
+    if (argc < 3)
         usage(1);
-    in = argv[optind];
-    out = argv[optind+1];
+    for (i = 1; i < argc; i++) {
+      if (argv[i][0] == '-') {
+        char *arg = &argv[i][1];
+        if (!strcmp(arg, "h") || !strcmp(arg, "help"))
+          usage(0);
+        else if (!strcmp(arg, "H") || !strcmp(arg, "-header"))
+            output_type = output_header;
+        else if (!strcmp(arg, "r") || !strcmp(arg, "-raw"))
+            output_type = output_raw;
+        else if (!strcmp(arg, "u") || !strcmp(arg, "-uncompressed"))
+            output_type = output_uncompressed;
+        else
+          usage(1);
+      }
+      else if (in == NULL)
+        in = argv[i];
+      else if (out == NULL)
+        out = argv[i];
+      else
+        usage(1);
+    }
+    if (in == NULL || out == NULL)
+      usage(1);
 
     crc16_gentable();
 
-    fd = open(in, O_RDONLY);
-    if (fd == -1)
+    fd = fopen(in, "rb");
+    if (fd == NULL)
         err(1, "%s", in);
-    if ((insz = lseek(fd, 0, SEEK_END)) < 0)
+    if (fseek(fd, 0, SEEK_END) != 0)
         err(1, NULL);
-    lseek(fd, -4, SEEK_END);
-    if (read(fd, &outsz, 4) != 4)
+    insz = ftell(fd);
+    if (fseek(fd, -4, SEEK_END) != 0)
         err(1, NULL);
-    outsz = le32toh(outsz);
+    if (fread(&outsz, 4, 1, fd) != 1)
+        err(1, NULL);
+    outsz = myle32toh(&outsz);
     if ((buf = malloc(insz)) == NULL)
         err(1, NULL);
     if ((outbuf = malloc(outsz)) == NULL)
         err(1, NULL);
-    lseek(fd, 0, SEEK_SET);
-    if (read(fd, buf, insz) != insz)
+    fseek(fd, 0, SEEK_SET);
+    if (fread(buf, 1, insz, fd) != insz)
         err(1, NULL);
-    close(fd);
+    fclose(fd);
     p = buf;
 
     hdr = (struct gzip_header *)p;
@@ -450,16 +512,16 @@ int main(int argc, char **argv)
     if ((hdr->id[0] != 0x1f) || (hdr->id[1] != 0x8b))
         errx(1, "Not a GZIP file");
     if (hdr->cm != 8)
-        errx(1, "Compression method %u unsupported", hdr->cm);
+        errx(1, "Compression method %u unsupported", (unsigned)hdr->cm);
 
     if (hdr->flg & FRSRVD)
-        errx(1, "Unrecognised header flags %02x", hdr->flg);
+        errx(1, "Unrecognised header flags %02x", (unsigned)hdr->flg);
 
     if (hdr->flg & FEXTRA) {
         struct gzip_extra *extra = (struct gzip_extra *)p;
-        extra->xlen = le16toh(extra->xlen);
-        printf("Skipping %u bytes extra data\n", extra->xlen);
-        p += sizeof(struct gzip_extra) + extra->xlen;
+        uint16_t xlen = myle16toh(extra->xlen);
+        printf("Skipping %u bytes extra data\n", (unsigned)xlen);
+        p += sizeof(struct gzip_extra) + xlen;
     }
 
     if (hdr->flg & FNAME) {
@@ -477,7 +539,8 @@ int main(int argc, char **argv)
         p += 2;
     }
 
-    printf("Compressed size: %u; Original size: %u\n", insz, outsz);
+    printf("Compressed size: %u; Original size: %u\n",
+           (unsigned)insz, (unsigned)outsz);
 
     dfls.cur = dfls.nr = 0;
     dfls.in.p = dflp = p;
@@ -505,56 +568,49 @@ int main(int argc, char **argv)
            nr__codes ? (float)nr__longcodes/nr__codes : 0.0);
     printf("Decompression requires leeway of %u bytes\n", dfls.leeway);
 
-    fd = open(out, O_WRONLY|O_CREAT|O_TRUNC, 0644);
-    if (fd == -1)
+    fd = fopen(out, "wb");
+    if (fd == NULL)
         err(1, "%s", out);
 
     switch (output_type) {
     case output_header: {
-        uint16_t crc16;
         struct pack_header hdr;
-        if (dfls.leeway != (uint16_t)dfls.leeway)
-            errx(1, "Leeway too lareg to fit in pack header");
-        hdr.leeway = htobe16(dfls.leeway);
-        hdr.out_bytes = htobe32(outsz);
-        outsz = dfls.in.end-dflp;
-        hdr.in_bytes = htobe32(outsz + sizeof(hdr) + 2/*crc16*/);
-        hdr.out_crc = htobe16(crc16_ccitt(outbuf, be32toh(hdr.out_bytes),
-                                          0xffff));
+        uint16_t crc16, leeway = (uint16_t)dfls.leeway;
+        uint32_t inbytes, outbytes;
+        if (dfls.leeway != (uint32_t)leeway)
+            errx(1, "Leeway too large to fit in pack header");
+        myhtobe16(hdr.leeway, leeway);
+        outbytes = outsz;
+        myhtobe32(hdr.out_bytes, outbytes);
+        outsz = dfls.in.end - dflp;
+        inbytes = outsz + sizeof(hdr) + 2/*crc16*/;
+        myhtobe32(hdr.in_bytes, inbytes);
+        crc16 = crc16_ccitt(outbuf, outbytes, 0xffff);
+        myhtobe16(hdr.out_crc, crc16);
         crc16 = crc16_ccitt(&hdr, sizeof(hdr), 0xffff);
         crc16 = crc16_ccitt(dflp, outsz, crc16);
-        crc16 = htobe16(crc16);
-        if ((write(fd, &hdr, sizeof(hdr)) != sizeof(hdr)) ||
-            (write(fd, dflp, outsz) != outsz) ||
-            (write(fd, &crc16, 2) != 2))
+        myhtobe16(&crc16, crc16);
+        if ((fwrite(&hdr, sizeof(hdr), 1, fd) != 1) ||
+            (fwrite(dflp, outsz, 1, fd) != 1) ||
+            (fwrite(&crc16, 2, 1, fd) != 1))
             err(1, NULL);
         break;
     }
     case output_raw: {
-        outsz = dfls.in.end-dflp;
-        if (write(fd, dflp, outsz) != outsz)
+        outsz = dfls.in.end - dflp;
+        if (fwrite(dflp, outsz, 1, fd) != 1)
             err(1, NULL);
         break;
     }
     case output_uncompressed: {
         /* Output original uncompressed data. */
-        if (write(fd, outbuf, outsz) != outsz)
+        if (fwrite(outbuf, outsz, 1, fd) != 1)
             err(1, NULL);
         break;
     }
     }
 
-    close(fd);
+    fclose(fd);
 
     return 0;
 }
-
-/*
- * Local variables:
- * mode: C
- * c-file-style: "Linux"
- * c-basic-offset: 4
- * tab-width: 4
- * indent-tabs-mode: nil
- * End:
- */
