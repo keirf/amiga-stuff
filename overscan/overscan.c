@@ -9,12 +9,6 @@
  * See the file COPYING for more details, or visit <http://unlicense.org>.
  */
 
-#include <stdarg.h>
-#include <stddef.h>
-
-#include "types.h"
-#include "amiga_hw.h"
-
 static volatile struct amiga_custom * const cust =
     (struct amiga_custom *)0xdff000;
 static volatile struct amiga_cia * const ciaa =
@@ -109,14 +103,6 @@ static uint16_t copper_overscan_xtra[] = {
  * Bottom border is bizarre. Limited right overscan maybe explained by fact 
  * default display is often visibly right-shifted on television sets. */
 
-void *memset(void *s, int c, size_t n)
-{
-    char *p = s;
-    while (n--)
-        *p++ = c;
-    return s;
-}
-
 static void wait_button(void)
 {
     while ((ciaa->pra & 0xc0) == 0xc0)
@@ -133,9 +119,7 @@ static void wait_button(void)
         continue;
 }
 
-extern char _sbss[], _ebss[];
-
-void overscan(void)
+void cstart(void)
 {
     uint16_t i;
     char *p;

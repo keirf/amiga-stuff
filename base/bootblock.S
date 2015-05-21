@@ -1,5 +1,5 @@
 #define load_off  0x0
-#define load_size 0x1600
+#define load_size 0x2c00
 
         .section .text.init
         .global start
@@ -102,4 +102,4 @@ main:   move.w  #0x2000,sr      /* allow CPU interrupts now that we are */
         andi.b  #0x87,(a5)
         ori.b   #0x78,(a5)
 
-        jra     overscan
+        jra     cstart
