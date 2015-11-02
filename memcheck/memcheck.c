@@ -195,6 +195,26 @@ static void print_line(const struct char_row *r)
     }
 }
 
+static unsigned int menu(void)
+{
+    uint8_t key;
+    char s[80];
+    struct char_row r = { .x = 4, .y = 5, .s = s };
+
+    sprintf(s, "F1 - Ranger RAM check (0.5MB Slow RAM Expansion)");
+    print_line(&r);
+    r.y++;
+    sprintf(s, "F2 - Keyboard check");
+    print_line(&r);
+    r.y++;
+
+    while ((key = keycode_buffer - 0x50) >= 2)
+        continue;
+    clear_screen_rows(0, yres);
+    keycode_buffer = 0;
+    return key;
+}
+
 static void memcheck(void)
 {
     volatile uint16_t *p;
@@ -321,6 +341,42 @@ static void memcheck(void)
     }
 }
 
+static void kbdcheck(void)
+{
+    char s[80], num[5];
+    struct char_row r = { .x = 8, .y = 1, .s = s };
+    unsigned int i = 0;
+
+    sprintf(s, "Keyboard Test:");
+    print_line(&r);
+    r.y++;
+
+    s[0] = '\0';
+    keycode_buffer = 0x7f;
+    for (;;) {
+        uint8_t key = keycode_buffer;
+        keycode_buffer = 0x7f;
+        if (key == 0x7f)
+            continue;
+        if (r.y == 13) {
+            while (r.y >= 2) {
+                sprintf(s, "");
+                print_line(&r);
+                r.y--;
+            }
+            r.y = 2;
+        }
+        sprintf(num, "%02x ", key);
+        strcat(s, num);
+        print_line(&r);
+        if (i++ == 8) {
+            i = 0;
+            s[0] = '\0';
+            r.y++;
+        }
+    }
+}
+
 IRQ(CIA_IRQ);
 static void c_CIA_IRQ(void)
 {
@@ -390,7 +446,15 @@ void cstart(void)
     cust->dmacon = 0x81c0; /* enable copper/bitplane/blitter DMA */
     cust->intena = 0x8008; /* enable CIA-A interrupts */
 
-    memcheck();
+    switch (menu()) {
+    case 0:
+        memcheck();
+        break;
+    case 1:
+        kbdcheck();
+        break;
+    }
+
     for (;;);
 }
 
