@@ -202,7 +202,7 @@ static void memcheck(void)
     volatile uint16_t *end = (volatile uint16_t *)0xc80000;
     char s[80];
     struct char_row r = { .x = 8, .y = 5, .s = s };
-    uint16_t a, b;
+    uint16_t a, b, i, j;
 
     /* If slow memory is absent then custom registers alias at C00000. We 
      * detect this by writing to what would be INTENA and checking for changes 
@@ -215,6 +215,10 @@ static void memcheck(void)
     b = p[0x1c/2];
 
     sprintf(s, "%04x / %04x", a, b);
+    print_line(&r);
+    r.y++;
+
+    sprintf(s, "Ranger RAM%s detected", (a != b) ? " *NOT*" : "");
     print_line(&r);
     r.y++;
 
@@ -278,11 +282,41 @@ static void memcheck(void)
             a |= *p++;
         }
 
-        b++;
-        if ((ciaa->pra & 0xc0) != 0xc0)
-            a = b = 0;
+        a = 0xffff;
 
-        sprintf(s, "%04x: %04x", b, a);
+        b++;
+        if ((ciaa->pra & 0xc0) != 0xc0) {
+            while (r.y >= 5) {
+                sprintf(s, "");
+                print_line(&r);
+                r.y--;
+            }
+            r.y = 5;
+            for (i = j = 0; i < 16; i++)
+                if ((a >> i) & 1)
+                    j++;
+            sprintf(s, "After %u rounds: errors in %u bit positions", b, j);
+            print_line(&r);
+            r.y++;
+            if (j != 0) {
+                char num[8];
+                sprintf(s, " -> Bits ");
+                for (i = 0; i < 16; i++) {
+                    if (!((a >> i) & 1))
+                        continue;
+                    sprintf(num, "%u", i);
+                    if (--j)
+                        strcat(num, ",");
+                    strcat(s, num);
+                }
+                print_line(&r);
+                r.y++;
+            }
+            a = b = 0;
+            continue;
+        }
+
+        sprintf(s, "After %u rounds: errors %04x", b, a);
         print_line(&r);
     }
 }
@@ -357,10 +391,11 @@ void cstart(void)
     cust->intena = 0x8008; /* enable CIA-A interrupts */
 
     memcheck();
+    for (;;);
 }
 
 asm (
 "    .data                          \n"
-"packfont: .incbin \"font.bin\"\n"
+"packfont: .incbin \"../base/font.raw\"\n"
 "    .text                          \n"
 );
