@@ -1,7 +1,10 @@
 /*
- * memcheck.c
+ * systest.c
  * 
- * Slow/Ranger RAM detection and check.
+ * System Tests:
+ *  - Slow/Ranger RAM detection and check.
+ *  - Keyboard test.
+ *  - Disk test.
  * 
  * Written & released by Keir Fraser <keir.xen@gmail.com>
  * 
@@ -14,7 +17,7 @@ static volatile struct amiga_custom * const cust =
 static volatile struct amiga_cia * const ciaa =
     (struct amiga_cia *)0x0bfe001;
 static volatile struct amiga_cia * const ciab =
-    (struct amiga_cia *)0x0bfdd00;
+    (struct amiga_cia *)0x0bfd000;
 
 /* Space for bitplanes and unpacked font. */
 extern char GRAPHICS[];
@@ -207,8 +210,11 @@ static unsigned int menu(void)
     sprintf(s, "F2 - Keyboard check");
     print_line(&r);
     r.y++;
+    sprintf(s, "F3 - Floppy drive check");
+    print_line(&r);
+    r.y++;
 
-    while ((key = keycode_buffer - 0x50) >= 2)
+    while ((key = keycode_buffer - 0x50) >= 3)
         continue;
     clear_screen_rows(0, yres);
     keycode_buffer = 0;
@@ -377,6 +383,33 @@ static void kbdcheck(void)
     }
 }
 
+static void floppycheck(void)
+{
+    char s[80];
+    struct char_row r = { .x = 8, .y = 1, .s = s };
+    uint8_t pra, old_pra;
+
+    /* df0 select, motor on */
+    ciab->prb |= 0xf8;
+    ciab->prb &= 0x7f;
+    ciab->prb &= 0xf7;
+    wait_bos();
+    pra = ciaa->pra;
+
+    sprintf(s, "-- DF0: Test --");
+    print_line(&r);
+    r.y++;
+
+    for (;;) {
+        sprintf(s, " CIAAPRA=0x%02x: CHG=%u WPR=%u TK0=%u RDY=%u",
+                pra, !!(pra&4), !!(pra&8), !!(pra&16), !!(pra&32));
+        print_line(&r);
+        old_pra = pra;
+        while ((pra = ciaa->pra) == old_pra)
+            continue;
+    }
+}
+
 IRQ(CIA_IRQ);
 static void c_CIA_IRQ(void)
 {
@@ -452,6 +485,9 @@ void cstart(void)
         break;
     case 1:
         kbdcheck();
+        break;
+    case 2:
+        floppycheck();
         break;
     }
 
