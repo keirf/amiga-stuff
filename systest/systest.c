@@ -383,17 +383,23 @@ static void kbdcheck(void)
     }
 }
 
+static void motor(int on)
+{
+    ciab->prb |= 0xf8;
+    if (on)
+        ciab->prb &= 0x7f;
+    ciab->prb &= 0xf7;
+    wait_line();
+}
+
 static void floppycheck(void)
 {
     char s[80];
     struct char_row r = { .x = 8, .y = 1, .s = s };
     uint8_t pra, old_pra;
+    int on = 0, frames = 0;
 
-    /* df0 select, motor on */
-    ciab->prb |= 0xf8;
-    ciab->prb &= 0x7f;
-    ciab->prb &= 0xf7;
-    wait_bos();
+    motor(on);
     pra = ciaa->pra;
 
     sprintf(s, "-- DF0: Test --");
@@ -405,8 +411,14 @@ static void floppycheck(void)
                 pra, !!(pra&4), !!(pra&8), !!(pra&16), !!(pra&32));
         print_line(&r);
         old_pra = pra;
-        while ((pra = ciaa->pra) == old_pra)
-            continue;
+        while ((pra = ciaa->pra) == old_pra) {
+            wait_line();
+            if (frames++ == 250*250) {
+                frames = 0;
+                on = !on;
+                motor(on);
+            }
+        }
     }
 }
 
