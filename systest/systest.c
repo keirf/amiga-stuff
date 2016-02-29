@@ -202,11 +202,17 @@ static unsigned int menu(void)
 {
     uint8_t key;
     char s[80];
-    struct char_row r = { .x = 4, .y = 3, .s = s };
+    struct char_row r = { .x = 4, .y = 0, .s = s };
 
     clear_screen_rows(0, yres);
     keycode_buffer = 0;
 
+    sprintf(s, "SysTest - by KAF <keir.xen@gmail.com>");
+    print_line(&r);
+    r.y++;
+    sprintf(s, "------------------------------------");
+    print_line(&r);
+    r.y++;
     sprintf(s, "F1 - Ranger RAM (0.5MB Slow RAM Expansion)");
     print_line(&r);
     r.y++;
@@ -223,6 +229,15 @@ static unsigned int menu(void)
     print_line(&r);
     r.y++;
     sprintf(s, "(ESC + F1 to quit back to menu)");
+    print_line(&r);
+    r.y++;
+    sprintf(s, "------------------------------------");
+    print_line(&r);
+    r.y++;
+    sprintf(s, "https://github.com/keirf/Amiga-Stuff");
+    print_line(&r);
+    r.y++;
+    sprintf(s, "build: %s %s", __DATE__, __TIME__);
     print_line(&r);
     r.y++;
 
@@ -243,6 +258,8 @@ static void memcheck(void)
     struct char_row r = { .x = 8, .y = 5, .s = s };
     uint16_t a, b, i, j;
 
+    i = cust->intenar;
+
     /* If slow memory is absent then custom registers alias at C00000. We 
      * detect this by writing to what would be INTENA and checking for changes 
      * to what would be INTENAR. If we see no change then we are not writing 
@@ -261,8 +278,13 @@ static void memcheck(void)
     print_line(&r);
     r.y++;
 
-    if (a != b)
+    if (a != b) {
+        cust->intena = 0x7fff;
+        cust->intena = 0x8000 | i;
+        while (!exit)
+            continue;
         return;
+    }
 
     /* We believe we have slow memory present. Now check the RAM for errors. 
      * This uses an inversions algorithm where we try to set an alternating 
