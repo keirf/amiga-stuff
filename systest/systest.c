@@ -204,17 +204,20 @@ static unsigned int menu(void)
     char s[80];
     struct char_row r = { .x = 4, .y = 5, .s = s };
 
-    sprintf(s, "F1 - Ranger RAM check (0.5MB Slow RAM Expansion)");
+    sprintf(s, "F1 - Ranger RAM (0.5MB Slow RAM Expansion)");
     print_line(&r);
     r.y++;
-    sprintf(s, "F2 - Keyboard check");
+    sprintf(s, "F2 - Keyboard");
     print_line(&r);
     r.y++;
-    sprintf(s, "F3 - Floppy drive check");
+    sprintf(s, "F3 - Floppy Drive");
+    print_line(&r);
+    r.y++;
+    sprintf(s, "F4 - Mouse / Joystick Ports");
     print_line(&r);
     r.y++;
 
-    while ((key = keycode_buffer - 0x50) >= 3)
+    while ((key = keycode_buffer - 0x50) >= 4)
         continue;
     clear_screen_rows(0, yres);
     keycode_buffer = 0;
@@ -307,8 +310,6 @@ static void memcheck(void)
             a |= ~*p++;
             a |= *p++;
         }
-
-        a = 0xffff;
 
         b++;
         if ((ciaa->pra & 0xc0) != 0xc0) {
@@ -422,6 +423,96 @@ static void floppycheck(void)
     }
 }
 
+static void drawpixel(unsigned int x, unsigned int y, int set)
+{
+    uint16_t bpl_off = y * (xres/8) + (x/8);
+    if (!set)
+        bpl[1][bpl_off] &= ~(0x80 >> (x & 7));
+    else
+        bpl[1][bpl_off] |= 0x80 >> (x & 7);
+}
+
+static void drawbox(unsigned int x, unsigned int y, int set)
+{
+    unsigned int i, j;
+    for (i = 0; i < 2; i++)
+        for (j = 0; j < 2; j++)
+            drawpixel(x+i, y+j, set);
+}
+
+static void printport(char *s, unsigned int port)
+{
+    uint16_t joy = port ? cust->joy1dat : cust->joy0dat;
+    uint8_t buttons = cust->potinp >> (port ? 12 : 8);
+    sprintf(s, "Button=(%c%c%c) Dir=(%c%c%c%c)",
+            !(ciaa->pra & (1u << (port ? 7 : 6))) ? '1' : ' ',
+            !(buttons & 1) ? '2' : ' ',
+            !(buttons & 4) ? '3' : ' ',
+            (joy & 0x200) ? 'L' : ' ',
+            (joy & 2) ? 'R' : ' ',
+            ((joy & 0x100) ^ ((joy & 0x200) >> 1)) ? 'U' : ' ',
+            ((joy & 1) ^ ((joy & 2) >> 1)) ? 'D' : ' ');
+}
+
+static void updatecoords(uint16_t oldjoydat, uint16_t newjoydat, int *coords)
+{
+    coords[0] += (int8_t)(newjoydat - oldjoydat);
+    coords[1] += (int8_t)((newjoydat >> 8) - (oldjoydat >> 8));
+    coords[0] = min_t(int, max_t(int, coords[0], 0), 139);
+    coords[1] = min_t(int, max_t(int, coords[1], 0), 139);
+}
+
+static void joymousecheck(void)
+{
+    char sub[2][30], s[80];
+    struct char_row r = { .x = 8, .y = 1, .s = s };
+    int i, coords[2][2] = { { 0 } };
+    uint16_t joydat[2], newjoydat[2];
+
+    joydat[0] = cust->joy0dat;
+    joydat[1] = cust->joy1dat;
+
+    /* Pull-ups on button 2 & 3 inputs. */
+    cust->potgo = 0xff00;
+
+    sprintf(s, "-- Joy / Mouse Test --");
+    print_line(&r);
+    r.x = 0;
+    r.y += 3;
+
+    for (i = 0; ; i++) {
+
+        if (i & 1) {
+            /* Odd frames: print button/direction info */
+            printport(sub[0], 0);
+            printport(sub[1], 1);
+            r.y++;
+        } else {
+            /* Even frames: print coordinate info */
+            sprintf(sub[0], "Port 1: (%3u,%3u)", coords[0][0], coords[0][1]);
+            sprintf(sub[1], "Port 2: (%3u,%3u)", coords[1][0], coords[1][1]);
+            r.y--;
+        }
+        sprintf(s, "%37s%s", sub[0], sub[1]);
+
+        newjoydat[0] = cust->joy0dat;
+        newjoydat[1] = cust->joy1dat;
+
+        /* Wait for end of display, then start screen updates. */
+        wait_bos();
+        print_line(&r); /* sloooow, allows only one per vbl */
+        drawbox(coords[0][0] + 100, coords[0][1]/2 + 80, 0);
+        drawbox(coords[1][0] + 400, coords[1][1]/2 + 80, 0);
+        updatecoords(joydat[0], newjoydat[0], coords[0]);
+        updatecoords(joydat[1], newjoydat[1], coords[1]);
+        drawbox(coords[0][0] + 100, coords[0][1]/2 + 80, 1);
+        drawbox(coords[1][0] + 400, coords[1][1]/2 + 80, 1);
+
+        joydat[0] = newjoydat[0];
+        joydat[1] = newjoydat[1];
+    }
+}
+
 IRQ(CIA_IRQ);
 static void c_CIA_IRQ(void)
 {
@@ -500,6 +591,9 @@ void cstart(void)
         break;
     case 2:
         floppycheck();
+        break;
+    case 3:
+        joymousecheck();
         break;
     }
 

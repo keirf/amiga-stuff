@@ -77,8 +77,12 @@ int vsnprintf(char *str, size_t size, const char *format, va_list ap)
             break;
         case 's':
             q = va_arg(ap, char *);
-            while ((c = *q++) != '\0')
+            while ((c = *q++) != '\0') {
                 do_putch(&p, end, c);
+                width--;
+            }
+            while (width-- > 0)
+                do_putch(&p, end, ' ');
             continue;
         case 'c':
             c = va_arg(ap, unsigned int);
