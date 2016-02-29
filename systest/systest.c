@@ -42,7 +42,7 @@ asm (                                           \
 #define ystart  20
 #define yperline 10
 
-static volatile uint8_t keycode_buffer;
+static volatile uint8_t keycode_buffer, exit;
 static uint8_t *bpl[2];
 static uint16_t *font;
 
@@ -202,7 +202,10 @@ static unsigned int menu(void)
 {
     uint8_t key;
     char s[80];
-    struct char_row r = { .x = 4, .y = 5, .s = s };
+    struct char_row r = { .x = 4, .y = 3, .s = s };
+
+    clear_screen_rows(0, yres);
+    keycode_buffer = 0;
 
     sprintf(s, "F1 - Ranger RAM (0.5MB Slow RAM Expansion)");
     print_line(&r);
@@ -216,11 +219,18 @@ static unsigned int menu(void)
     sprintf(s, "F4 - Mouse / Joystick Ports");
     print_line(&r);
     r.y++;
+    sprintf(s, "F5 - Audio");
+    print_line(&r);
+    r.y++;
+    sprintf(s, "(ESC + F1 to quit back to menu)");
+    print_line(&r);
+    r.y++;
 
-    while ((key = keycode_buffer - 0x50) >= 4)
+    while ((key = keycode_buffer - 0x50) >= 5)
         continue;
     clear_screen_rows(0, yres);
     keycode_buffer = 0;
+    exit = 0;
     return key;
 }
 
@@ -258,58 +268,70 @@ static void memcheck(void)
      * This uses an inversions algorithm where we try to set an alternating 
      * 0/1 pattern in each memory cell (assuming 1-bit DRAM chips). */
     a = b = 0;
-    for (;;) {
+    while (!exit) {
         /* Start with all 0s. Write 1s to even words. */
         for (p = start; p != end;) {
             *p++ = 0x0000;
         }
+        if (exit) break;
         for (p = start; p != end;) {
             *p++ = 0xffff;
             p++;
         }
+        if (exit) break;
         for (p = start; p != end;) {
             a |= ~*p++;
             a |= *p++;
         }
+        if (exit) break;
 
         /* Start with all 0s. Write 1s to odd words. */
         for (p = start; p != end;) {
             *p++ = 0x0000;
         }
+        if (exit) break;
         for (p = start; p != end;) {
             p++;
             *p++ = 0xffff;
         }
+        if (exit) break;
         for (p = start; p != end;) {
             a |= *p++;
             a |= ~*p++;
         }
+        if (exit) break;
 
         /* Start with all 1s. Write 0s to even words. */
         for (p = start; p != end;) {
             *p++ = 0xffff;
         }
+        if (exit) break;
         for (p = start; p != end;) {
             *p++ = 0x0000;
             p++;
         }
+        if (exit) break;
         for (p = start; p != end;) {
             a |= *p++;
             a |= ~*p++;
         }
+        if (exit) break;
 
         /* Start with all 1s. Write 0s to odd words. */
         for (p = start; p != end;) {
             *p++ = 0xffff;
         }
+        if (exit) break;
         for (p = start; p != end;) {
             p++;
             *p++ = 0x0000;
         }
+        if (exit) break;
         for (p = start; p != end;) {
             a |= ~*p++;
             a |= *p++;
         }
+        if (exit) break;
 
         b++;
         if ((ciaa->pra & 0xc0) != 0xc0) {
@@ -360,11 +382,11 @@ static void kbdcheck(void)
 
     s[0] = '\0';
     keycode_buffer = 0x7f;
-    for (;;) {
+    while (!exit) {
         uint8_t key = keycode_buffer;
-        keycode_buffer = 0x7f;
         if (key == 0x7f)
             continue;
+        keycode_buffer = 0x7f;
         if (r.y == 13) {
             while (r.y >= 2) {
                 sprintf(s, "");
@@ -407,12 +429,12 @@ static void floppycheck(void)
     print_line(&r);
     r.y++;
 
-    for (;;) {
+    while (!exit) {
         sprintf(s, " CIAAPRA=0x%02x: CHG=%u WPR=%u TK0=%u RDY=%u",
                 pra, !!(pra&4), !!(pra&8), !!(pra&16), !!(pra&32));
         print_line(&r);
         old_pra = pra;
-        while ((pra = ciaa->pra) == old_pra) {
+        while (((pra = ciaa->pra) == old_pra) && !exit) {
             wait_line();
             if (frames++ == 250*250) {
                 frames = 0;
@@ -421,6 +443,9 @@ static void floppycheck(void)
             }
         }
     }
+
+    /* Clean up. */
+    motor(0);
 }
 
 static void drawpixel(unsigned int x, unsigned int y, int set)
@@ -480,7 +505,7 @@ static void joymousecheck(void)
     r.x = 0;
     r.y += 3;
 
-    for (i = 0; ; i++) {
+    for (i = 0; !exit; i++) {
 
         if (i & 1) {
             /* Odd frames: print button/direction info */
@@ -511,6 +536,74 @@ static void joymousecheck(void)
         joydat[0] = newjoydat[0];
         joydat[1] = newjoydat[1];
     }
+
+    /* Clean up. */
+    cust->potgo = 0x0000;
+}
+
+static void audiocheck(void)
+{
+    char s[80];
+    struct char_row r = { .x = 8, .y = 3, .s = s };
+    static const uint8_t sine[] = { 0,19,39,57,74,89,102,113,120,125,127 };
+    static int8_t aud[40] __attribute__((__aligned__(2)));
+    uint8_t key, channels = 0;
+    unsigned int i;
+
+    for (i = 0; i < 10; i++) {
+        aud[i] = sine[i];
+        aud[10+i] = sine[10-i];
+        aud[20+i] = -sine[i];
+        aud[30+i] = -sine[10-i];
+    }
+
+    sprintf(s, "-- 500Hz Sine Wave Audio Test --");
+    print_line(&r);
+    r.x += 7;
+    r.y++;
+    sprintf(s, "F1 - Channel 0 (L)");
+    print_line(&r);
+    r.y++;
+    sprintf(s, "F2 - Channel 1 (R)");
+    print_line(&r);
+    r.y++;
+    sprintf(s, "F3 - Channel 2 (R)");
+    print_line(&r);
+    r.y++;
+    sprintf(s, "F4 - Channel 3 (L)");
+    print_line(&r);
+
+    for (i = 0; i < 4; i++) {
+        cust->aud[i].lc.p = aud;
+        cust->aud[i].len = sizeof(aud)/2;
+        cust->aud[i].per = 3546895 / (sizeof(aud) * 500/*HZ*/); /* PAL */
+        cust->aud[i].vol = 0;
+    }
+    cust->dmacon = 0x800f; /* all audio channels */
+
+    r.x -= 2;
+    r.y += 2;
+
+    while (!exit) {
+        sprintf(s, "0=%s 1=%s 2=%s 3=%s",
+                (channels & 1) ? "ON " : "OFF",
+                (channels & 2) ? "ON " : "OFF",
+                (channels & 4) ? "ON " : "OFF",
+                (channels & 8) ? "ON " : "OFF");
+        wait_bos();
+        print_line(&r);
+
+        while ((key = keycode_buffer - 0x50) >= 4)
+            continue;
+        keycode_buffer = 0;
+        channels ^= 1u << key;
+        cust->aud[key].vol = (channels & (1u << key)) ? 64 : 0;
+    }
+
+    /* Clean up. */
+    for (i = 0; i < 4; i++)
+        cust->aud[i].vol = 0;
+    cust->dmacon = 0x000f;
 }
 
 IRQ(CIA_IRQ);
@@ -518,11 +611,15 @@ static void c_CIA_IRQ(void)
 {
     uint16_t i;
     uint8_t icr = ciaa->icr;
+    static uint8_t prev_key;
 
     if (icr & (1u<<3)) { /* SDR finished a byte? */
         /* Grab and decode the keycode. */
         uint8_t keycode = ~ciaa->sdr;
         keycode_buffer = (keycode >> 1) | (keycode << 7); /* ROR 1 */
+        if ((prev_key == 0x45) && (keycode_buffer == 0x50))
+            exit = 1; /* ESC + F1 */
+        prev_key = keycode_buffer;
         /* Handshake over the serial line. */
         ciaa->cra |= 1u<<6; /* start the handshake */
         for (i = 0; i < 3; i++) /* wait ~100us */
@@ -582,22 +679,25 @@ void cstart(void)
     cust->dmacon = 0x81c0; /* enable copper/bitplane/blitter DMA */
     cust->intena = 0x8008; /* enable CIA-A interrupts */
 
-    switch (menu()) {
-    case 0:
-        memcheck();
-        break;
-    case 1:
-        kbdcheck();
-        break;
-    case 2:
-        floppycheck();
-        break;
-    case 3:
-        joymousecheck();
-        break;
+    for (;;) {
+        switch (menu()) {
+        case 0:
+            memcheck();
+            break;
+        case 1:
+            kbdcheck();
+            break;
+        case 2:
+            floppycheck();
+            break;
+        case 3:
+            joymousecheck();
+            break;
+        case 4:
+            audiocheck();
+            break;
+        }
     }
-
-    for (;;);
 }
 
 asm (

@@ -5,7 +5,7 @@ SECTIONS
   GRAPHICS = 0x20000;
   SUPER_SP = 0x80000;
   USER_SP = 0x7fc00;
-  . = 0x7e000;
+  . = 0x70000;
 
   .text : {
     _start = .;
