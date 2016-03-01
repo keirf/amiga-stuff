@@ -45,6 +45,7 @@ asm (                                           \
 static volatile uint8_t keycode_buffer, exit;
 static uint8_t *bpl[2];
 static uint16_t *font;
+static void *alloc_start, *alloc_p;
 
 static uint16_t copper[] = {
     0x008e, 0x4681, /* diwstrt.v = 0x46 */
@@ -64,6 +65,10 @@ static uint16_t copper[] = {
     0x0184, 0x0ddd, /* col02 */
     0x0186, 0x0ddd, /* col03 */
     0x0180, 0x0103, /* col00 */
+    0x008a, 0x0000, /* copjmp2 */
+};
+
+static uint16_t copper_2[] = {
     0x4401, 0xfffe,
     0x0180, 0x0ddd,
     0x4501, 0xfffe,
@@ -79,6 +84,34 @@ struct char_row {
     uint8_t x, y;
     const char *s;
 };
+
+/* Test suite. */
+static void memcheck(void);
+static void kbdcheck(void);
+static void floppycheck(void);
+static void joymousecheck(void);
+static void audiocheck(void);
+static void videocheck(void);
+
+const static struct menu_option {
+    void (*fn)(void);
+    const char *name;
+} menu_option[] = {
+    { memcheck,      "Slow RAM (512kB Trapdoor)" },
+    { kbdcheck,      "Keyboard" },
+    { floppycheck,   "Floppy Drive" },
+    { joymousecheck, "Mouse / Joystick Ports" },
+    { audiocheck,    "Audio" },
+    { videocheck,    "Video" }
+};
+
+/* Allocate chip memory. Automatically freed when sub-test exits. */
+static void *allocmem(unsigned int sz)
+{
+    void *p = alloc_p;
+    alloc_p = (uint8_t *)alloc_p + sz;
+    return p;
+}
 
 /* Wait for blitter idle. */
 static void waitblit(void)
@@ -129,10 +162,12 @@ static void clear_colors(void)
  * First word of each long is foreground, second word is background.
  * Background is computed from foreground. */
 extern uint8_t packfont[];
-static void unpack_font(void)
+static void *unpack_font(void *start)
 {
     uint8_t *p = packfont;
-    uint16_t i, j, x, *q = font;
+    uint16_t i, j, x, *q;
+
+    font = q = start;
 
     /* First 0x20 chars are blank. */
     memset(q, 0, 0x20 * yperline * 4);
@@ -159,6 +194,8 @@ static void unpack_font(void)
 
         q += yperline * 2;
     }
+
+    return q;
 }
 
 static void print_char(uint16_t x, uint16_t y, char c)
@@ -198,9 +235,9 @@ static void print_line(const struct char_row *r)
     }
 }
 
-static unsigned int menu(void)
+static void menu(void)
 {
-    uint8_t key;
+    uint8_t i;
     char s[80];
     struct char_row r = { .x = 4, .y = 0, .s = s };
 
@@ -213,21 +250,11 @@ static unsigned int menu(void)
     sprintf(s, "------------------------------------");
     print_line(&r);
     r.y++;
-    sprintf(s, "F1 - Ranger RAM (0.5MB Slow RAM Expansion)");
-    print_line(&r);
-    r.y++;
-    sprintf(s, "F2 - Keyboard");
-    print_line(&r);
-    r.y++;
-    sprintf(s, "F3 - Floppy Drive");
-    print_line(&r);
-    r.y++;
-    sprintf(s, "F4 - Mouse / Joystick Ports");
-    print_line(&r);
-    r.y++;
-    sprintf(s, "F5 - Audio");
-    print_line(&r);
-    r.y++;
+    for (i = 0; i < ARRAY_SIZE(menu_option); i++) {
+        sprintf(s, "F%u - %s", i+1, menu_option[i].name);
+        print_line(&r);
+        r.y++;
+    }
     sprintf(s, "(ESC + F1 to quit back to menu)");
     print_line(&r);
     r.y++;
@@ -241,12 +268,13 @@ static unsigned int menu(void)
     print_line(&r);
     r.y++;
 
-    while ((key = keycode_buffer - 0x50) >= 5)
+    while ((i = keycode_buffer - 0x50) >= ARRAY_SIZE(menu_option))
         continue;
     clear_screen_rows(0, yres);
     keycode_buffer = 0;
     exit = 0;
-    return key;
+    alloc_p = alloc_start;
+    (*menu_option[i].fn)();
 }
 
 static void memcheck(void)
@@ -568,7 +596,8 @@ static void audiocheck(void)
     char s[80];
     struct char_row r = { .x = 8, .y = 3, .s = s };
     static const uint8_t sine[] = { 0,19,39,57,74,89,102,113,120,125,127 };
-    static int8_t aud[40] __attribute__((__aligned__(2)));
+    const unsigned int nr_samples = 40;
+    int8_t *aud = allocmem(nr_samples);
     uint8_t key, channels = 0;
     unsigned int i;
 
@@ -597,8 +626,8 @@ static void audiocheck(void)
 
     for (i = 0; i < 4; i++) {
         cust->aud[i].lc.p = aud;
-        cust->aud[i].len = sizeof(aud)/2;
-        cust->aud[i].per = 3546895 / (sizeof(aud) * 500/*HZ*/); /* PAL */
+        cust->aud[i].len = nr_samples / 2;
+        cust->aud[i].per = 3546895 / (nr_samples * 500/*HZ*/); /* PAL */
         cust->aud[i].vol = 0;
     }
     cust->dmacon = 0x800f; /* all audio channels */
@@ -626,6 +655,65 @@ static void audiocheck(void)
     for (i = 0; i < 4; i++)
         cust->aud[i].vol = 0;
     cust->dmacon = 0x000f;
+}
+
+static void videocheck(void)
+{
+    uint16_t *p, *cop, wait;
+    unsigned int i, j, k;
+
+    cop = p = allocmem(16384 /* plenty */);
+
+    /* First line of gradient. */
+    wait = 0x4401;
+
+    /* Top border black. */
+    *p++ = 0x0180;
+    *p++ = 0x0000;
+
+    /* Create a vertical gradient of red, green, blue (across screen). 
+     * Alternate white/black markers to indicate gradient changes. */
+    for (i = 0; i < 16; i++) {
+        for (j = 0; j < 10; j++) {
+            /* WAIT line */
+            *p++ = wait;
+            *p++ = 0xfffe;
+            /* color = black or white */
+            *p++ = 0x0180;
+            *p++ = (i & 1) ? 0x0000 : 0x0fff;
+
+            for (k = 0; k < 4; k++) {
+                /* WAIT horizontal */
+                *p++ = wait | (0x50 + k*0x28);
+                *p++ = 0xfffe;
+                /* color = black or white */
+                *p++ = 0x0180;
+                *p++ = (i & 1) ? 0x0000 : 0x0fff;
+                if (k == 3) break;
+                /* color = red, green or blue gradients */
+                *p++ = 0x0180;
+                *p++ = i << (8 - k*4);
+            }
+
+            wait += 1<<8;
+        }
+    }
+
+    /* End of copper list. */
+    *p++ = 0xffff;
+    *p++ = 0xfffe;
+
+    /* Poke the new copper list at a safe point. */
+    wait_bos();
+    cust->cop2lc.p = cop;
+
+    /* All work is done by the copper. Just wait for exit. */
+    while (!exit)
+        continue;
+
+    /* Clean up. */
+    wait_bos();
+    cust->cop2lc.p = copper_2;
 }
 
 IRQ(CIA_IRQ);
@@ -677,7 +765,8 @@ void cstart(void)
     p = GRAPHICS;
     bpl[0] = (uint8_t *)p; p += bplsz;
     bpl[1] = (uint8_t *)p; p += bplsz;
-    font = (uint16_t *)p;
+    p = unpack_font(p);
+    alloc_start = p;
 
     /* Poke bitplane addresses into the copper. */
     for (i = 0; copper[i] != 0x00e0/*bpl1pth*/; i++)
@@ -692,34 +781,16 @@ void cstart(void)
 
     clear_colors();
 
-    unpack_font();
-
     *(volatile void **)0x68 = CIA_IRQ;
     cust->cop1lc.p = copper;
+    cust->cop2lc.p = copper_2;
 
     wait_bos();
     cust->dmacon = 0x81c0; /* enable copper/bitplane/blitter DMA */
     cust->intena = 0x8008; /* enable CIA-A interrupts */
 
-    for (;;) {
-        switch (menu()) {
-        case 0:
-            memcheck();
-            break;
-        case 1:
-            kbdcheck();
-            break;
-        case 2:
-            floppycheck();
-            break;
-        case 3:
-            joymousecheck();
-            break;
-        case 4:
-            audiocheck();
-            break;
-        }
-    }
+    for (;;)
+        menu();
 }
 
 asm (
