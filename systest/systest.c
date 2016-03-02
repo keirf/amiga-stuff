@@ -135,6 +135,62 @@ static void wait_line(void)
         continue;
 }
 
+static void drawpixel(uint8_t *plane, unsigned int x, unsigned int y, int set)
+{
+    uint16_t bpl_off = y * (xres/8) + (x/8);
+    if (!set)
+        plane[bpl_off] &= ~(0x80 >> (x & 7));
+    else
+        plane[bpl_off] |= 0x80 >> (x & 7);
+}
+
+static void draw_hollow_rect(
+    uint8_t *plane,
+    unsigned int x, unsigned int y,
+    unsigned int w, unsigned int h,
+    int set)
+{
+    unsigned int i, j;
+
+    for (i = 0; i < w; i++) {
+        drawpixel(plane, x+i, y, set);
+        drawpixel(plane, x+i, y+h-1, set);
+    }
+
+    for (j = 0; j < h; j++) {
+        drawpixel(plane, x, y+j, set);
+        drawpixel(plane, x+w-1, y+j, set);
+    }
+}
+
+static void draw_filled_rect(
+    uint8_t *plane,
+    unsigned int x, unsigned int y,
+    unsigned int w, unsigned int h,
+    int set)
+{
+    unsigned int i, j;
+    uint8_t b, *p;
+    plane += y * (xres/8) + (x/8);
+    for (j = 0; j < h; j++) {
+        p = plane;
+        plane += xres/8;
+        for (i = x; i < x+w; i = (i+8)&~7) {
+            b = 0xff;
+            y = i&7;
+            if (y) /* first byte in row is partial fill? */
+                b >>= y;
+            y += x+w-i-1;
+            if (y < 7) /* last byte in row is partial fill? */
+                b &= 0xff << (7-y);
+            if (!set)
+                *p++ &= ~b;
+            else
+                *p++ |= b;
+        }
+    }
+}
+
 static void clear_screen_rows(uint16_t y_start, uint16_t y_nr)
 {
     waitblit();
@@ -420,31 +476,217 @@ static void memcheck(void)
     }
 }
 
+/* List of keycaps and their locations, for drawing the keymap. 
+ * Array is indexed by raw keycode. */
+const static struct keycap {
+    uint16_t x, y, w, h; /* box is (x,y) to (x+w,y+h) inclusive */
+    const char name[4];  /* name to print on keycap */
+} keymap[128] = {
+    [0x45] = {   0,   0, 25, 15, "Esc" },
+    [0x50] = {  35,   0, 31, 15, "F1" },
+    [0x51] = {  66,   0, 31, 15, "F2" },
+    [0x52] = {  97,   0, 31, 15, "F3" },
+    [0x53] = { 128,   0, 31, 15, "F4" },
+    [0x54] = { 159,   0, 31, 15, "F5" },
+    [0x55] = { 200,   0, 31, 15, "F6" },
+    [0x56] = { 231,   0, 31, 15, "F7" },
+    [0x57] = { 262,   0, 31, 15, "F8" },
+    [0x58] = { 293,   0, 31, 15, "F9" },
+    [0x59] = { 324,   0, 31, 15, "F10" },
+
+    [0x00] = {   0,  20, 35, 15, "`" },
+    [0x01] = {  35,  20, 25, 15, "1" },
+    [0x02] = {  60,  20, 25, 15, "2" },
+    [0x03] = {  85,  20, 25, 15, "3" },
+    [0x04] = { 110,  20, 25, 15, "4" },
+    [0x05] = { 135,  20, 25, 15, "5" },
+    [0x06] = { 160,  20, 25, 15, "6" },
+    [0x07] = { 185,  20, 25, 15, "7" },
+    [0x08] = { 210,  20, 25, 15, "8" },
+    [0x09] = { 235,  20, 25, 15, "9" },
+    [0x0a] = { 260,  20, 25, 15, "0" },
+    [0x0b] = { 285,  20, 25, 15, "-" },
+    [0x0c] = { 310,  20, 25, 15, "=" },
+    [0x0d] = { 335,  20, 25, 15, "\\" },
+    [0x41] = { 360,  20, 25, 15, "BS" },
+
+    [0x42] = {   0,  35, 47, 15, "Tab" },
+    [0x10] = {  47,  35, 25, 15, "Q" },
+    [0x11] = {  72,  35, 25, 15, "W" },
+    [0x12] = {  97,  35, 25, 15, "E" },
+    [0x13] = { 122,  35, 25, 15, "R" },
+    [0x14] = { 147,  35, 25, 15, "T" },
+    [0x15] = { 172,  35, 25, 15, "Y" },
+    [0x16] = { 197,  35, 25, 15, "U" },
+    [0x17] = { 222,  35, 25, 15, "I" },
+    [0x18] = { 247,  35, 25, 15, "O" },
+    [0x19] = { 272,  35, 25, 15, "P" },
+    [0x1a] = { 297,  35, 25, 15, "[" },
+    [0x1b] = { 322,  35, 25, 15, "]" },
+    [0x44] = { 355,  35, 30, 30, "Ret" },
+
+    [0x63] = {   0,  50, 30, 15, "Ctl" },
+    [0x62] = {  30,  50, 25, 15, "CL" },
+    [0x20] = {  55,  50, 25, 15, "A" },
+    [0x21] = {  80,  50, 25, 15, "S" },
+    [0x22] = { 105,  50, 25, 15, "D" },
+    [0x23] = { 130,  50, 25, 15, "F" },
+    [0x24] = { 155,  50, 25, 15, "G" },
+    [0x25] = { 180,  50, 25, 15, "H" },
+    [0x26] = { 205,  50, 25, 15, "J" },
+    [0x27] = { 230,  50, 25, 15, "K" },
+    [0x28] = { 255,  50, 25, 15, "L" },
+    [0x29] = { 280,  50, 25, 15, ";" },
+    [0x2a] = { 305,  50, 25, 15, "'" },
+    [0x2b] = { 330,  50, 25, 15, " " },
+
+    [0x60] = {   0,  65, 40, 15, "Sh." },
+    [0x30] = {  40,  65, 25, 15, " " },
+    [0x31] = {  65,  65, 25, 15, "Z" },
+    [0x32] = {  90,  65, 25, 15, "X" },
+    [0x33] = { 115,  65, 25, 15, "C" },
+    [0x34] = { 140,  65, 25, 15, "V" },
+    [0x35] = { 165,  65, 25, 15, "B" },
+    [0x36] = { 190,  65, 25, 15, "N" },
+    [0x37] = { 215,  65, 25, 15, "M" },
+    [0x38] = { 240,  65, 25, 15, "," },
+    [0x39] = { 265,  65, 25, 15, "." },
+    [0x3a] = { 290,  65, 25, 15, "/" },
+    [0x61] = { 315,  65, 70, 15, "Sh." },
+
+    [0x64] = {  20,  80, 30, 15, "Alt" },
+    [0x66] = {  50,  80, 30, 15, "Am" },
+    [0x40] = {  80,  80, 220, 15, "Spc" },
+    [0x67] = { 300,  80, 30, 15, "Am" },
+    [0x65] = { 330,  80, 30, 15, "Alt" },
+
+    [0x46] = { 395,  20, 37, 15, "Del" },
+    [0x5f] = { 432,  20, 38, 15, "Hlp" },
+    [0x4c] = { 420,  50, 25, 15, "^" },
+    [0x4f] = { 395,  65, 25, 15, "<" },
+    [0x4d] = { 420,  65, 25, 15, "\\/" },
+    [0x4e] = { 445,  65, 25, 15, ">" },
+
+    [0x5a] = { 480,  20, 25, 15, "(" },
+    [0x5b] = { 505,  20, 25, 15, ")" },
+    [0x5c] = { 530,  20, 25, 15, "/" },
+    [0x5d] = { 555,  20, 25, 15, "*" },
+    [0x3d] = { 480,  35, 25, 15, "7" },
+    [0x3e] = { 505,  35, 25, 15, "8" },
+    [0x3f] = { 530,  35, 25, 15, "9" },
+    [0x4a] = { 555,  35, 25, 15, "-" },
+    [0x2d] = { 480,  50, 25, 15, "4" },
+    [0x2e] = { 505,  50, 25, 15, "5" },
+    [0x2f] = { 530,  50, 25, 15, "6" },
+    [0x5e] = { 555,  50, 25, 15, "+" },
+    [0x1d] = { 480,  65, 25, 15, "1" },
+    [0x1e] = { 505,  65, 25, 15, "2" },
+    [0x1f] = { 530,  65, 25, 15, "3" },
+    [0x43] = { 555,  65, 25, 30, "En" },
+    [0x0f] = { 480,  80, 50, 15, "0" },
+    [0x3c] = { 530,  80, 25, 15, "." },
+};
+
+/* Draws a plain 8x8 character straight into bitplane 1. */
+static void drawkbch(unsigned int x, unsigned int y, uint8_t c)
+{
+    uint16_t bpl_off = y * (xres/8) + (x/8);
+    uint8_t d, *p = &packfont[8*(c-0x20)];
+    unsigned int i;
+    for (i = 0; i < 8; i++) {
+        d = *p++;
+        bpl[1][bpl_off] |= d >> (x&7);
+        if (x & 7)
+            bpl[1][bpl_off+1] |= d << (8-(x&7));
+        bpl_off += xres/8;
+    }
+}
+
+/* Reverse-video effect for highlighting keypresses in the keymap. */
+static uint16_t copper_kbd[] = {
+    /* reverse video */
+    0x0182, 0x0ddd, /* col01 = foreground */
+    0x0186, 0x0222, /* col03 = shadow */
+    0x4401, 0xfffe,
+    0x0180, 0x0ddd,
+    0x4501, 0xfffe,
+    0x0180, 0x0402,
+    0xbd01, 0xfffe,
+    /* normal video */
+    0x0182, 0x0222, /* col01 = shadow */
+    0x0186, 0x0ddd, /* col03 = foreground */
+    0xf001, 0xfffe,
+    0x0180, 0x0ddd,
+    0xf101, 0xfffe,
+    0x0180, 0x0103,
+    0xffff, 0xfffe,
+};
+
 static void kbdcheck(void)
 {
     char s[80], num[5];
-    struct char_row r = { .x = 8, .y = 1, .s = s };
-    unsigned int i = 0;
+    struct char_row r = { .x = 8, .y = 10, .s = s };
+    const struct keycap *cap;
+    unsigned int i, l, x, y;
 
-    sprintf(s, "Keyboard Test:");
+    /* Poke the new copper list at a safe point. */
+    wait_bos();
+    cust->cop2lc.p = copper_kbd;
+
+    /* Draw the keymap. This resides in bitplane 1. We then draw filled boxes
+     * in bitplane 0 to indicate keys which are currently pressed. The reverse
+     * video effect causes the key to be highlighted with the key name still
+     * visible. */
+    draw_hollow_rect(bpl[1], 20, 10, 601, 106, 1);
+    for (i = 0; i < ARRAY_SIZE(keymap); i++) {
+        cap = &keymap[i];
+        if (!cap->h)
+            continue;
+        /* Draw the outline rectangle. */
+        x = 30 + cap->x;
+        y = 15 + cap->y;
+        draw_hollow_rect(bpl[1], x, y, cap->w+1, cap->h+1, 1);
+        if (i == 0x44) /* Return key is not a rectangle. Bodge it.*/
+            draw_hollow_rect(bpl[1], x, y+1, 1, 14, 0);
+        /* Drawn the name in the centre of the outline rectangle. */
+        for (l = 0; cap->name[l]; l++)
+            continue;
+        x += (cap->w+1) / 2;
+        x -= l * 4;
+        y += (cap->h+1) / 2;
+        y -= 4;
+        for (l = 0; cap->name[l]; l++) {
+            drawkbch(x, y, cap->name[l]);
+            x += 8;
+        }
+    }
+
+    /* Raw keycodes are displayed in a list at the bottom of the screen. */
+    sprintf(s, "Raw Keycodes:");
     print_line(&r);
     r.y++;
 
+    i = 0;
     s[0] = '\0';
     keycode_buffer = 0x7f;
     while (!exit) {
+        /* Wait for a key. Latch it. */
         uint8_t key = keycode_buffer;
         if (key == 0x7f)
             continue;
         keycode_buffer = 0x7f;
-        if (r.y == 13) {
-            while (r.y >= 2) {
+
+        /* Out of list space. Clear the keycode-list area. */
+        if (r.y == 14) {
+            while (r.y >= 11) {
                 sprintf(s, "");
                 print_line(&r);
                 r.y--;
             }
-            r.y = 2;
+            r.y = 11;
         }
+
+        /* Append the new keycode to the current line. */
         sprintf(num, "%02x ", key);
         strcat(s, num);
         print_line(&r);
@@ -453,7 +695,21 @@ static void kbdcheck(void)
             s[0] = '\0';
             r.y++;
         }
+
+        /* Find the keycap (if any) and highlight as necessary. */
+        cap = &keymap[key & 0x7f];
+        if (!cap->h)
+            continue;
+        x = 30 + cap->x;
+        y = 15 + cap->y;
+        draw_filled_rect(bpl[0], x+1, y+1, cap->w-1, cap->h-1, !(key & 0x80));
+        if ((key & 0x7f) == 0x44) /* Return needs a bodge.*/
+            draw_filled_rect(bpl[0], x-7, y+1, 8, 14, !(key & 0x80));
     }
+
+    /* Clean up. */
+    wait_bos();
+    cust->cop2lc.p = copper_2;
 }
 
 static void motor(int on)
@@ -496,23 +752,6 @@ static void floppycheck(void)
 
     /* Clean up. */
     motor(0);
-}
-
-static void drawpixel(unsigned int x, unsigned int y, int set)
-{
-    uint16_t bpl_off = y * (xres/8) + (x/8);
-    if (!set)
-        bpl[1][bpl_off] &= ~(0x80 >> (x & 7));
-    else
-        bpl[1][bpl_off] |= 0x80 >> (x & 7);
-}
-
-static void drawbox(unsigned int x, unsigned int y, int set)
-{
-    unsigned int i, j;
-    for (i = 0; i < 2; i++)
-        for (j = 0; j < 2; j++)
-            drawpixel(x+i, y+j, set);
 }
 
 static void printport(char *s, unsigned int port)
@@ -576,12 +815,16 @@ static void joymousecheck(void)
         /* Wait for end of display, then start screen updates. */
         wait_bos();
         print_line(&r); /* sloooow, allows only one per vbl */
-        drawbox(coords[0][0] + 100, coords[0][1]/2 + 80, 0);
-        drawbox(coords[1][0] + 400, coords[1][1]/2 + 80, 0);
+        draw_filled_rect(bpl[1], coords[0][0] + 100, coords[0][1]/2 + 80,
+                         4, 2, 0);
+        draw_filled_rect(bpl[1], coords[1][0] + 400, coords[1][1]/2 + 80,
+                         4, 2, 0);
         updatecoords(joydat[0], newjoydat[0], coords[0]);
         updatecoords(joydat[1], newjoydat[1], coords[1]);
-        drawbox(coords[0][0] + 100, coords[0][1]/2 + 80, 1);
-        drawbox(coords[1][0] + 400, coords[1][1]/2 + 80, 1);
+        draw_filled_rect(bpl[1], coords[0][0] + 100, coords[0][1]/2 + 80,
+                         4, 2, 1);
+        draw_filled_rect(bpl[1], coords[1][0] + 400, coords[1][1]/2 + 80,
+                         4, 2, 1);
 
         joydat[0] = newjoydat[0];
         joydat[1] = newjoydat[1];
