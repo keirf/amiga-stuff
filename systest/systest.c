@@ -2,9 +2,12 @@
  * systest.c
  * 
  * System Tests:
- *  - Slow/Ranger RAM detection and check.
- *  - Keyboard test.
- *  - Disk test.
+ *  - Slow RAM Detection and Check
+ *  - Keyboard
+ *  - Floppy Drive
+ *  - Joystick / Mouse
+ *  - Audio
+ *  - Video
  * 
  * Written & released by Keir Fraser <keir.xen@gmail.com>
  * 
@@ -311,7 +314,7 @@ static void menu(void)
         print_line(&r);
         r.y++;
     }
-    sprintf(s, "(ESC + F1 to quit back to menu)");
+    sprintf(s, "(Ctrl + L.Alt to quit back to menu)");
     print_line(&r);
     r.y++;
     sprintf(s, "------------------------------------");
@@ -358,7 +361,7 @@ static void memcheck(void)
     print_line(&r);
     r.y++;
 
-    sprintf(s, "Ranger RAM%s detected", (a != b) ? " *NOT*" : "");
+    sprintf(s, "Slow RAM%s detected", (a != b) ? " *NOT*" : "");
     print_line(&r);
     r.y++;
 
@@ -887,7 +890,7 @@ static void audiocheck(void)
         wait_bos();
         print_line(&r);
 
-        while ((key = keycode_buffer - 0x50) >= 4)
+        if ((key = keycode_buffer - 0x50) >= 4)
             continue;
         keycode_buffer = 0;
         channels ^= 1u << key;
@@ -970,8 +973,8 @@ static void c_CIA_IRQ(void)
         /* Grab and decode the keycode. */
         uint8_t keycode = ~ciaa->sdr;
         keycode_buffer = (keycode >> 1) | (keycode << 7); /* ROR 1 */
-        if ((prev_key == 0x45) && (keycode_buffer == 0x50))
-            exit = 1; /* ESC + F1 */
+        if ((prev_key == 0x63) && (keycode_buffer == 0x64))
+            exit = 1; /* Ctrl + L.Alt */
         prev_key = keycode_buffer;
         /* Handshake over the serial line. */
         ciaa->cra |= 1u<<6; /* start the handshake */
