@@ -1,5 +1,6 @@
 OBJS += ../base/bootblock.o
 OBJS += ../base/util.o
+OBJS += disk.o
 OBJS += systest.o
 
 include ../base/Rules.mk

@@ -22,6 +22,11 @@ static volatile struct amiga_cia * const ciaa =
 static volatile struct amiga_cia * const ciab =
     (struct amiga_cia *)0x0bfd000;
 
+int read_tracks(void *mfmbuf, void *dest, unsigned int start_track,
+                unsigned int nr_tracks);
+void write_track(void *mfmbuf, unsigned int track);
+void mfm_encode_track(void *mfmbuf, unsigned int track);
+
 /* Space for bitplanes and unpacked font. */
 extern char GRAPHICS[];
 
@@ -715,46 +720,117 @@ static void kbdcheck(void)
     cust->cop2lc.p = copper_2;
 }
 
-static void motor(int on)
+/* Select @drv and set motor on or off. */
+static void drive_select_motor(unsigned int drv, int on)
 {
-    ciab->prb |= 0xf8;
+    ciab->prb |= 0xf8; /* motor-off, deselect all */
     if (on)
-        ciab->prb &= 0x7f;
-    ciab->prb &= 0xf7;
-    wait_line();
+        ciab->prb &= 0x7f; /* motor-on */
+    ciab->prb &= ~(0x08 << drv); /* select drv */
+}
+
+/* Wait for DSKRDY, or 500ms to pass, whichever is sooner. */
+static void drive_wait_ready(void)
+{
+    unsigned int i;
+    /* 8000 * 63us ~= 500ms */
+    for (i = 0; i < 8000; i++) {
+        if (!(ciaa->pra & (1u<<5)))
+            break; /* READY */
+        wait_line(); /* 63us */
+    }
+}
+
+static uint32_t drive_id(unsigned int drv)
+{
+    uint32_t id = 0;
+    uint8_t mask = 0x08 << drv;
+    unsigned int i;
+
+    ciab->prb |= 0xf8;  /* motor-off, deselect all */
+    ciab->prb &= 0x7f;  /* 1. MTRXD low */
+    ciab->prb &= ~mask; /* 2. SELxB low */
+    ciab->prb |= mask;  /* 3. SELxB high */
+    ciab->prb |= 0x80;  /* 4. MTRXD high */
+    ciab->prb &= ~mask; /* 5. SELxB low */
+    ciab->prb |= mask;  /* 6. SELxB high */
+    for (i = 0; i < 32; i++) {
+        ciab->prb &= ~mask; /* 7. SELxB low */
+        id = (id<<1) | ((ciaa->pra>>5)&1); /* 8. Read and save state of RDY */
+        ciab->prb |= mask;  /* 9. SELxB high */
+    }
+    return ~id;
 }
 
 static void floppycheck(void)
 {
     char s[80];
     struct char_row r = { .x = 8, .y = 1, .s = s };
-    uint8_t pra, old_pra;
-    int on = 0, frames = 0;
+    uint8_t pra, old_pra, key;
+    unsigned int i, on, drv = 0;
 
-    motor(on);
-    pra = ciaa->pra;
-
-    sprintf(s, "-- DF0: Test --");
+    sprintf(s, "-- Floppy IDs --");
     print_line(&r);
     r.y++;
 
-    while (!exit) {
-        sprintf(s, " CIAAPRA=0x%02x: CHG=%u WPR=%u TK0=%u RDY=%u",
-                pra, !!(pra&4), !!(pra&8), !!(pra&16), !!(pra&32));
+    for (i = 0; i < 4; i++) {
+        uint32_t id = drive_id(i);
+        sprintf(s, "DF%u: %08x (%s)", i, id,
+                (id == -!!i) ? "Present" :
+                (id ==  -!i) ? "Not Present" :
+                "???");
         print_line(&r);
-        old_pra = pra;
-        while (((pra = ciaa->pra) == old_pra) && !exit) {
-            wait_line();
-            if (frames++ == 250*250) {
-                frames = 0;
-                on = !on;
-                motor(on);
+        r.y++;
+    }
+    r.y++;
+
+drive_changed:
+    while (!exit) {
+        on = 0;
+        drive_select_motor(drv, on);
+        pra = ciaa->pra;
+        sprintf(s, "-- DF%u: Signal Test --", drv);
+        print_line(&r);
+        r.y += 3;
+        sprintf(s, "F1-F4: DF0-DF3; F5: Motor On/Off");
+        print_line(&r);
+        r.y -= 2;
+
+        while (!exit) {
+            sprintf(s, "MTR=%s CIAAPRA=0x%02x (CHG=%u WPR=%u TK0=%u RDY=%u)",
+                    on ? "On" : "Off",
+                    pra, !!(pra&4), !!(pra&8), !!(pra&16), !!(pra&32));
+            print_line(&r);
+            old_pra = pra;
+            while (((pra = ciaa->pra) == old_pra) && !exit) {
+                if ((key = keycode_buffer - 0x50) >= 6)
+                    continue;
+                keycode_buffer = 0;
+                if (key < 4) {
+                    drive_select_motor(drv, 0);
+                    drv = key;
+                    r.y--;
+                    goto drive_changed;
+                } else if (key == 4) {
+                    on = !on;
+                    drive_select_motor(drv, on);
+                }
+                break;
             }
         }
     }
 
     /* Clean up. */
-    motor(0);
+    drive_select_motor(drv, 0);
+
+    if (0) { /* XXX read/write test stuff*/
+        while (read_tracks((void *)(unsigned long)0x12345678,
+                           (void *)(unsigned long)0x87654321,
+                           0xabcd, 0xdcba))
+            continue;
+        drive_wait_ready();
+    }
+
 }
 
 static void printport(char *s, unsigned int port)
