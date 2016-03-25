@@ -50,6 +50,7 @@ asm (                                           \
 #define ystart  20
 #define yperline 10
 
+static volatile unsigned int disk_index;
 static volatile uint8_t keycode_buffer, exit;
 static uint8_t *bpl[2];
 static uint16_t *font;
@@ -766,8 +767,8 @@ static void floppycheck(void)
 {
     char s[80];
     struct char_row r = { .x = 8, .y = 1, .s = s };
-    uint8_t pra, old_pra, key;
-    unsigned int i, on, drv = 0;
+    uint8_t pra, old_pra, key = 0;
+    unsigned int i, on = 0, drv = 0, old_disk_index;
 
     sprintf(s, "-- Floppy IDs --");
     print_line(&r);
@@ -786,7 +787,6 @@ static void floppycheck(void)
 
 drive_changed:
     while (!exit) {
-        on = 0;
         drive_select_motor(drv, on);
         pra = ciaa->pra;
         sprintf(s, "-- DF%u: Signal Test --", drv);
@@ -796,26 +796,40 @@ drive_changed:
         print_line(&r);
         r.y -= 2;
 
+        old_disk_index = disk_index = 0;
+        old_pra = key = 1;
         while (!exit) {
-            sprintf(s, "MTR=%s CIAAPRA=0x%02x (CHG=%u WPR=%u TK0=%u RDY=%u)",
-                    on ? "On" : "Off",
-                    pra, !!(pra&4), !!(pra&8), !!(pra&16), !!(pra&32));
-            print_line(&r);
-            old_pra = pra;
-            while (((pra = ciaa->pra) == old_pra) && !exit) {
-                if ((key = keycode_buffer - 0x50) >= 6)
-                    continue;
-                keycode_buffer = 0;
-                if (key < 4) {
-                    drive_select_motor(drv, 0);
-                    drv = key;
-                    r.y--;
-                    goto drive_changed;
-                } else if (key == 4) {
-                    on = !on;
-                    drive_select_motor(drv, on);
-                }
-                break;
+            if (((pra = ciaa->pra) != old_pra) || key) {
+                sprintf(s, "MTR=%s CIAAPRA=0x%02x (%s %s %s %s)",
+                        on ? "On" : "Off",
+                        pra,
+                        !(pra&4)?"CHG":"",
+                        !(pra&8)?"WPR":"",
+                        !(pra&16)?"TK0":"",
+                        !(pra&32)?"RDY":"");
+                print_line(&r);
+                old_pra = pra;
+            }
+            if ((old_disk_index != disk_index) || key) {
+                sprintf(s, "%u Index Pulses", disk_index);
+                r.y++;
+                print_line(&r);
+                r.y--;
+                old_disk_index = disk_index;
+            }
+            if ((key = keycode_buffer) == 0)
+                continue;
+            keycode_buffer = 0;
+            if ((key >= 0x50) && (key <= 0x53)) {
+                drive_select_motor(drv, 0);
+                drv = key - 0x50;
+                r.y--;
+                goto drive_changed;
+            } else if (key == 0x54) {
+                on = !on;
+                drive_select_motor(drv, on);
+            } else {
+                key = 0;
             }
         }
     }
@@ -1038,8 +1052,8 @@ static void videocheck(void)
     cust->cop2lc.p = copper_2;
 }
 
-IRQ(CIA_IRQ);
-static void c_CIA_IRQ(void)
+IRQ(CIAA_IRQ);
+static void c_CIAA_IRQ(void)
 {
     uint16_t i;
     uint8_t icr = ciaa->icr;
@@ -1068,6 +1082,24 @@ static void c_CIA_IRQ(void)
     cust->intreq = 1u<<3;
 }
 
+IRQ(CIAB_IRQ);
+static void c_CIAB_IRQ(void)
+{
+    uint8_t icr = ciab->icr;
+
+    if (icr & (1u<<4)) { /* FLAG (disk index)? */
+        disk_index++;
+    }
+
+    /* NB. Clear intreq.ciab *after* reading/clearing ciab.icr else we get a 
+     * spurious extra interrupt, since intreq.ciab latches the level of CIAB 
+     * INT and hence would simply become set again immediately after we clear 
+     * it. For this same reason (latches level not edge) it is *not* racey to 
+     * clear intreq.ciab second. Indeed AmigaOS does the same (checked 
+     * Kickstart 3.1). */
+    cust->intreq = 1u<<13;
+}
+
 void cstart(void)
 {
     uint16_t i;
@@ -1076,6 +1108,10 @@ void cstart(void)
     /* Set up CIAA ICR. We only care about keyboard. */
     ciaa->icr = 0x7f;
     ciaa->icr = 0x88;
+
+    /* Set up CIAB ICR. We only care about FLAG line (disk index). */
+    ciab->icr = 0x7f;
+    ciab->icr = 0x90;
 
     /* Enable blitter DMA. */
     cust->dmacon = 0x8040;
@@ -1103,13 +1139,14 @@ void cstart(void)
 
     clear_colors();
 
-    *(volatile void **)0x68 = CIA_IRQ;
+    *(volatile void **)0x68 = CIAA_IRQ;
+    *(volatile void **)0x78 = CIAB_IRQ;
     cust->cop1lc.p = copper;
     cust->cop2lc.p = copper_2;
 
     wait_bos();
     cust->dmacon = 0x81c0; /* enable copper/bitplane/blitter DMA */
-    cust->intena = 0x8008; /* enable CIA-A interrupts */
+    cust->intena = 0xa008; /* enable CIA-A/CIA-B interrupts */
 
     for (;;)
         menu();
