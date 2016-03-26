@@ -15,6 +15,8 @@
  * See the file COPYING for more details, or visit <http://unlicense.org>.
  */
 
+static volatile struct m68k_vector_table * m68k_vec =
+    (struct m68k_vector_table *)0x0;
 static volatile struct amiga_custom * const cust =
     (struct amiga_custom *)0xdff000;
 static volatile struct amiga_cia * const ciaa =
@@ -1139,8 +1141,8 @@ void cstart(void)
 
     clear_colors();
 
-    *(volatile void **)0x68 = CIAA_IRQ;
-    *(volatile void **)0x78 = CIAB_IRQ;
+    m68k_vec->level2_autovector.p = CIAA_IRQ;
+    m68k_vec->level6_autovector.p = CIAB_IRQ;
     cust->cop1lc.p = copper;
     cust->cop2lc.p = copper_2;
 

@@ -1,3 +1,7 @@
+# GNU Make cross-dev build rules
+# My own cross-dev setup is binutils-2.24 + gcc-4.9.2
+# Target is m68k-unknown-elf
+
 TOOL_PREFIX = m68k-unknown-elf-
 CC = $(TOOL_PREFIX)gcc
 OBJCOPY = $(TOOL_PREFIX)objcopy
@@ -10,7 +14,7 @@ FLAGS  = -Os -nostdlib -std=gnu99 -iquote ../base/inc
 FLAGS += -Wall -Werror -Wno-format -Wdeclaration-after-statement
 FLAGS += -Wstrict-prototypes -Wredundant-decls -Wnested-externs
 FLAGS += -fno-common -fno-exceptions -fno-strict-aliasing -fomit-frame-pointer
-FLAGS += -m68000 -msoft-float
+FLAGS += -fno-delete-null-pointer-checks -m68000 -msoft-float
 
 FLAGS += -MMD -MF .$(@F).d
 DEPS = .*.d

@@ -15,6 +15,7 @@
 
 #include "types.h"
 #include "util.h"
+#include "m68k.h"
 #include "amiga_hw.h"
 
 /*
