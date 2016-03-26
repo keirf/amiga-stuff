@@ -58,6 +58,7 @@ int vsprintf(char *str, const char *format, va_list ap)
 int sprintf(char *str, const char *format, ...)
     __attribute__ ((format (printf, 2, 0)));
 
+/* Division 32:16 -> 32q:16r */
 #define do_div(x, y) ({                                             \
     uint32_t _x = (x), _y = (y), _q, _r;                            \
     asm volatile (                                                  \

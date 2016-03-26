@@ -1,5 +1,5 @@
 #define load_off  0x0
-#define load_size 0x2c00
+#define load_size 0x2c00*2
 
         .section .text.init
         .global start

@@ -52,8 +52,24 @@ asm (                                           \
 #define ystart  20
 #define yperline 10
 
-static volatile unsigned int disk_index;
+/* PAL/NTSC */
+static int is_pal;
+static unsigned int cpu_hz;
+#define PAL_HZ 7093790
+#define NTSC_HZ 7159090
+
+/* VBL IRQ: 16- and 32-bit timestamps, and VBL counter. */
+static volatile uint32_t stamp32;
+static volatile uint16_t stamp16;
+static volatile unsigned int vblank_count;
+
+/* CIAA IRQ: Keyboard variables. */
 static volatile uint8_t keycode_buffer, exit;
+
+/* CIAB IRQ: FLAG (disk index) pulse counter. */
+static volatile unsigned int disk_index_count;
+static volatile uint32_t disk_index_time, disk_index_period;
+
 static uint8_t *bpl[2];
 static uint16_t *font;
 static void *alloc_start, *alloc_p;
@@ -122,6 +138,91 @@ static void *allocmem(unsigned int sz)
     void *p = alloc_p;
     alloc_p = (uint8_t *)alloc_p + sz;
     return p;
+}
+
+static uint32_t div32(uint32_t dividend, uint16_t divisor)
+{
+    do_div(dividend, divisor);
+    return dividend;
+}
+
+static uint16_t get_ciaatb(void)
+{
+    uint8_t hi, lo;
+
+    /* Loop to get consistent current CIA timer value. */
+    do {
+        hi = ciaa->tbhi;
+        lo = ciaa->tblo;
+    } while (hi != ciaa->tbhi);
+
+    return ((uint16_t)hi << 8) | lo;
+}
+
+static uint32_t get_time(void)
+{
+    uint32_t _stamp32;
+    uint16_t _stamp16;
+
+    /* Loop to get consistent timestamps from the VBL IRQ handler. */
+    do {
+        _stamp32 = stamp32;
+        _stamp16 = stamp16;
+    } while (_stamp32 != stamp32);
+
+    return -(_stamp32 - (uint16_t)(_stamp16 - get_ciaatb()));
+}
+
+/* Convert CIA ticks (tick/10cy) into a printable string. */
+static void ticktostr(uint32_t ticks, char *s)
+{
+    uint16_t ticks_per_ms = div32(cpu_hz, 10000);
+    uint32_t sec, ms, us;
+
+    if (ticks == (uint16_t)ticks) {
+        us = div32(ticks<<16, ticks_per_ms);
+        if (us != (uint16_t)us) {
+            ms = us >> 16;
+            us = ((uint16_t)us * 1000u) >> 16;
+            sprintf(s, "%u.%03ums", ms, us);
+        } else {
+            us = (us * 1000u) >> 16;
+            sprintf(s, "%uus", us);
+        }
+    } else {
+        ms = ticks;
+        us = do_div(ms, ticks_per_ms);
+        if (ms > 1000) {
+            sec = ms;
+            ms = do_div(sec, 1000);
+            sprintf(s, "%u.%us", sec, (uint16_t)ms/100);
+        } else {
+            us = ((uint16_t)div32(us<<16, ticks_per_ms) * 1000u) >> 16;
+            sprintf(s, "%u.%ums", ms, (uint16_t)us/100);
+        }
+    }
+}
+
+static int pal_detect(void)
+{
+    uint32_t ticks;
+
+    /* Synchronise to Vblank. */
+    vblank_count = 0;
+    while (!vblank_count)
+        continue;
+    ticks = get_time();
+
+    /* Wait 10 blanks. */
+    while (vblank_count < 11)
+        continue;
+    ticks = get_time() - ticks;
+
+    /* Expected tick values: 
+     *  NTSC: 10 * (715909 / 60) = 119318
+     *  PAL:  10 * (709379 / 50) = 141875 
+     * Use 130,000 as mid-point to discriminate.. */
+    return ticks > 130000;
 }
 
 /* Wait for blitter idle. */
@@ -325,7 +426,8 @@ static void menu(void)
     sprintf(s, "(Ctrl + L.Alt to quit back to menu)");
     print_line(&r);
     r.y++;
-    sprintf(s, "------------------------------------");
+    sprintf(s, "----------- System: %s-----------",
+            is_pal ? "PAL -" : "NTSC ");
     print_line(&r);
     r.y++;
     sprintf(s, "https://github.com/keirf/Amiga-Stuff");
@@ -769,8 +871,10 @@ static void floppycheck(void)
 {
     char s[80];
     struct char_row r = { .x = 8, .y = 1, .s = s };
-    uint8_t pra, old_pra, key = 0;
-    unsigned int i, on = 0, drv = 0, old_disk_index;
+    uint8_t pra, old_pra, key;
+    unsigned int i, on = 0, drv = 0, old_disk_index_count;
+    uint32_t rdy_delay, mtr_time;
+    int rdy_changed;
 
     sprintf(s, "-- Floppy IDs --");
     print_line(&r);
@@ -789,7 +893,6 @@ static void floppycheck(void)
 
 drive_changed:
     while (!exit) {
-        drive_select_motor(drv, on);
         pra = ciaa->pra;
         sprintf(s, "-- DF%u: Signal Test --", drv);
         print_line(&r);
@@ -798,10 +901,17 @@ drive_changed:
         print_line(&r);
         r.y -= 2;
 
-        old_disk_index = disk_index = 0;
-        old_pra = key = 1;
+        drive_select_motor(drv, on);
+        old_pra = ciaa->pra;
+        mtr_time = get_time();
+        rdy_delay = rdy_changed = 0;
+        old_disk_index_count = disk_index_count = 0;
+        key = 1; /* force print */
         while (!exit) {
             if (((pra = ciaa->pra) != old_pra) || key) {
+                rdy_changed = !!((old_pra ^ pra) & 32);
+                if (rdy_changed)
+                    rdy_delay = get_time() - mtr_time;
                 sprintf(s, "MTR=%s CIAAPRA=0x%02x (%s %s %s %s)",
                         on ? "On" : "Off",
                         pra,
@@ -812,12 +922,19 @@ drive_changed:
                 print_line(&r);
                 old_pra = pra;
             }
-            if ((old_disk_index != disk_index) || key) {
-                sprintf(s, "%u Index Pulses", disk_index);
+            if ((old_disk_index_count != disk_index_count)
+                || rdy_changed || key) {
+                char rdystr[10], idxstr[10];
+                ticktostr(disk_index_period, idxstr);
+                ticktostr(rdy_delay, rdystr);
+                sprintf(s, "%u Index Pulses (period %s); MTR%s->RDY%u %s",
+                        disk_index_count, idxstr, on?"On":"Off",
+                        !!(old_pra & 32), rdystr);
                 r.y++;
                 print_line(&r);
                 r.y--;
-                old_disk_index = disk_index;
+                old_disk_index_count = disk_index_count;
+                rdy_changed = 0;
             }
             if ((key = keycode_buffer) == 0)
                 continue;
@@ -830,6 +947,9 @@ drive_changed:
             } else if (key == 0x54) {
                 on = !on;
                 drive_select_motor(drv, on);
+                old_pra = ciaa->pra;
+                mtr_time = get_time();
+                rdy_delay = 0;
             } else {
                 key = 0;
             }
@@ -937,6 +1057,7 @@ static void audiocheck(void)
     const unsigned int nr_samples = 40;
     int8_t *aud = allocmem(nr_samples);
     uint8_t key, channels = 0;
+    uint32_t period;
     unsigned int i;
 
     for (i = 0; i < 10; i++) {
@@ -962,10 +1083,13 @@ static void audiocheck(void)
     sprintf(s, "F4 - Channel 3 (L)");
     print_line(&r);
 
+    /* period = cpu_hz / (2 * nr_samples * frequency) */
+    period = div32(div32(div32(cpu_hz, 2), nr_samples), 500/*Hz*/);
+
     for (i = 0; i < 4; i++) {
         cust->aud[i].lc.p = aud;
         cust->aud[i].len = nr_samples / 2;
-        cust->aud[i].per = 3546895 / (nr_samples * 500/*HZ*/); /* PAL */
+        cust->aud[i].per = (uint16_t)period;
         cust->aud[i].vol = 0;
     }
     cust->dmacon = 0x800f; /* all audio channels */
@@ -1090,7 +1214,10 @@ static void c_CIAB_IRQ(void)
     uint8_t icr = ciab->icr;
 
     if (icr & (1u<<4)) { /* FLAG (disk index)? */
-        disk_index++;
+        uint32_t time = get_time();
+        disk_index_count++;
+        disk_index_period = time - disk_index_time;
+        disk_index_time = time;
     }
 
     /* NB. Clear intreq.ciab *after* reading/clearing ciab.icr else we get a 
@@ -1100,6 +1227,19 @@ static void c_CIAB_IRQ(void)
      * clear intreq.ciab second. Indeed AmigaOS does the same (checked 
      * Kickstart 3.1). */
     cust->intreq = 1u<<13;
+}
+
+IRQ(VBLANK_IRQ);
+static void c_VBLANK_IRQ(void)
+{
+    uint16_t cur16 = get_ciaatb();
+
+    vblank_count++;
+
+    stamp32 -= (uint16_t)(stamp16 - cur16);
+    stamp16 = cur16;
+
+    cust->intreq = 1u<<5;
 }
 
 void cstart(void)
@@ -1143,12 +1283,21 @@ void cstart(void)
 
     m68k_vec->level2_autovector.p = CIAA_IRQ;
     m68k_vec->level6_autovector.p = CIAB_IRQ;
+    m68k_vec->level3_autovector.p = VBLANK_IRQ;
     cust->cop1lc.p = copper;
     cust->cop2lc.p = copper_2;
 
     wait_bos();
     cust->dmacon = 0x81c0; /* enable copper/bitplane/blitter DMA */
-    cust->intena = 0xa008; /* enable CIA-A/CIA-B interrupts */
+    cust->intena = 0xa028; /* enable CIA-A/CIA-B/VBLANK interrupts */
+
+    /* Start CIAA Timer B in continuous mode. */
+    ciaa->tblo = 0xff;
+    ciaa->tbhi = 0xff;
+    ciaa->crb = 0x11;
+
+    is_pal = pal_detect();
+    cpu_hz = is_pal ? PAL_HZ : NTSC_HZ;
 
     for (;;)
         menu();
