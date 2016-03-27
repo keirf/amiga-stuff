@@ -173,6 +173,17 @@ static uint32_t get_time(void)
     return -(_stamp32 - (uint16_t)(_stamp16 - get_ciaatb()));
 }
 
+static void delay_ms(unsigned int ms)
+{
+    uint16_t ticks_per_ms = div32(cpu_hz, 10000);
+    uint32_t s, t;
+
+    s = get_time();
+    do {
+        t = div32(get_time() - s, ticks_per_ms);
+    } while (t < ms);
+}
+
 /* Convert CIA ticks (tick/10cy) into a printable string. */
 static void ticktostr(uint32_t ticks, char *s)
 {
@@ -826,12 +837,14 @@ static void kbdcheck(void)
 }
 
 /* Select @drv and set motor on or off. */
+static int cur_cyl;
 static void drive_select_motor(unsigned int drv, int on)
 {
-    ciab->prb |= 0xf8; /* motor-off, deselect all */
+    ciab->prb = 0xff; /* motor-off, deselect all */
     if (on)
         ciab->prb &= 0x7f; /* motor-on */
     ciab->prb &= ~(0x08 << drv); /* select drv */
+    cur_cyl = -1;
 }
 
 /* Wait for DSKRDY, or 500ms to pass, whichever is sooner. */
@@ -843,6 +856,68 @@ static void drive_wait_ready(void)
         if (!(ciaa->pra & (1u<<5)))
             break; /* READY */
         wait_line(); /* 63us */
+    }
+}
+
+/* Returns number of head steps to find cylinder 0. */
+static unsigned int seek_cyl0(void)
+{
+    unsigned int steps = 0;
+
+    ciab->prb |= 6; /* outward, side 0 */
+    delay_ms(18);
+
+    cur_cyl = 0;
+
+    while (ciaa->pra & (1u<<4)) {
+        ciab->prb &= ~1; /* step */
+        ciab->prb |= 1;
+        delay_ms(3);
+        if (steps++ == 100) {
+            cur_cyl = -1;
+            break;
+        }
+    }
+
+    delay_ms(15);
+
+    return steps;
+}
+
+static void seek_track(unsigned int track)
+{
+    unsigned int cyl = track >> 1;
+    int diff;
+
+    if (cur_cyl == -1)
+        return;
+
+    if (cyl == 0)
+        seek_cyl0();
+
+    diff = cyl - cur_cyl;
+    if (diff < 0) {
+        diff = -diff;
+        ciab->prb |= 2; /* outward */
+    } else {
+        ciab->prb &= ~2; /* inward */
+    }
+    delay_ms(18);
+
+    while (diff--) {
+        ciab->prb &= ~1; /* step */
+        ciab->prb |= 1;
+        delay_ms(3);
+    }
+
+    delay_ms(15);
+
+    cur_cyl = cyl;
+
+    if (!(track & 1)) {
+        ciab->prb |= 4; /* side 0 */
+    } else {
+        ciab->prb &= ~4; /* side 1 */
     }
 }
 
@@ -891,22 +966,32 @@ static void floppycheck(void)
     }
     r.y++;
 
-drive_changed:
     while (!exit) {
-        pra = ciaa->pra;
-        sprintf(s, "-- DF%u: Signal Test --", drv);
+
+        drive_select_motor(drv, on);
+        seek_cyl0();
+        if (cur_cyl == 0) {
+            unsigned int nr_cyls;
+            seek_track(159);
+            nr_cyls = seek_cyl0() + 1;
+            if (cur_cyl == 0)
+                sprintf(s, "-- DF%u: %u cylinders --", drv, nr_cyls);
+        }
+        if (cur_cyl < 0)
+            sprintf(s, "-- DF%u: No Track 0 (Drive not present?) --", drv);
         print_line(&r);
         r.y += 3;
-        sprintf(s, "F1-F4: DF0-DF3; F5: Motor On/Off");
+
+        sprintf(s, "F1-F4: DF0-DF3; F5: Motor On/Off; F6: Step");
         print_line(&r);
         r.y -= 2;
 
-        drive_select_motor(drv, on);
         old_pra = ciaa->pra;
         mtr_time = get_time();
         rdy_delay = rdy_changed = 0;
         old_disk_index_count = disk_index_count = 0;
         key = 1; /* force print */
+
         while (!exit) {
             if (((pra = ciaa->pra) != old_pra) || key) {
                 rdy_changed = !!((old_pra ^ pra) & 32);
@@ -939,17 +1024,20 @@ drive_changed:
             if ((key = keycode_buffer) == 0)
                 continue;
             keycode_buffer = 0;
-            if ((key >= 0x50) && (key <= 0x53)) {
+            if ((key >= 0x50) && (key <= 0x53)) { /* F1-F4 */
                 drive_select_motor(drv, 0);
                 drv = key - 0x50;
                 r.y--;
-                goto drive_changed;
-            } else if (key == 0x54) {
+                break;
+            } else if (key == 0x54) { /* F5 */
                 on = !on;
                 drive_select_motor(drv, on);
                 old_pra = ciaa->pra;
                 mtr_time = get_time();
                 rdy_delay = 0;
+            } else if (key == 0x55) { /* F6 */
+                seek_track((cur_cyl == 0) ? 2 : 0);
+                key = 0; /* don't force print */
             } else {
                 key = 0;
             }
