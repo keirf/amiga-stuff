@@ -1,6 +1,3 @@
-#define load_off  0x0
-#define load_size 0x2c00*2
-
         .section .text.init
         .global start
 start:
@@ -9,11 +6,16 @@ start:
         dc.l    0               /* checksum (filled later) */
         dc.l    880             /* dummy root block index */
 
+        /* Compute load size, rounded up to sector alignment */
+        move.l  #_edat-start,d0
+        add.l   #511,d0
+        and.w   #~511,d0
+        move.l  d0,-(sp)
+
         /* Save trackdisk ioreq for later use */
         move.l  a1,-(sp)
 
         /* Allocate chip memory for the data we're loading */
-        move.l  #load_size,d0   /* size */
         moveq   #3,d1           /* MEMF_PUBLIC | MEMF_CHIP */
         jsr     -0xc6(a6)       /* exec.AllocMem */
         move.l  d0,-(sp)
@@ -25,8 +27,8 @@ start:
         /* Load data */
 .load:  move.l  4(sp),a1
 .retry: move.l  (sp),0x28(a1)   /* io_Data */
-        move.l  #load_size,0x24(a1) /* io_Length */
-        move.l  #load_off,0x2c(a1)  /* io_Offset */
+        move.l  8(sp),0x24(a1)  /* io_Length */
+        clr.l   0x2c(a1)        /* io_Offset */
         move.w  #2,0x1c(a1)     /* io_Command = CMD_READ */
         jsr     -0x1c8(a6)      /* exec.DoIO */
         move.l  4(sp),a1
@@ -39,7 +41,7 @@ start:
         jsr     -0x27c(a6)      /* exec.CacheClearU */
 
         /* Clean up our stack and jump at what we just loaded */
-.done:  movem.l (sp)+,a0-a1
+.done:  movem.l (sp)+,a0-a2
         add.l   #.begin-start,a0
         jmp     (a0)
 
