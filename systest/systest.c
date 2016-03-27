@@ -175,7 +175,7 @@ static uint32_t get_time(void)
 
 static void delay_ms(unsigned int ms)
 {
-    uint16_t ticks_per_ms = div32(cpu_hz, 10000);
+    uint16_t ticks_per_ms = div32(cpu_hz+9999, 10000); /* round up */
     uint32_t s, t;
 
     s = get_time();
@@ -187,7 +187,7 @@ static void delay_ms(unsigned int ms)
 /* Convert CIA ticks (tick/10cy) into a printable string. */
 static void ticktostr(uint32_t ticks, char *s)
 {
-    uint16_t ticks_per_ms = div32(cpu_hz, 10000);
+    uint16_t ticks_per_ms = div32(cpu_hz+5000, 10000); /* round nearest */
     uint32_t sec, ms, us;
 
     if (ticks == (uint16_t)ticks) {
@@ -837,14 +837,12 @@ static void kbdcheck(void)
 }
 
 /* Select @drv and set motor on or off. */
-static int cur_cyl;
 static void drive_select_motor(unsigned int drv, int on)
 {
-    ciab->prb = 0xff; /* motor-off, deselect all */
+    ciab->prb |= 0xf9; /* motor-off, deselect all */
     if (on)
         ciab->prb &= 0x7f; /* motor-on */
     ciab->prb &= ~(0x08 << drv); /* select drv */
-    cur_cyl = -1;
 }
 
 /* Wait for DSKRDY, or 500ms to pass, whichever is sooner. */
@@ -860,6 +858,7 @@ static void drive_wait_ready(void)
 }
 
 /* Returns number of head steps to find cylinder 0. */
+static int cur_cyl;
 static unsigned int seek_cyl0(void)
 {
     unsigned int steps = 0;
