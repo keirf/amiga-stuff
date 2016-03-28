@@ -563,7 +563,7 @@ static void memcheck(void)
         if (exit) break;
 
         b++;
-        if ((ciaa->pra & 0xc0) != 0xc0) {
+        if (~ciaa->pra & (CIAAPRA_FIR0|CIAAPRA_FIR1)) {
             while (r.y >= 5) {
                 sprintf(s, "");
                 print_line(&r);
@@ -840,8 +840,8 @@ static void drive_select_motor(unsigned int drv, int on)
 {
     ciab->prb |= 0xf9; /* motor-off, deselect all */
     if (on)
-        ciab->prb &= 0x7f; /* motor-on */
-    ciab->prb &= ~(0x08 << drv); /* select drv */
+        ciab->prb &= ~CIABPRB_MTR; /* motor-on */
+    ciab->prb &= ~(CIABPRB_SEL0 << drv); /* select drv */
 }
 
 /* Wait for DSKRDY, or 500ms to pass, whichever is sooner. */
@@ -850,7 +850,7 @@ static void drive_wait_ready(void)
     unsigned int i;
     /* 8000 * 63us ~= 500ms */
     for (i = 0; i < 8000; i++) {
-        if (!(ciaa->pra & (1u<<5)))
+        if (~ciaa->pra & CIAAPRA_RDY)
             break; /* READY */
         wait_line(); /* 63us */
     }
@@ -862,14 +862,14 @@ static unsigned int seek_cyl0(void)
 {
     unsigned int steps = 0;
 
-    ciab->prb |= 6; /* outward, side 0 */
+    ciab->prb |= CIABPRB_DIR | CIABPRB_SIDE; /* outward, side 0 */
     delay_ms(18);
 
     cur_cyl = 0;
 
-    while (ciaa->pra & (1u<<4)) {
-        ciab->prb &= ~1; /* step */
-        ciab->prb |= 1;
+    while (!(~ciaa->pra & CIAAPRA_TK0)) {
+        ciab->prb &= ~CIABPRB_STEP;
+        ciab->prb |= CIABPRB_STEP;
         delay_ms(3);
         if (steps++ == 100) {
             cur_cyl = -1;
@@ -896,15 +896,15 @@ static void seek_track(unsigned int track)
     diff = cyl - cur_cyl;
     if (diff < 0) {
         diff = -diff;
-        ciab->prb |= 2; /* outward */
+        ciab->prb |= CIABPRB_DIR; /* outward */
     } else {
-        ciab->prb &= ~2; /* inward */
+        ciab->prb &= ~CIABPRB_DIR; /* inward */
     }
     delay_ms(18);
 
     while (diff--) {
-        ciab->prb &= ~1; /* step */
-        ciab->prb |= 1;
+        ciab->prb &= ~CIABPRB_STEP;
+        ciab->prb |= CIABPRB_STEP;
         delay_ms(3);
     }
 
@@ -913,9 +913,9 @@ static void seek_track(unsigned int track)
     cur_cyl = cyl;
 
     if (!(track & 1)) {
-        ciab->prb |= 4; /* side 0 */
+        ciab->prb |= CIABPRB_SIDE; /* side 0 */
     } else {
-        ciab->prb &= ~4; /* side 1 */
+        ciab->prb &= ~CIABPRB_SIDE; /* side 1 */
     }
 }
 
@@ -958,7 +958,7 @@ static void disk_wait_dma(void)
 static uint32_t drive_id(unsigned int drv)
 {
     uint32_t id = 0;
-    uint8_t mask = 0x08 << drv;
+    uint8_t mask = CIABPRB_SEL0 << drv;
     unsigned int i;
 
     ciab->prb |= 0xf8;  /* motor-off, deselect all */
@@ -1012,16 +1012,16 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
 
         while (!exit) {
             if (((pra = ciaa->pra) != old_pra) || key) {
-                rdy_changed = !!((old_pra ^ pra) & 32);
+                rdy_changed = !!((old_pra ^ pra) & CIAAPRA_RDY);
                 if (rdy_changed)
                     rdy_delay = get_time() - mtr_time;
                 sprintf(s, "MTR=%s CIAAPRA=0x%02x (%s %s %s %s)",
                         on ? "On" : "Off",
                         pra,
-                        !(pra&4)?"CHG":"",
-                        !(pra&8)?"WPR":"",
-                        !(pra&16)?"TK0":"",
-                        !(pra&32)?"RDY":"");
+                        ~pra & CIAAPRA_CHNG ? "CHG" : "",
+                        ~pra & CIAAPRA_WPRO ? "WPR" : "",
+                        ~pra & CIAAPRA_TK0  ? "TK0" : "",
+                        ~pra & CIAAPRA_RDY  ? "RDY" : "");
                 print_line(r);
                 old_pra = pra;
             }
@@ -1032,7 +1032,7 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
                 ticktostr(rdy_delay, rdystr);
                 sprintf(s, "%u Index Pulses (period %s); MTR%s->RDY%u %s",
                         disk_index_count, idxstr, on?"On":"Off",
-                        !!(old_pra & 32), rdystr);
+                        !!(old_pra & CIAAPRA_RDY), rdystr);
                 r->y++;
                 print_line(r);
                 r->y--;
@@ -1105,9 +1105,9 @@ static unsigned int drive_read_test(unsigned int drv, struct char_row *r)
         goto out;
     }
 
-    if (!(ciaa->pra & 4)) {
+    if (~ciaa->pra & CIAAPRA_CHNG) {
         seek_track(2);
-        if (!(ciaa->pra & 4)) {
+        if (~ciaa->pra & CIAAPRA_CHNG) {
             sprintf(s, "DSKCHG: No Disk In Drive?");
             print_line(r);
             goto out;
@@ -1192,16 +1192,16 @@ static unsigned int drive_write_test(unsigned int drv, struct char_row *r)
         goto out;
     }
 
-    if (!(ciaa->pra & 4)) {
+    if (~ciaa->pra & CIAAPRA_CHNG) {
         seek_track(2);
-        if (!(ciaa->pra & 4)) {
+        if (~ciaa->pra & CIAAPRA_CHNG) {
             sprintf(s, "DSKCHG: No Disk In Drive?");
             print_line(r);
             goto out;
         }
     }
 
-    if (!(ciaa->pra & 8)) {
+    if (~ciaa->pra & CIAAPRA_WPRO) {
         sprintf(s, "WRPRO: Disk is Write Protected?");
         print_line(r);
         goto out;

@@ -176,6 +176,24 @@ struct amiga_cia {
     uint8_t _f[0xff];
 };
 
+#define CIAAPRA_OVL  0x01
+#define CIAAPRA_LED  0x02
+#define CIAAPRA_CHNG 0x04
+#define CIAAPRA_WPRO 0x08
+#define CIAAPRA_TK0  0x10
+#define CIAAPRA_RDY  0x20
+#define CIAAPRA_FIR0 0x40
+#define CIAAPRA_FIR1 0x80
+
+#define CIABPRB_STEP 0x01
+#define CIABPRB_DIR  0x02
+#define CIABPRB_SIDE 0x04
+#define CIABPRB_SEL0 0x08
+#define CIABPRB_SEL1 0x10
+#define CIABPRB_SEL2 0x20
+#define CIABPRB_SEL3 0x40
+#define CIABPRB_MTR  0x80
+
 /*
  * Local variables:
  * mode: C
