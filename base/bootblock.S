@@ -52,6 +52,7 @@ start:
         move.w  d0,0x9a(a6)  /* intena = 0 */
         move.w  d0,0x9c(a6)  /* intreq = 0 */
         move.w  d0,0x96(a6)  /* dmacon = 0 */
+        move.w  d0,0x9e(a6)  /* adkcon = 0 */
         move.w  #0x8200,0x96(a6)  /* enable master DMA */
         move.w  #0xc000,0x9a(a6)  /* enable master IRQ */
         moveq   #0,d0

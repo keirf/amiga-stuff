@@ -24,10 +24,9 @@ static volatile struct amiga_cia * const ciaa =
 static volatile struct amiga_cia * const ciab =
     (struct amiga_cia *)0x0bfd000;
 
-int read_tracks(void *mfmbuf, void *dest, unsigned int start_track,
-                unsigned int nr_tracks);
-void write_track(void *mfmbuf, unsigned int track);
-void mfm_encode_track(void *mfmbuf, unsigned int track);
+unsigned int mfm_decode_track(void *mfmbuf, void *headers, void *data,
+                              uint16_t mfm_bytes);
+void mfm_encode_track(void *mfmbuf, uint16_t tracknr, uint16_t mfm_bytes);
 
 /* Space for bitplanes and unpacked font. */
 extern char GRAPHICS[];
@@ -920,6 +919,42 @@ static void seek_track(unsigned int track)
     }
 }
 
+static void disk_read_track(void *mfm, uint16_t mfm_bytes)
+{
+    cust->dskpt.p = mfm;
+    cust->adkcon = 0x7f00; /* clear disk flags */
+    cust->intreq = 2; /* clear dsk-blk-done */
+    cust->adkcon = 0x9500; /* MFM, wordsync */
+    cust->dsksync = 0x4489; /* sync 4489 */
+    cust->dsklen = 0x8000 + mfm_bytes / 2;
+    cust->dsklen = 0x8000 + mfm_bytes / 2;
+}
+
+static void disk_write_track(void *mfm, uint16_t mfm_bytes)
+{
+    cust->dskpt.p = mfm;
+    cust->adkcon = 0x7f00; /* clear disk flags */
+    cust->intreq = 2; /* clear dsk-blk-done */
+    /* 140ns precomp for cylinders 40-79 (exactly the same as
+     * trackdisk.device, tested on Kickstart 3.1). */
+    if (cur_cyl >= 40)
+        cust->adkcon = 0xa000;
+    cust->adkcon = 0x9100; /* MFM, no wordsync */
+    cust->dsklen = 0xc000 + mfm_bytes / 2;
+    cust->dsklen = 0xc000 + mfm_bytes / 2;
+}
+
+static void disk_wait_dma(void)
+{
+    unsigned int i;
+    for (i = 0; i < 1000; i++) {
+        if (cust->intreqr & 2) /* dsk-blk-done? */
+            break;
+        delay_ms(1);
+    }
+    cust->dsklen = 0x4000; /* no more dma */
+}
+
 static uint32_t drive_id(unsigned int drv)
 {
     uint32_t id = 0;
@@ -941,31 +976,15 @@ static uint32_t drive_id(unsigned int drv)
     return ~id;
 }
 
-static void floppycheck(void)
+static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
 {
-    char s[80];
-    struct char_row r = { .x = 8, .y = 1, .s = s };
-    uint8_t pra, old_pra, key;
-    unsigned int i, on = 0, drv = 0, old_disk_index_count;
+    char *s = (char *)r->s;
+    uint8_t pra, old_pra, key = 0;
+    unsigned int on = 0, old_disk_index_count;
     uint32_t rdy_delay, mtr_time;
     int rdy_changed;
 
-    sprintf(s, "-- Floppy IDs --");
-    print_line(&r);
-    r.y++;
-
-    for (i = 0; i < 4; i++) {
-        uint32_t id = drive_id(i);
-        sprintf(s, "DF%u: %08x (%s)", i, id,
-                (id == -!!i) ? "Present" :
-                (id ==  -!i) ? "Not Present" :
-                "???");
-        print_line(&r);
-        r.y++;
-    }
-    r.y++;
-
-    while (!exit) {
+    while (!exit && (key != 0x45)) {
 
         drive_select_motor(drv, on);
         seek_cyl0();
@@ -978,12 +997,12 @@ static void floppycheck(void)
         }
         if (cur_cyl < 0)
             sprintf(s, "-- DF%u: No Track 0 (Drive not present?) --", drv);
-        print_line(&r);
-        r.y += 3;
+        print_line(r);
+        r->y += 3;
 
-        sprintf(s, "F1-F4: DF0-DF3; F5: Motor On/Off; F6: Step");
-        print_line(&r);
-        r.y -= 2;
+        sprintf(s, "F1-F4: DF0-DF3; F5: Motor On/Off; F6: Step; ESC: Back");
+        print_line(r);
+        r->y -= 2;
 
         old_pra = ciaa->pra;
         mtr_time = get_time();
@@ -1003,7 +1022,7 @@ static void floppycheck(void)
                         !(pra&8)?"WPR":"",
                         !(pra&16)?"TK0":"",
                         !(pra&32)?"RDY":"");
-                print_line(&r);
+                print_line(r);
                 old_pra = pra;
             }
             if ((old_disk_index_count != disk_index_count)
@@ -1014,9 +1033,9 @@ static void floppycheck(void)
                 sprintf(s, "%u Index Pulses (period %s); MTR%s->RDY%u %s",
                         disk_index_count, idxstr, on?"On":"Off",
                         !!(old_pra & 32), rdystr);
-                r.y++;
-                print_line(&r);
-                r.y--;
+                r->y++;
+                print_line(r);
+                r->y--;
                 old_disk_index_count = disk_index_count;
                 rdy_changed = 0;
             }
@@ -1026,7 +1045,7 @@ static void floppycheck(void)
             if ((key >= 0x50) && (key <= 0x53)) { /* F1-F4 */
                 drive_select_motor(drv, 0);
                 drv = key - 0x50;
-                r.y--;
+                r->y--;
                 break;
             } else if (key == 0x54) { /* F5 */
                 on = !on;
@@ -1037,6 +1056,8 @@ static void floppycheck(void)
             } else if (key == 0x55) { /* F6 */
                 seek_track((cur_cyl == 0) ? 2 : 0);
                 key = 0; /* don't force print */
+            } else if (key == 0x45) { /* ESC */
+                break;
             } else {
                 key = 0;
             }
@@ -1045,15 +1066,236 @@ static void floppycheck(void)
 
     /* Clean up. */
     drive_select_motor(drv, 0);
+    return drv;
+}
 
-    if (0) { /* XXX read/write test stuff*/
-        while (read_tracks((void *)(unsigned long)0x12345678,
-                           (void *)(unsigned long)0x87654321,
-                           0xabcd, 0xdcba))
-            continue;
-        drive_wait_ready();
+struct sec_header {
+    uint8_t format, trk, sec, togo;
+    uint32_t data_csum;
+};
+
+static unsigned int drive_read_test(unsigned int drv, struct char_row *r)
+{
+    char *s = (char *)r->s, retrystr[20];
+    void *alloc_s = alloc_p;
+    void *mfmbuf, *data;
+    struct sec_header *headers;
+    unsigned int i, mfm_bytes = 13100, nr_secs;
+    uint16_t valid_map;
+    int done = 0, retries;
+
+    sprintf(s, "-- DF%u: Read Test --", drv);
+    print_line(r);
+    r->y += 2;
+    sprintf(s, "ESC: Back; Ctrl + L.Alt: Main Menu");
+    print_line(r);
+    r->y--;
+
+    mfmbuf = allocmem(mfm_bytes);
+    headers = allocmem(12 * sizeof(*headers));
+    data = allocmem(12 * 512);
+
+    drive_select_motor(drv, 1);
+    seek_cyl0();
+    drive_wait_ready();
+
+    for (i = 0; i < 160; i++) {
+        retries = 0;
+        do {
+            retrystr[0] = '\0';
+            if (retries)
+                sprintf(retrystr, " attempt %u", retries+1);
+            sprintf(s, "Reading Track %u...%s", i, retrystr);
+            print_line(r);
+            done = (exit || (keycode_buffer&0x7f) == 0x45);
+            if (done)
+                goto out;
+            if (retries++)
+                seek_cyl0();
+            if (retries == 5) {
+                sprintf(s, "Cannot Read Track %u", i);
+                print_line(r);
+                goto out;
+            }
+            seek_track(i);
+            memset(mfmbuf, 0, mfm_bytes);
+            disk_read_track(mfmbuf, mfm_bytes);
+            disk_wait_dma();
+            nr_secs = mfm_decode_track(mfmbuf, headers, data, mfm_bytes);
+            valid_map = 0;
+            while (nr_secs--) {
+                struct sec_header *h = &headers[nr_secs];
+                if ((h->format = 0xff) && (h->trk == i) && !h->data_csum)
+                    valid_map |= 1u<<h->sec;
+            }
+        } while (valid_map != 0x7ff);
     }
 
+    sprintf(s, "All tracks read okay");
+    print_line(r);
+
+out:
+    drive_select_motor(drv, 0);
+    alloc_p = alloc_s;
+
+    while (!done)
+        done = (exit || keycode_buffer == 0x45);
+    keycode_buffer = 0;
+
+    return drv;
+}
+
+static unsigned int drive_write_test(unsigned int drv, struct char_row *r)
+{
+    char *s = (char *)r->s, retrystr[20];
+    void *alloc_s = alloc_p;
+    void *mfmbuf;
+    struct sec_header *headers;
+    unsigned int i, j, mfm_bytes = 13100, nr_secs;
+    uint16_t valid_map;
+    int done = 0, retries;
+    uint8_t rnd, *data;
+
+    sprintf(s, "-- DF%u: Write Test --", drv);
+    print_line(r);
+    r->y += 2;
+    sprintf(s, "ESC: Back; Ctrl + L.Alt: Main Menu");
+    print_line(r);
+    r->y--;
+
+    mfmbuf = allocmem(mfm_bytes);
+    headers = allocmem(12 * sizeof(*headers));
+    data = allocmem(12 * 512);
+
+    drive_select_motor(drv, 1);
+    seek_cyl0();
+    drive_wait_ready();
+
+    for (i = 158; i < 160; i++) {
+        retries = 0;
+        do {
+            retrystr[0] = '\0';
+            if (retries)
+                sprintf(retrystr, " attempt %u", retries+1);
+            sprintf(s, "Writing Track %u...%s", i, retrystr);
+            print_line(r);
+            done = (exit || (keycode_buffer&0x7f) == 0x45);
+            if (done)
+                goto out;
+            if (retries++)
+                seek_cyl0();
+            if (retries == 5) {
+                sprintf(s, "Cannot Write Track %u", i);
+                print_line(r);
+                goto out;
+            }
+            seek_track(i);
+            rnd = stamp32;
+            memset(mfmbuf, rnd, mfm_bytes);
+            mfm_encode_track(mfmbuf, i, mfm_bytes);
+            disk_write_track(mfmbuf, mfm_bytes);
+            disk_wait_dma();
+            memset(mfmbuf, 0, mfm_bytes);
+            disk_read_track(mfmbuf, mfm_bytes);
+            disk_wait_dma();
+            nr_secs = mfm_decode_track(mfmbuf, headers, data, mfm_bytes);
+            valid_map = 0;
+            /* Check sector headers */
+            while (nr_secs--) {
+                struct sec_header *h = &headers[nr_secs];
+                if ((h->format = 0xff) && (h->trk == i) && !h->data_csum)
+                    valid_map |= 1u<<h->sec;
+            }
+            /* Check our verification token */
+            for (j = 0; j < 11*512; j++)
+                if (data[j] != rnd)
+                    valid_map = 0;
+        } while (valid_map != 0x7ff);
+    }
+
+    sprintf(s, "Tracks 158 & 159 written okay");
+    print_line(r);
+
+out:
+    drive_select_motor(drv, 0);
+    alloc_p = alloc_s;
+
+    while (!done)
+        done = (exit || keycode_buffer == 0x45);
+    keycode_buffer = 0;
+
+    return drv;
+}
+
+static void floppycheck(void)
+{
+    char s[80];
+    struct char_row r = { .x = 8, .y = 1, .s = s }, _r;
+    uint8_t key = 0xff;
+    unsigned int i, drv = 0;
+
+    sprintf(s, "-- Floppy IDs --");
+    print_line(&r);
+    r.y++;
+
+    for (i = 0; i < 4; i++) {
+        uint32_t id = drive_id(i);
+        sprintf(s, "DF%u: %08x (%s)", i, id,
+                (id == -!!i) ? "Present" :
+                (id ==  -!i) ? "Not Present" :
+                "???");
+        print_line(&r);
+        r.y++;
+    }
+    r.y++;
+
+    while (!exit) {
+
+        sprintf(s, "-- DF%u: Selected --", drv);
+        print_line(&r);
+        r.y++;
+        sprintf(s, "F1-F4 - DF0-DF3");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "F5 - Signal Test");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "F6 - Read Test");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "F7 - Write Test");
+        print_line(&r);
+        r.y -= 4;
+
+        for (;;) {
+            while (!exit && ((key = keycode_buffer - 0x50) >= 7))
+                continue;
+            keycode_buffer = 0;
+            if (exit || (key > 3))
+                break;
+            drv = key;
+            sprintf(s, "-- DF%u: Selected --", drv);
+            print_line(&r);
+        }
+
+        if (exit)
+            break;
+
+        clear_screen_rows(ystart + r.y * yperline, 6 * yperline);
+        _r = r;
+
+        switch (key) {
+        case 4:
+            drv = drive_signal_test(drv, &_r);
+            break;
+        case 5:
+            drv = drive_read_test(drv, &_r);
+            break;
+        case 6:
+            drv = drive_write_test(drv, &_r);
+            break;
+        }
+    }
 }
 
 static void printport(char *s, unsigned int port)
@@ -1375,7 +1617,7 @@ void cstart(void)
     cust->cop2lc.p = copper_2;
 
     wait_bos();
-    cust->dmacon = 0x81c0; /* enable copper/bitplane/blitter DMA */
+    cust->dmacon = 0x81d0; /* enable copper/bitplane/blitter/disk DMA */
     cust->intena = 0xa028; /* enable CIA-A/CIA-B/VBLANK interrupts */
 
     /* Start CIAA Timer B in continuous mode. */
