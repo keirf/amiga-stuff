@@ -456,14 +456,62 @@ static void menu(void)
     (*menu_option[i].fn)();
 }
 
+static inline __attribute__((always_inline)) uint16_t lfsr(uint16_t x)
+{
+    asm volatile (
+        "lsr.w #1,%0; bcc.s 1f; eor.w #0xb400,%0; 1:"
+        : "=d" (x) : "0" (x));
+    return x;
+}
+
+/* Fill every 32-bit word from @start to @end. */
+static void fill_32(
+    uint32_t fill, volatile uint16_t *start, volatile uint16_t *end)
+{
+    uint32_t x, y;
+    asm volatile (
+        "1: move.l %2,(%3)+; move.l %2,(%3)+; "
+        "move.l %2,(%3)+; move.l %2,(%3)+; dbf %4,1b"
+        : "=a" (x), "=d" (y)
+        : "d" (fill), "0" (start), "1" ((end-start)/(2*4)-1));
+}
+
+/* Fill every other 16-bit word fromt @start to @end. */
+static void fill_alt_16(
+    uint16_t fill, volatile uint16_t *start, volatile uint16_t *end)
+{
+    uint32_t x, y;
+    asm volatile (
+        "1: move.w %2,(%3); move.w %2,4(%3); move.w %2,8(%3); "
+        "move.w %2,12(%3); lea 16(%3),%3; dbf %4,1b"
+        : "=a" (x), "=d" (y)
+        : "d" (fill), "0" (start), "1" ((end-start+1)/(2*4)-1));
+}
+
+static uint16_t check_pattern(
+    uint32_t check, volatile uint16_t *start, volatile uint16_t *end)
+{
+    uint32_t x, y, z, val;
+    asm volatile (
+        "1: move.l (%5)+,%2; eor.l %4,%2; or.l %2,%3; "
+        "move.l (%5)+,%2; eor.l %4,%2; or.l %2,%3; "
+        "move.l (%5)+,%2; eor.l %4,%2; or.l %2,%3; "
+        "move.l (%5)+,%2; eor.l %4,%2; or.l %2,%3; "
+        "dbf %6,1b; move.w %3,%2; swap %3; or.w %2,%3"
+        : "=a" (x), "=d" (y), "=&d" (z), "=d" (val)
+        : "d" (check), "0" (start), "1" ((end-start+1)/(2*4)-1), "3" (0));
+    return (uint16_t)val;
+}
+
 static void memcheck(void)
 {
     volatile uint16_t *p;
     volatile uint16_t *start = (volatile uint16_t *)0xc00000;
     volatile uint16_t *end = (volatile uint16_t *)0xc80000;
     char s[80];
-    struct char_row r = { .x = 8, .y = 5, .s = s };
-    uint16_t a, b, i, j;
+    struct char_row r = { .x = 8, .y = 4, .s = s };
+    uint16_t a, b, i, j, x, seed = 0x1234;
+    unsigned int round_major, round_minor;
 
     i = cust->intenar;
 
@@ -473,19 +521,24 @@ static void memcheck(void)
      * to the custom registers and _EXRAM must be asserted at Gary. */
     p = start;
     p[0x9a/2] = 0x7fff; /* clear all bits in INTENA */
+    j = cust->intenar;
     a = p[0x1c/2];
     p[0x9a/2] = 0xbfff; /* set all bits in INTENA except master enable */
     b = p[0x1c/2];
 
-    sprintf(s, "%04x / %04x", a, b);
-    print_line(&r);
-    r.y++;
-
-    sprintf(s, "Slow RAM%s detected", (a != b) ? " *NOT*" : "");
+    sprintf(s, "-- Slow RAM%s detected --", (a != b) ? " *NOT*" : "");
     print_line(&r);
     r.y++;
 
     if (a != b) {
+        sprintf(s, "Shadow INTENA was %04x, now %04x", a, b);
+        print_line(&r);
+        r.y++;
+        sprintf(s, "Actual INTENA was %04x, now %04x", j, cust->intenar);
+        print_line(&r);
+        r.y++;
+        sprintf(s, "Ctrl + L.Alt to return to main menu");
+        print_line(&r);
         cust->intena = 0x7fff;
         cust->intena = 0x8000 | i;
         while (!exit)
@@ -493,77 +546,96 @@ static void memcheck(void)
         return;
     }
 
+    r.y += 5;
+    sprintf(s, "ESC: Summarise & reset errors");
+    print_line(&r);
+    r.y++;
+    sprintf(s, "Ctrl + L.Alt: Main menu");
+    print_line(&r);
+    r.y -= 6;
+
     /* We believe we have slow memory present. Now check the RAM for errors. 
      * This uses an inversions algorithm where we try to set an alternating 
      * 0/1 pattern in each memory cell (assuming 1-bit DRAM chips). */
-    a = b = 0;
+    a = 0;
+    round_major = round_minor = 0;
     while (!exit) {
-        /* Start with all 0s. Write 1s to even words. */
-        for (p = start; p != end;) {
-            *p++ = 0x0000;
-        }
-        if (exit) break;
-        for (p = start; p != end;) {
-            *p++ = 0xffff;
-            p++;
-        }
-        if (exit) break;
-        for (p = start; p != end;) {
-            a |= ~*p++;
-            a |= *p++;
-        }
-        if (exit) break;
+        switch (round_minor) {
+        case 0:
+            /* Random numbers. */
+            sprintf(s, "Round %u.%u: Random Fill",
+                    round_major+1, round_minor+1);
+            print_line(&r);
+            x = seed;
+            for (p = start; p != end;) {
+                *p++ = x = lfsr(x);
+                *p++ = x = lfsr(x);
+                *p++ = x = lfsr(x);
+                *p++ = x = lfsr(x);
+            }
+            if (exit) break;
+            x = seed;
+            for (p = start; p != end;) {
+                a |= *p++ ^ (x = lfsr(x));
+                a |= *p++ ^ (x = lfsr(x));
+                a |= *p++ ^ (x = lfsr(x));
+                a |= *p++ ^ (x = lfsr(x));
+            }
+            seed = x;
+            break;
 
-        /* Start with all 0s. Write 1s to odd words. */
-        for (p = start; p != end;) {
-            *p++ = 0x0000;
-        }
-        if (exit) break;
-        for (p = start; p != end;) {
-            p++;
-            *p++ = 0xffff;
-        }
-        if (exit) break;
-        for (p = start; p != end;) {
-            a |= *p++;
-            a |= ~*p++;
-        }
-        if (exit) break;
+        case 1:
+            /* Start with all 0s. Write 1s to even words. */
+            sprintf(s, "Round %u.%u: Checkboard #1",
+                    round_major+1, round_minor+1);
+            print_line(&r);
+            fill_32(0, start, end);
+            if (exit) break;
+            fill_alt_16(~0, start, end);
+            if (exit) break;
+            a |= check_pattern(0xffff0000, start, end);
+            break;
 
-        /* Start with all 1s. Write 0s to even words. */
-        for (p = start; p != end;) {
-            *p++ = 0xffff;
-        }
-        if (exit) break;
-        for (p = start; p != end;) {
-            *p++ = 0x0000;
-            p++;
-        }
-        if (exit) break;
-        for (p = start; p != end;) {
-            a |= *p++;
-            a |= ~*p++;
-        }
-        if (exit) break;
+        case 2:
+            /* Start with all 0s. Write 1s to odd words. */
+            sprintf(s, "Round %u.%u: Checkboard #2",
+                    round_major+1, round_minor+1);
+            print_line(&r);
+            fill_32(0, start, end);
+            if (exit) break;
+            fill_alt_16(~0, start+1, end);
+            if (exit) break;
+            a |= check_pattern(0x0000ffff, start, end);
+            break;
 
-        /* Start with all 1s. Write 0s to odd words. */
-        for (p = start; p != end;) {
-            *p++ = 0xffff;
-        }
-        if (exit) break;
-        for (p = start; p != end;) {
-            p++;
-            *p++ = 0x0000;
-        }
-        if (exit) break;
-        for (p = start; p != end;) {
-            a |= ~*p++;
-            a |= *p++;
-        }
-        if (exit) break;
+        case 3:
+            /* Start with all 1s. Write 0s to even words. */
+            sprintf(s, "Round %u.%u: Checkboard #3",
+                    round_major+1, round_minor+1);
+            print_line(&r);
+            fill_32(~0, start, end);
+            if (exit) break;
+            fill_alt_16(0, start, end);
+            if (exit) break;
+            a |= check_pattern(0x0000ffff, start, end);
+            break;
 
-        b++;
-        if (~ciaa->pra & (CIAAPRA_FIR0|CIAAPRA_FIR1)) {
+        case 4:
+            /* Start with all 1s. Write 0s to odd words. */
+            sprintf(s, "Round %u.%u: Checkboard #4",
+                    round_major+1, round_minor+1);
+            print_line(&r);
+            fill_32(~0, start, end);
+            if (exit) break;
+            fill_alt_16(0, start+1, end);
+            if (exit) break;
+            a |= check_pattern(0xffff0000, start, end);
+            break;
+        }
+
+        if ((keycode_buffer&0x7f) == 0x45) { /* ESC */
+            keycode_buffer = 0;
+            r.y = 9;
             while (r.y >= 5) {
                 sprintf(s, "");
                 print_line(&r);
@@ -573,7 +645,8 @@ static void memcheck(void)
             for (i = j = 0; i < 16; i++)
                 if ((a >> i) & 1)
                     j++;
-            sprintf(s, "After %u rounds: errors in %u bit positions", b, j);
+            sprintf(s, "After round %u.%u: errors in %u bit positions",
+                    round_major+1, round_minor+1, j);
             print_line(&r);
             r.y++;
             if (j != 0) {
@@ -590,12 +663,20 @@ static void memcheck(void)
                 print_line(&r);
                 r.y++;
             }
-            a = b = 0;
+            a = 0;
+            round_major = round_minor = 0;
             continue;
         }
 
-        sprintf(s, "After %u rounds: errors %04x", b, a);
+        r.y++;
+        sprintf(s, "Accumulated errors: %04x", a);
         print_line(&r);
+        r.y--;
+
+        if (++round_minor == 5) {
+            round_major++;
+            round_minor = 0;
+        }
     }
 }
 
