@@ -1099,6 +1099,21 @@ static unsigned int drive_read_test(unsigned int drv, struct char_row *r)
     seek_cyl0();
     drive_wait_ready();
 
+    if (cur_cyl < 0) {
+        sprintf(s, "No Track 0: Drive Not Present?");
+        print_line(r);
+        goto out;
+    }
+
+    if (!(ciaa->pra & 4)) {
+        seek_track(2);
+        if (!(ciaa->pra & 4)) {
+            sprintf(s, "DSKCHG: No Disk In Drive?");
+            print_line(r);
+            goto out;
+        }
+    }
+
     for (i = 0; i < 160; i++) {
         retries = 0;
         do {
@@ -1171,6 +1186,27 @@ static unsigned int drive_write_test(unsigned int drv, struct char_row *r)
     seek_cyl0();
     drive_wait_ready();
 
+    if (cur_cyl < 0) {
+        sprintf(s, "No Track 0: Drive Not Present?");
+        print_line(r);
+        goto out;
+    }
+
+    if (!(ciaa->pra & 4)) {
+        seek_track(2);
+        if (!(ciaa->pra & 4)) {
+            sprintf(s, "DSKCHG: No Disk In Drive?");
+            print_line(r);
+            goto out;
+        }
+    }
+
+    if (!(ciaa->pra & 8)) {
+        sprintf(s, "WRPRO: Disk is Write Protected?");
+        print_line(r);
+        goto out;
+    }
+
     for (i = 158; i < 160; i++) {
         retries = 0;
         do {
@@ -1192,12 +1228,18 @@ static unsigned int drive_write_test(unsigned int drv, struct char_row *r)
             seek_track(i);
             rnd = stamp32;
             memset(mfmbuf, rnd, mfm_bytes);
+            /* erase */
+            disk_write_track(mfmbuf, mfm_bytes);
+            disk_wait_dma();
+            /* write */
             mfm_encode_track(mfmbuf, i, mfm_bytes);
             disk_write_track(mfmbuf, mfm_bytes);
             disk_wait_dma();
+            /* read */
             memset(mfmbuf, 0, mfm_bytes);
             disk_read_track(mfmbuf, mfm_bytes);
             disk_wait_dma();
+            /* verify */
             nr_secs = mfm_decode_track(mfmbuf, headers, data, mfm_bytes);
             valid_map = 0;
             /* Check sector headers */
