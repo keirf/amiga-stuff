@@ -205,10 +205,10 @@ static void ticktostr(uint32_t ticks, char *s)
         if (ms > 1000) {
             sec = ms;
             ms = do_div(sec, 1000);
-            sprintf(s, "%u.%us", sec, (uint16_t)ms/100);
+            sprintf(s, "%u.%us", sec, div32(ms, 100));
         } else {
             us = ((uint16_t)div32(us<<16, ticks_per_ms) * 1000u) >> 16;
-            sprintf(s, "%u.%ums", ms, (uint16_t)us/100);
+            sprintf(s, "%u.%ums", ms, div32(us, 100));
         }
     }
 }
@@ -558,6 +558,7 @@ static void memcheck(void)
      * This uses an inversions algorithm where we try to set an alternating 
      * 0/1 pattern in each memory cell (assuming 1-bit DRAM chips). */
     a = 0;
+    b = ~0;
     round_major = round_minor = 0;
     while (!exit) {
         switch (round_minor) {
@@ -664,14 +665,18 @@ static void memcheck(void)
                 r.y++;
             }
             a = 0;
+            b = ~0;
             round_major = round_minor = 0;
             continue;
         }
 
-        r.y++;
-        sprintf(s, "Accumulated errors: %04x", a);
-        print_line(&r);
-        r.y--;
+        if (a != b) {
+            r.y++;
+            sprintf(s, "Accumulated errors: %04x", a);
+            print_line(&r);
+            r.y--;
+            b = a;
+        }
 
         if (++round_minor == 5) {
             round_major++;
