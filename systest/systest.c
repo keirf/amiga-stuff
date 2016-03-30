@@ -48,7 +48,7 @@ asm (                                           \
 #define planes  2
 
 #define xstart  110
-#define ystart  20
+#define ystart  18
 #define yperline 10
 
 /* PAL/NTSC */
@@ -413,6 +413,14 @@ static void print_line(const struct char_row *r)
     }
 }
 
+static void print_menu_nav_line(void)
+{
+    char s[80];
+    struct char_row r = { .x = 4, .y = 14, .s = s };
+    sprintf(s, "Ctrl + L.Alt: main menu; ESC: up one menu");
+    print_line(&r);
+}
+
 static void menu(void)
 {
     uint8_t i;
@@ -433,9 +441,6 @@ static void menu(void)
         print_line(&r);
         r.y++;
     }
-    sprintf(s, "(Ctrl + L.Alt to quit back to menu)");
-    print_line(&r);
-    r.y++;
     sprintf(s, "----------- System: %s-----------",
             is_pal ? "PAL -" : "NTSC ");
     print_line(&r);
@@ -446,6 +451,8 @@ static void menu(void)
     sprintf(s, "build: %s %s", __DATE__, __TIME__);
     print_line(&r);
     r.y++;
+
+    print_menu_nav_line();
 
     while ((i = keycode_buffer - 0x50) >= ARRAY_SIZE(menu_option))
         continue;
@@ -536,23 +543,22 @@ static void memcheck(void)
         r.y++;
         sprintf(s, "Actual INTENA was %04x, now %04x", j, cust->intenar);
         print_line(&r);
-        r.y++;
-        sprintf(s, "Ctrl + L.Alt to return to main menu");
-        print_line(&r);
+        print_menu_nav_line();
         cust->intena = 0x7fff;
         cust->intena = 0x8000 | i;
-        while (!exit)
+        keycode_buffer = 0;
+        while (!exit && ((keycode_buffer&0x7f) != 0x45)) /* ESC */
             continue;
         return;
     }
 
-    r.y += 5;
+    r.y = 13;
     sprintf(s, "ESC: Summarise & reset errors");
     print_line(&r);
-    r.y++;
+    r.y = 14;
     sprintf(s, "Ctrl + L.Alt: Main menu");
     print_line(&r);
-    r.y -= 6;
+    r.y = 5;
 
     /* We believe we have slow memory present. Now check the RAM for errors. 
      * This uses an inversions algorithm where we try to set an alternating 
@@ -635,7 +641,7 @@ static void memcheck(void)
         }
 
         if ((keycode_buffer&0x7f) == 0x45) { /* ESC */
-            keycode_buffer = 0;
+             keycode_buffer = 0;
             r.y = 9;
             while (r.y >= 5) {
                 sprintf(s, "");
@@ -820,7 +826,7 @@ static uint16_t copper_kbd[] = {
     0x0180, 0x0ddd,
     0x4501, 0xfffe,
     0x0180, 0x0402,
-    0xbd01, 0xfffe,
+    0xbb01, 0xfffe,
     /* normal video */
     0x0182, 0x0222, /* col01 = shadow */
     0x0186, 0x0ddd, /* col03 = foreground */
@@ -846,14 +852,14 @@ static void kbdcheck(void)
      * in bitplane 0 to indicate keys which are currently pressed. The reverse
      * video effect causes the key to be highlighted with the key name still
      * visible. */
-    draw_hollow_rect(bpl[1], 20, 10, 601, 106, 1);
+    draw_hollow_rect(bpl[1], 20, 8, 601, 106, 1);
     for (i = 0; i < ARRAY_SIZE(keymap); i++) {
         cap = &keymap[i];
         if (!cap->h)
             continue;
         /* Draw the outline rectangle. */
         x = 30 + cap->x;
-        y = 15 + cap->y;
+        y = 13 + cap->y;
         draw_hollow_rect(bpl[1], x, y, cap->w+1, cap->h+1, 1);
         if (i == 0x44) /* Return key is not a rectangle. Bodge it.*/
             draw_hollow_rect(bpl[1], x, y+1, 1, 14, 0);
@@ -873,7 +879,10 @@ static void kbdcheck(void)
     /* Raw keycodes are displayed in a list at the bottom of the screen. */
     sprintf(s, "Raw Keycodes:");
     print_line(&r);
-    r.y++;
+    r.y = 14;
+    sprintf(s, "Ctrl + L.Alt: main menu");
+    print_line(&r);
+    r.y = 11;
 
     i = 0;
     s[0] = '\0';
@@ -887,12 +896,11 @@ static void kbdcheck(void)
 
         /* Out of list space. Clear the keycode-list area. */
         if (r.y == 14) {
-            while (r.y >= 11) {
+            while (r.y > 11) {
+                r.y--;
                 sprintf(s, "");
                 print_line(&r);
-                r.y--;
             }
-            r.y = 11;
         }
 
         /* Append the new keycode to the current line. */
@@ -910,7 +918,7 @@ static void kbdcheck(void)
         if (!cap->h)
             continue;
         x = 30 + cap->x;
-        y = 15 + cap->y;
+        y = 13 + cap->y;
         draw_filled_rect(bpl[0], x+1, y+1, cap->w-1, cap->h-1, !(key & 0x80));
         if ((key & 0x7f) == 0x44) /* Return needs a bodge.*/
             draw_filled_rect(bpl[0], x-7, y+1, 8, 14, !(key & 0x80));
@@ -1086,7 +1094,7 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
         print_line(r);
         r->y += 3;
 
-        sprintf(s, "F1-F4: DF0-DF3; F5: Motor On/Off; F6: Step; ESC: Back");
+        sprintf(s, "F1-F4: DF0-DF3; F5: Motor On/Off; F6: Step");
         print_line(r);
         r->y -= 2;
 
@@ -1172,10 +1180,7 @@ static unsigned int drive_read_test(unsigned int drv, struct char_row *r)
 
     sprintf(s, "-- DF%u: Read Test --", drv);
     print_line(r);
-    r->y += 2;
-    sprintf(s, "ESC: Back; Ctrl + L.Alt: Main Menu");
-    print_line(r);
-    r->y--;
+    r->y ++;
 
     mfmbuf = allocmem(mfm_bytes);
     headers = allocmem(12 * sizeof(*headers));
@@ -1259,10 +1264,7 @@ static unsigned int drive_write_test(unsigned int drv, struct char_row *r)
 
     sprintf(s, "-- DF%u: Write Test --", drv);
     print_line(r);
-    r->y += 2;
-    sprintf(s, "ESC: Back; Ctrl + L.Alt: Main Menu");
-    print_line(r);
-    r->y--;
+    r->y++;
 
     mfmbuf = allocmem(mfm_bytes);
     headers = allocmem(12 * sizeof(*headers));
@@ -1362,6 +1364,8 @@ static void floppycheck(void)
     uint8_t key = 0xff;
     unsigned int i, drv = 0;
 
+    print_menu_nav_line();
+
     sprintf(s, "-- Floppy IDs --");
     print_line(&r);
     r.y++;
@@ -1396,11 +1400,22 @@ static void floppycheck(void)
         r.y -= 4;
 
         for (;;) {
-            while (!exit && ((key = keycode_buffer - 0x50) >= 7))
+            /* Grab a key */
+            while (!exit && !(key = keycode_buffer))
                 continue;
             keycode_buffer = 0;
-            if (exit || (key > 3))
+            /* Handle exit conditions */
+            exit |= (key == 0x45); /* ESC = exit */
+            if (exit)
                 break;
+            /* Check for keys F1-F7 only */
+            key -= 0x50; /* Offsets from F1 */
+            if (key >= 7)
+                continue;
+            /* F5-F7: handled outside this loop */
+            if (key > 3)
+                break;
+            /* F1-F4: DF0-DF3 */
             drv = key;
             sprintf(s, "-- DF%u: Selected --", drv);
             print_line(&r);
@@ -1413,13 +1428,13 @@ static void floppycheck(void)
         _r = r;
 
         switch (key) {
-        case 4:
+        case 4: /* F5 */
             drv = drive_signal_test(drv, &_r);
             break;
-        case 5:
+        case 5: /* F6 */
             drv = drive_read_test(drv, &_r);
             break;
-        case 6:
+        case 6: /* F7 */
             drv = drive_write_test(drv, &_r);
             break;
         }
@@ -1461,12 +1476,17 @@ static void joymousecheck(void)
     /* Pull-ups on button 2 & 3 inputs. */
     cust->potgo = 0xff00;
 
+    print_menu_nav_line();
+
     sprintf(s, "-- Joy / Mouse Test --");
     print_line(&r);
     r.x = 0;
     r.y += 3;
 
     for (i = 0; !exit; i++) {
+
+        /* ESC also means exit */
+        exit |= (keycode_buffer & 0x7f) == 0x45;
 
         if (i & 1) {
             /* Odd frames: print button/direction info */
@@ -1524,6 +1544,8 @@ static void audiocheck(void)
         aud[30+i] = -sine[10-i];
     }
 
+    print_menu_nav_line();
+
     sprintf(s, "-- 500Hz Sine Wave Audio Test --");
     print_line(&r);
     r.x += 7;
@@ -1563,11 +1585,14 @@ static void audiocheck(void)
         wait_bos();
         print_line(&r);
 
-        if ((key = keycode_buffer - 0x50) >= 4)
-            continue;
-        keycode_buffer = 0;
-        channels ^= 1u << key;
-        cust->aud[key].vol = (channels & (1u << key)) ? 64 : 0;
+        /* ESC also means exit */
+        exit |= (keycode_buffer & 0x7f) == 0x45;
+
+        if ((key = keycode_buffer - 0x50) < 4) {
+            keycode_buffer = 0;
+            channels ^= 1u << key;
+            cust->aud[key].vol = (channels & (1u << key)) ? 64 : 0;
+        }
     }
 
     /* Clean up. */
@@ -1626,9 +1651,11 @@ static void videocheck(void)
     wait_bos();
     cust->cop2lc.p = cop;
 
+    print_menu_nav_line();
+
     /* All work is done by the copper. Just wait for exit. */
     while (!exit)
-        continue;
+        exit |= (keycode_buffer == 0x45); /* ESC */
 
     /* Clean up. */
     wait_bos();
