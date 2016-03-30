@@ -1074,13 +1074,17 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
 {
     char *s = (char *)r->s;
     uint8_t pra, old_pra, key = 0;
-    unsigned int on = 0, old_disk_index_count;
-    uint32_t rdy_delay, mtr_time;
+    unsigned int on, old_disk_index_count;
+    uint32_t rdy_delay, mtr_time, key_time, mtr_timeout;
     int rdy_changed;
+
+    /* Motor on for 30 seconds at a time when there is no user input. */
+    mtr_timeout = 30 * div32(cpu_hz, 10);
 
     while (!exit && (key != 0x45)) {
 
-        drive_select_motor(drv, on);
+        on = 0;
+        drive_select_motor(drv, 0);
         seek_cyl0();
         if (cur_cyl == 0) {
             unsigned int nr_cyls;
@@ -1102,6 +1106,7 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
         mtr_time = get_time();
         rdy_delay = rdy_changed = 0;
         old_disk_index_count = disk_index_count = 0;
+        key_time = get_time();
         key = 1; /* force print */
 
         while (!exit) {
@@ -1133,9 +1138,12 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
                 old_disk_index_count = disk_index_count;
                 rdy_changed = 0;
             }
-            if ((key = keycode_buffer) == 0)
+            key = (on && ((get_time() - key_time) >= mtr_timeout))
+                ? 0x54 /* force motor off */ : keycode_buffer;
+            if (!key)
                 continue;
             keycode_buffer = 0;
+            key_time = get_time();
             if ((key >= 0x50) && (key <= 0x53)) { /* F1-F4 */
                 drive_select_motor(drv, 0);
                 drv = key - 0x50;
