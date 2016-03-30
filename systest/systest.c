@@ -938,15 +938,46 @@ static void drive_select_motor(unsigned int drv, int on)
     ciab->prb &= ~(CIABPRB_SEL0 << drv); /* select drv */
 }
 
-/* Wait for DSKRDY, or 500ms to pass, whichever is sooner. */
-static void drive_wait_ready(void)
+static void drive_check_ready(struct char_row *r)
 {
-    unsigned int i;
-    /* 8000 * 63us ~= 500ms */
-    for (i = 0; i < 8000; i++) {
-        if (~ciaa->pra & CIAAPRA_RDY)
-            break; /* READY */
-        wait_line(); /* 63us */
+    uint32_t s = get_time(), e, one_sec = div32(cpu_hz, 10);
+    int ready;
+
+    do {
+        ready = !!(~ciaa->pra & CIAAPRA_RDY);
+        e = get_time();
+    } while (!ready && ((e - s) < one_sec));
+
+    if (ready) {
+        char delaystr[10];
+        e = get_time();
+        ticktostr(e - s, delaystr);
+        sprintf((char *)r->s,
+                (e - s) < div32(one_sec, 1000)
+                ? "READY too fast (%s): Gotek or hacked PC drive?"
+                : (e - s) <= (one_sec>>1)
+                ? "READY in good time (%s)"
+                : "READY too late (%s): slow motor spin-up?",
+                delaystr);
+    } else {
+        sprintf((char *)r->s,
+                "No READY signal: PC or Escom drive?");
+    }
+
+    print_line(r);
+    r->y++;
+
+    if (ready) {
+        do {
+            ready = !!(~ciaa->pra & CIAAPRA_RDY);
+            e = get_time();
+        } while (ready && ((e - s) < one_sec));
+        if (!ready) {
+            sprintf((char *)r->s,
+                    "READY signal is oscillating: hacked PC drive?");
+            print_line(r);
+            r->y++;
+        }
     }
 }
 
@@ -1188,15 +1219,14 @@ static unsigned int drive_read_test(unsigned int drv, struct char_row *r)
 
     sprintf(s, "-- DF%u: Read Test --", drv);
     print_line(r);
-    r->y ++;
+    r->y++;
 
     mfmbuf = allocmem(mfm_bytes);
     headers = allocmem(12 * sizeof(*headers));
     data = allocmem(12 * 512);
 
-    drive_select_motor(drv, 1);
+    drive_select_motor(drv, 0);
     seek_cyl0();
-    drive_wait_ready();
 
     if (cur_cyl < 0) {
         sprintf(s, "No Track 0: Drive Not Present?");
@@ -1212,6 +1242,9 @@ static unsigned int drive_read_test(unsigned int drv, struct char_row *r)
             goto out;
         }
     }
+
+    drive_select_motor(drv, 1);
+    drive_check_ready(r);
 
     for (i = 0; i < 160; i++) {
         retries = 0;
@@ -1278,9 +1311,8 @@ static unsigned int drive_write_test(unsigned int drv, struct char_row *r)
     headers = allocmem(12 * sizeof(*headers));
     data = allocmem(12 * 512);
 
-    drive_select_motor(drv, 1);
+    drive_select_motor(drv, 0);
     seek_cyl0();
-    drive_wait_ready();
 
     if (cur_cyl < 0) {
         sprintf(s, "No Track 0: Drive Not Present?");
@@ -1302,6 +1334,9 @@ static unsigned int drive_write_test(unsigned int drv, struct char_row *r)
         print_line(r);
         goto out;
     }
+
+    drive_select_motor(drv, 1);
+    drive_check_ready(r);
 
     for (i = 158; i < 160; i++) {
         retries = 0;
