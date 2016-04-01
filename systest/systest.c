@@ -235,6 +235,49 @@ static int pal_detect(void)
     return ticks > 130000;
 }
 
+static unsigned int detect_cpu_model(void)
+{
+    uint32_t model;
+
+    /* Attempt to access control registers which are supported only in 
+     * increasingly small subsets of the model range. */
+    asm volatile (
+        "lea    (0x10).w,%%a1  ; " /* %a0 = 0x10 (illegal_insn) */
+        "move.l (%%a1),%%d1    ; " /* %d1 = old illegal_insn_vec */
+        "lea    (1f).l,%%a0    ; " /* set illegal insn vector to... */
+        "move.l %%a0,(%%a1)    ; " /* ...skip to end and restore %ssp */
+        "move.l %%a7,%%a0      ; " /* save %ssp */
+        "moveq  #0,%0          ; " /* 680[0]0 */
+        "dc.l   0x4e7a0801     ; " /* movec %vbr,%d0  */ /* 68010+ only */
+        "moveq  #1,%0          ; " /* 680[1]0 */
+        "dc.l   0x4e7a0002     ; " /* movec %cacr,%d0 */ /* 68020+ only */
+        "moveq  #2,%0          ; " /* 680[2]0 */
+        "dc.l   0x4e7a0004     ; " /* movec %itt0,%d0 */ /* 68040+ only */
+        "moveq  #4,%0          ; " /* 680[4]0 */
+        "dc.l   0x4e7a0808     ; " /* movec %pcr,%d0  */ /* 68060 only */
+        "moveq  #6,%0          ; " /* 680[6]0 */
+        "1: move.l %%a0,%%a7   ; " /* restore %ssp */
+        "move.l %%d1,(%%a1)    ; " /* restore illegal_insn_vec */
+        : "=d" (model) : "0" (0) : "d0", "d1", "a0", "a1" );
+
+    /* 68020 and 68030 implement the same control registers and so
+     * require further discrimination. */
+    if (model == 2) {
+        uint32_t cacr;
+        /* 68030 implements CACR.FD (Freeze Data Cache) as a r/w flag;
+         * 68020 ignores writes, and reads as zero. */
+        asm volatile (
+            "move.l %0,%%d0    ; "
+            "dc.l   0x4e7b0002 ; " /* movec %d0,%cacr */
+            "dc.l   0x4e7a0002 ; " /* movec %cacr,%d0 */
+            "move.l %%d0,%0    ; "
+            : "=d" (cacr) : "0" (1u<<9) /* FD - Freeze Data Cache */ : "d0" );
+        model = cacr ? 3 : 2;
+    }
+
+    return model;
+}
+
 /* Wait for blitter idle. */
 static void waitblit(void)
 {
@@ -441,8 +484,8 @@ static void menu(void)
         print_line(&r);
         r.y++;
     }
-    sprintf(s, "----------- System: %s-----------",
-            is_pal ? "PAL -" : "NTSC ");
+    sprintf(s, "----- CPU: 680%u0 - System: %s----",
+            detect_cpu_model(), is_pal ? "PAL -" : "NTSC ");
     print_line(&r);
     r.y++;
     sprintf(s, "https://github.com/keirf/Amiga-Stuff");
