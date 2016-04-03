@@ -51,11 +51,23 @@ asm (                                           \
 #define ystart  18
 #define yperline 10
 
-/* PAL/NTSC */
-static int is_pal;
+/* Chipset and CPU. */
+#define CHIPSET_ocs 0
+#define CHIPSET_ecs 1
+#define CHIPSET_aga 2
+#define CHIPSET_unknown 3
+static const char *chipset_name[] = { "OCS", "ECS", "AGA", "???" };
+static uint8_t chipset_type;
+static uint8_t cpu_model; /* 680[x]0 */
+
+/* PAL/NTSC and implied CPU frequency. */
+static uint8_t is_pal;
 static unsigned int cpu_hz;
 #define PAL_HZ 7093790
 #define NTSC_HZ 7159090
+
+/* Regardless of intrinsic PAL/NTSC-ness, display may be 50 or 60Hz. */
+static uint8_t vbl_hz;
 
 /* VBL IRQ: 16- and 32-bit timestamps, and VBL counter. */
 static volatile uint32_t stamp32;
@@ -213,7 +225,35 @@ static void ticktostr(uint32_t ticks, char *s)
     }
 }
 
-static int pal_detect(void)
+static uint8_t detect_chipset_type(void)
+{
+    /* Type = VPOSR[14:8]. Ignore bit 4 as this identifies PAL vs NTSC. */
+    uint8_t type = (cust->vposr >> 8) & 0x6f;
+    switch (type) {
+    case 0x00: /* 8361/8367 (Agnus, DIP); 8370/8371 (Fat Agnus, PLCC) */
+        type = CHIPSET_ocs;
+        break;
+    case 0x20: /* 8372 (Fatter Agnus) through rev 4 */
+    case 0x21: /* 8372 (Fatter Agnus) rev 5 */
+        type = CHIPSET_ecs;
+        break;
+    case 0x22: /* 8374 (Alice) thru rev 2 */
+    case 0x23: /* 8374 (Alice) rev 3 through rev 4 */
+        type = CHIPSET_aga;
+        break;
+    default:
+        type = CHIPSET_unknown;
+        break;
+    }
+    return type;
+}
+
+static uint8_t detect_pal_chipset(void)
+{
+    return !(cust->vposr & (1u<<12));
+}
+
+static uint8_t detect_vbl_hz(void)
 {
     uint32_t ticks;
 
@@ -232,10 +272,10 @@ static int pal_detect(void)
      *  NTSC: 10 * (715909 / 60) = 119318
      *  PAL:  10 * (709379 / 50) = 141875 
      * Use 130,000 as mid-point to discriminate.. */
-    return ticks > 130000;
+    return (ticks > 130000) ? 50 : 60;
 }
 
-static unsigned int detect_cpu_model(void)
+static uint8_t detect_cpu_model(void)
 {
     uint32_t model;
 
@@ -275,7 +315,7 @@ static unsigned int detect_cpu_model(void)
         model = cacr ? 3 : 2;
     }
 
-    return model;
+    return (uint8_t)model;
 }
 
 /* Wait for blitter idle. */
@@ -484,8 +524,10 @@ static void menu(void)
         print_line(&r);
         r.y++;
     }
-    sprintf(s, "----- CPU: 680%u0 - System: %s----",
-            detect_cpu_model(), is_pal ? "PAL -" : "NTSC ");
+    sprintf(s, "------ 680%u0 - %s/%s - %uHz -----%c",
+            cpu_model, chipset_name[chipset_type],
+            is_pal ? "PAL" : "NTSC",
+            vbl_hz, is_pal ? '-' : ' ');
     print_line(&r);
     r.y++;
     sprintf(s, "https://github.com/keirf/Amiga-Stuff");
@@ -1866,7 +1908,11 @@ void cstart(void)
     ciaa->tbhi = 0xff;
     ciaa->crb = 0x11;
 
-    is_pal = pal_detect();
+    /* Detect our hardware environment. */
+    cpu_model = detect_cpu_model();
+    chipset_type = detect_chipset_type();
+    vbl_hz = detect_vbl_hz();
+    is_pal = detect_pal_chipset();
     cpu_hz = is_pal ? PAL_HZ : NTSC_HZ;
 
     for (;;)
