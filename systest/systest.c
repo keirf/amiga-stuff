@@ -1657,27 +1657,34 @@ static void joymousecheck(void)
 static void audiocheck(void)
 {
     char s[80];
-    struct char_row r = { .x = 8, .y = 3, .s = s };
+    struct char_row r = { .x = 8, .y = 0, .s = s };
     static const uint8_t sine[] = { 0,19,39,57,74,89,102,113,120,125,127 };
-    const unsigned int nr_samples = 40;
-    int8_t *aud = allocmem(nr_samples);
-    uint8_t key, channels = 0;
+    const unsigned int nr_500hz_samples = 40;
+    const unsigned int nr_10khz_samples = 2;
+    int8_t *aud_500hz = allocmem(nr_500hz_samples);
+    int8_t *aud_10khz = allocmem(nr_10khz_samples);
+    uint8_t key, channels = 0, lowfreq = 1;
     uint32_t period;
     unsigned int i;
 
+    /* Generate the 500Hz waveform. */
     for (i = 0; i < 10; i++) {
-        aud[i] = sine[i];
-        aud[10+i] = sine[10-i];
-        aud[20+i] = -sine[i];
-        aud[30+i] = -sine[10-i];
+        aud_500hz[i] = sine[i];
+        aud_500hz[10+i] = sine[10-i];
+        aud_500hz[20+i] = -sine[i];
+        aud_500hz[30+i] = -sine[10-i];
     }
+
+    /* Generate the 10kHz waveform. */
+    aud_10khz[0] = 127;
+    aud_10khz[1] = -127;
 
     print_menu_nav_line();
 
-    sprintf(s, "-- 500Hz Sine Wave Audio Test --");
+    sprintf(s, "-- Audio Test --");
     print_line(&r);
-    r.x += 7;
-    r.y++;
+    r.y += 2;
+
     sprintf(s, "F1 - Channel 0 (L)");
     print_line(&r);
     r.y++;
@@ -1689,37 +1696,77 @@ static void audiocheck(void)
     r.y++;
     sprintf(s, "F4 - Channel 3 (L)");
     print_line(&r);
+    r.y++;
+    sprintf(s, "F5 - Frequency 500Hz / 10kHz");
+    print_line(&r);
+    r.y++;
+    sprintf(s, "F6 - Low Pass Filter On / Off");
+    print_line(&r);
+    r.y += 2;
 
     /* period = cpu_hz / (2 * nr_samples * frequency) */
-    period = div32(div32(div32(cpu_hz, 2), nr_samples), 500/*Hz*/);
+    period = div32(div32(div32(cpu_hz, 2), nr_500hz_samples), 500/*Hz*/);
 
     for (i = 0; i < 4; i++) {
-        cust->aud[i].lc.p = aud;
-        cust->aud[i].len = nr_samples / 2;
+        cust->aud[i].lc.p = aud_500hz;
+        cust->aud[i].len = nr_500hz_samples / 2;
         cust->aud[i].per = (uint16_t)period;
         cust->aud[i].vol = 0;
     }
     cust->dmacon = 0x800f; /* all audio channels */
 
-    r.x -= 2;
-    r.y += 2;
-
     while (!exit) {
-        sprintf(s, "0=%s 1=%s 2=%s 3=%s",
+        sprintf(s, "Waveform: %s",
+                lowfreq ? "500Hz Sine" : "10kHz Square");
+        wait_bos();
+        print_line(&r);
+        r.y++;
+
+        sprintf(s, "Filter:   %s", (ciaa->pra & CIAAPRA_LED) ? "OFF" : "ON");
+        wait_bos();
+        print_line(&r);
+        r.y++;
+
+        sprintf(s, "Channels: 0=%s 1=%s 2=%s 3=%s",
                 (channels & 1) ? "ON " : "OFF",
                 (channels & 2) ? "ON " : "OFF",
                 (channels & 4) ? "ON " : "OFF",
                 (channels & 8) ? "ON " : "OFF");
         wait_bos();
         print_line(&r);
+        r.y -= 2;
+
+        if (!(key = keycode_buffer))
+            continue;
+        keycode_buffer = 0;
 
         /* ESC also means exit */
-        exit |= (keycode_buffer & 0x7f) == 0x45;
+        exit |= (key & 0x7f) == 0x45;
 
-        if ((key = keycode_buffer - 0x50) < 4) {
-            keycode_buffer = 0;
+        key -= 0x50;
+        if (key < 4) {
+            /* F1-F4: Switch channel 0-3 */
             channels ^= 1u << key;
             cust->aud[key].vol = (channels & (1u << key)) ? 64 : 0;
+        } else if (key == 4) {
+            /* F5: Frequency */
+            lowfreq ^= 1;
+            cust->dmacon = 0x000f; /* dma off */
+            for (i = 0; i < 4; i++) {
+                /* NB. programmed period does not change: sample lengths 
+                 * determine the frequency. */
+                if (lowfreq) {
+                    cust->aud[i].lc.p = aud_500hz;
+                    cust->aud[i].len = nr_500hz_samples / 2;
+                } else {
+                    cust->aud[i].lc.p = aud_10khz;
+                    cust->aud[i].len = nr_10khz_samples / 2;
+                }
+            }
+            cust->dmacon = 0x800f; /* dma on */
+        } else if (key == 5) {
+            /* F6: Low Pass Filter */
+            ciaa->pra ^= CIAAPRA_LED;
         }
     }
 
