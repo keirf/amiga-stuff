@@ -835,11 +835,11 @@ static void memcheck(void)
     }
     tot_chunks = chip_chunks + fast_chunks + slow_chunks;
 
-    sprintf(s, "** %u.%u MB Detected **",
+    sprintf(s, "** %u.%u MB Total Memory Detected **",
             tot_chunks >> 1, (tot_chunks & 1) ? 5 : 0);
     print_line(&r);
     r.y++;
-    sprintf(s, "(Chip: %u.%u MB; Fast %u.%u MB; Slow %u.%u MB)",
+    sprintf(s, "(Chip %u.%u MB -- Fast %u.%u MB -- Slow %u.%u MB)",
             chip_chunks >> 1, (chip_chunks & 1) ? 5 : 0,
             fast_chunks >> 1, (fast_chunks & 1) ? 5 : 0,
             slow_chunks >> 1, (slow_chunks & 1) ? 5 : 0);
