@@ -135,7 +135,7 @@ const static struct menu_option {
     void (*fn)(void);
     const char *name;
 } menu_option[] = {
-    { memcheck,      "Slow RAM (512kB Trapdoor)" },
+    { memcheck,      "Memory" },
     { kbdcheck,      "Keyboard" },
     { floppycheck,   "Floppy Drive" },
     { joymousecheck, "Mouse / Joystick Ports" },
@@ -595,69 +595,48 @@ static uint16_t check_pattern(
     return (uint16_t)val;
 }
 
-static void memcheck(void)
+static void test_memory(uint32_t slots, struct char_row *r)
 {
     volatile uint16_t *p;
-    volatile uint16_t *start = (volatile uint16_t *)0xc00000;
-    volatile uint16_t *end = (volatile uint16_t *)0xc80000;
-    char s[80];
-    struct char_row r = { .x = 8, .y = 4, .s = s };
-    uint16_t a, b, i, j, x, seed = 0x1234;
+    volatile uint16_t *start;
+    volatile uint16_t *end;
+    char *s = (char *)r->s;
+    uint16_t a, i, j, x, nr, seed = 0x1234;
     unsigned int round_major, round_minor;
 
-    i = cust->intenar;
-
-    /* If slow memory is absent then custom registers alias at C00000. We 
-     * detect this by writing to what would be INTENA and checking for changes 
-     * to what would be INTENAR. If we see no change then we are not writing 
-     * to the custom registers and _EXRAM must be asserted at Gary. */
-    p = start;
-    p[0x9a/2] = 0x7fff; /* clear all bits in INTENA */
-    j = cust->intenar;
-    a = p[0x1c/2];
-    p[0x9a/2] = 0xbfff; /* set all bits in INTENA except master enable */
-    b = p[0x1c/2];
-
-    sprintf(s, "-- Slow RAM%s detected --", (a != b) ? " *NOT*" : "");
-    print_line(&r);
-    r.y++;
-
-    if (a != b) {
-        sprintf(s, "Shadow INTENA was %04x, now %04x", a, b);
-        print_line(&r);
-        r.y++;
-        sprintf(s, "Actual INTENA was %04x, now %04x", j, cust->intenar);
-        print_line(&r);
-        print_menu_nav_line();
-        cust->intena = 0x7fff;
-        cust->intena = 0x8000 | i;
-        keycode_buffer = 0;
-        while (!exit && ((keycode_buffer&0x7f) != 0x45)) /* ESC */
+    /* Find first 0.5MB slot to test */
+    for (nr = 0; nr < 32; nr++)
+        if (slots & (1u << nr))
+            break;
+    if (nr == 32) {
+        sprintf(s, "ERROR: No memory (above 512kB) to test!");
+        print_line(r);
+    wait_exit:
+        while (!exit && ((keycode_buffer & 0x7f) != 0x45))
             continue;
+        keycode_buffer = 0;
         return;
     }
 
-    r.y = 13;
-    sprintf(s, "ESC: Summarise & reset errors");
-    print_line(&r);
-    r.y = 14;
-    sprintf(s, "Ctrl + L.Alt: Main menu");
-    print_line(&r);
-    r.y = 5;
+    r->y++;
 
-    /* We believe we have slow memory present. Now check the RAM for errors. 
-     * This uses an inversions algorithm where we try to set an alternating 
+    /* This uses an inversions algorithm where we try to set an alternating 
      * 0/1 pattern in each memory cell (assuming 1-bit DRAM chips). */
     a = 0;
-    b = ~0;
     round_major = round_minor = 0;
-    while (!exit) {
+    while (!exit && ((keycode_buffer & 0x7f) != 0x45)) {
+        start = (volatile uint16_t *)0 + (nr << 18);
+        end = start + (1u << 18);
         switch (round_minor) {
         case 0:
             /* Random numbers. */
+            r->y--;
+            sprintf(s, "Testing 0x%p-0x%p", (char *)start, (char *)end-1);
+            print_line(r);
+            r->y++;
             sprintf(s, "Round %u.%u: Random Fill",
                     round_major+1, round_minor+1);
-            print_line(&r);
+            print_line(r);
             x = seed;
             for (p = start; p != end;) {
                 *p++ = x = lfsr(x);
@@ -680,7 +659,7 @@ static void memcheck(void)
             /* Start with all 0s. Write 1s to even words. */
             sprintf(s, "Round %u.%u: Checkboard #1",
                     round_major+1, round_minor+1);
-            print_line(&r);
+            print_line(r);
             fill_32(0, start, end);
             if (exit) break;
             fill_alt_16(~0, start, end);
@@ -692,7 +671,7 @@ static void memcheck(void)
             /* Start with all 0s. Write 1s to odd words. */
             sprintf(s, "Round %u.%u: Checkboard #2",
                     round_major+1, round_minor+1);
-            print_line(&r);
+            print_line(r);
             fill_32(0, start, end);
             if (exit) break;
             fill_alt_16(~0, start+1, end);
@@ -704,7 +683,7 @@ static void memcheck(void)
             /* Start with all 1s. Write 0s to even words. */
             sprintf(s, "Round %u.%u: Checkboard #3",
                     round_major+1, round_minor+1);
-            print_line(&r);
+            print_line(r);
             fill_32(~0, start, end);
             if (exit) break;
             fill_alt_16(0, start, end);
@@ -716,7 +695,7 @@ static void memcheck(void)
             /* Start with all 1s. Write 0s to odd words. */
             sprintf(s, "Round %u.%u: Checkboard #4",
                     round_major+1, round_minor+1);
-            print_line(&r);
+            print_line(r);
             fill_32(~0, start, end);
             if (exit) break;
             fill_alt_16(0, start+1, end);
@@ -725,22 +704,18 @@ static void memcheck(void)
             break;
         }
 
-        if ((keycode_buffer&0x7f) == 0x45) { /* ESC */
-             keycode_buffer = 0;
-            r.y = 9;
-            while (r.y >= 5) {
-                sprintf(s, "");
-                print_line(&r);
-                r.y--;
-            }
-            r.y = 5;
+        if (++round_minor != 5)
+            continue;
+
+        /* Errors found: then print diagnostic and bail. */
+        if (a != 0) {
             for (i = j = 0; i < 16; i++)
                 if ((a >> i) & 1)
                     j++;
-            sprintf(s, "After round %u.%u: errors in %u bit positions",
-                    round_major+1, round_minor+1, j);
-            print_line(&r);
-            r.y++;
+            sprintf(s, "After round %u: errors in %u bit positions",
+                    round_major+1, j);
+            print_line(r);
+            r->y++;
             if (j != 0) {
                 char num[8];
                 sprintf(s, " -> Bits ");
@@ -752,27 +727,180 @@ static void memcheck(void)
                         strcat(num, ",");
                     strcat(s, num);
                 }
-                print_line(&r);
-                r.y++;
+                print_line(r);
+                r->y++;
             }
-            a = 0;
-            b = ~0;
-            round_major = round_minor = 0;
+            goto wait_exit;
+        }
+
+        /* Next memory range, or next major round if all ranges done. */
+        round_minor = 0;
+        do {
+            if (++nr == 32) {
+                nr = 0;
+                round_major++;
+            }
+        } while (!(slots & (1u << nr)));
+    }
+
+    keycode_buffer = 0;
+}
+
+static void memcheck(void)
+{
+    volatile uint16_t *p;
+    volatile uint16_t *q;
+    char s[80];
+    struct char_row r = { .x = 0, .y = 3, .s = s }, _r;
+    uint32_t ram_slots = 0, aliased_slots = 0;
+    uint16_t a, b, i, j;
+    uint8_t key = 0xff;
+    unsigned int fast_chunks, chip_chunks, slow_chunks, tot_chunks, holes;
+    int dodgy_slow_ram = 0;
+
+    print_menu_nav_line();
+
+    /* 0xA00000-0xBFFFFF: CIA registers alias throughout this range */
+    for (i = 20; i < 24; i++)
+        aliased_slots |= (1u << i);
+
+    /* 0xC00000-0xD7FFFF: If slow memory is absent then custom registers alias
+     * here. We detect this by writing to what would be INTENA and checking 
+     * for changes to what would be INTENAR. If we see no change then we are 
+     * not writing to the custom registers and _EXRAM must be asserted at 
+     * Gary. */
+    for (i = 24; i < 27; i++) {
+        uint16_t intenar = cust->intenar;
+        p = (volatile uint16_t *)0 + (i << 18);
+        p[0x9a/2] = 0x7fff; /* clear all bits in INTENA */
+        j = cust->intenar;
+        a = p[0x1c/2];
+        p[0x9a/2] = 0xbfff; /* set all bits in INTENA except master enable */
+        b = p[0x1c/2];
+        if (a != b) {
+            aliased_slots |= (1u << i);
+            cust->intena = 0x7fff;
+            cust->intena = 0x8000 | intenar;
+        }
+    }
+
+    /* Detect CHIP, FAST and SLOW RAM. 
+     * ram_slots: mask of 512kB chunks detected to contain working ram. */
+    for (i = 0; i < 27; i++) {
+        if (aliased_slots & (1u << i))
+            continue;
+        p = (volatile uint16_t *)s + (i << 18);
+        p[0] = 0x5555;
+        p[1] = 0xaaaa;
+        if ((p[0] != 0x5555) || (p[1] != 0xaaaa)) {
+            p[0] = p[1] = 0;
             continue;
         }
+        for (j = 0; j < i; j++) {
+            q = (volatile uint16_t *)s + (j << 18);
+            if ((ram_slots & (1u << j)) && (*q == 0x5555))
+                break;
+        }
+        if (j == i)
+            ram_slots |= 1u << i;
+        else
+            aliased_slots |= 1u << i;
+        p[0] = p[1] = 0;
+    }
 
-        if (a != b) {
-            r.y++;
-            sprintf(s, "Accumulated errors: %04x", a);
+    /* Count up 512kB chunks of CHIP, FAST, and SLOW RAM. 
+     * {chip,fast,slow}_chunks: # chunks of respective type 
+     * tot_chunks: sum of above */
+    holes = chip_chunks = fast_chunks = slow_chunks = 0;
+    for (i = 0; i < 4; i++) {
+        if (ram_slots & (1u << i)) {
+            if (chip_chunks < i)
+                holes++;
+            chip_chunks++;
+        }
+    }
+    for (i = 4; i < 20; i++) {
+        if (ram_slots & (1u << i)) {
+            if (fast_chunks < (i-4))
+                holes++;
+            fast_chunks++;
+        }
+    }
+    for (i = 24; i < 27; i++) {
+        if (ram_slots & (1u << i)) {
+            if (slow_chunks < (i-24))
+                holes++;
+            slow_chunks++;
+        }
+    }
+    tot_chunks = chip_chunks + fast_chunks + slow_chunks;
+
+    sprintf(s, "** %u.%u MB Detected **",
+            tot_chunks >> 1, (tot_chunks & 1) ? 5 : 0);
+    print_line(&r);
+    r.y++;
+    sprintf(s, "(Chip: %u.%u MB; Fast %u.%u MB; Slow %u.%u MB)",
+            chip_chunks >> 1, (chip_chunks & 1) ? 5 : 0,
+            fast_chunks >> 1, (fast_chunks & 1) ? 5 : 0,
+            slow_chunks >> 1, (slow_chunks & 1) ? 5 : 0);
+    print_line(&r);
+    r.y++;
+    if (holes) {
+        sprintf(s, "WARNING: %u holes in memory map?? (ram %08x; alias %08x)",
+                holes, ram_slots, aliased_slots);
+        print_line(&r);
+        r.y++;
+    }
+    if (!(aliased_slots & (1u<<24)) && !(ram_slots & (1u<<24))) {
+        sprintf(s, "WARNING: Possible faulty SLOW RAM detected");
+        print_line(&r);
+        r.y++;
+        dodgy_slow_ram = 1;
+    }
+
+    r.y++;
+
+    while (!exit) {
+        sprintf(s, "F1 - Test All Memory (excludes first 512kB Chip)");
+        print_line(&r);
+        r.y++;
+        if (dodgy_slow_ram) {
+            sprintf(s, "F2 - Force Test 0.5MB Slow (Trapdoor) RAM");
             print_line(&r);
-            r.y--;
-            b = a;
+        }
+        r.y--;
+
+        for (;;) {
+            /* Grab a key */
+            while (!exit && !(key = keycode_buffer))
+                continue;
+            keycode_buffer = 0;
+            /* Handle exit conditions */
+            exit |= (key == 0x45); /* ESC = exit */
+            if (exit)
+                break;
+            /* Check for keys F1-F2 only */
+            key -= 0x50; /* Offsets from F1 */
+            if (key <= (dodgy_slow_ram ? 1 : 0))
+                break;
         }
 
-        if (++round_minor == 5) {
-            round_major++;
-            round_minor = 0;
+        if (exit)
+            break;
+
+        clear_screen_rows(ystart + r.y * yperline, 4 * yperline);
+        _r = r;
+
+        switch (key) {
+        case 0: /* F1 */
+            test_memory(ram_slots&~1, &_r);
+            break;
+        case 1: /* F2 */
+            test_memory(1u<<24, &_r);
+            break;
         }
+
+        clear_screen_rows(ystart + r.y * yperline, 4 * yperline);
     }
 }
 
