@@ -2,7 +2,7 @@
  * systest.c
  * 
  * System Tests:
- *  - Slow RAM Detection and Check
+ *  - Memory
  *  - Keyboard
  *  - Floppy Drive
  *  - Joystick / Mouse
@@ -214,7 +214,7 @@ static void ticktostr(uint32_t ticks, char *s)
     } else {
         ms = ticks;
         us = do_div(ms, ticks_per_ms);
-        if (ms > 1000) {
+        if (ms >= 1000) {
             sec = ms;
             ms = do_div(sec, 1000);
             sprintf(s, "%u.%us", sec, div32(ms, 100));
@@ -1170,7 +1170,9 @@ static void drive_check_ready(struct char_row *r)
                 ? "READY too fast (%s): Gotek or hacked PC drive?"
                 : (e - s) <= (one_sec>>1)
                 ? "READY in good time (%s)"
-                : "READY too late (%s): slow motor spin-up?",
+                : (e - s) < one_sec
+                ? "READY late (%s): slow motor spin-up?"
+                : "READY *very* late (%s): slow motor spin-up?",
                 delaystr);
     } else {
         sprintf((char *)r->s,
