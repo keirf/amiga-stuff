@@ -72,6 +72,18 @@ static uint16_t copper_overscan[] = {
     0x0184, 0x000f, /* col02 */
     0x0186, 0x0f0f, /* col03 */
     0x0180, 0x0f00, /* col00 */
+    /* Horizontal positions e2->02 inclusive are indistinguishable and all 
+     * occur before the end of 16px overscan. */
+    0x8001, 0xfffe,
+    0x0182, 0x0fff, /* Oh no! White appears before end of overscan! */
+    0x8101, 0xfffe,
+    0x0182, 0x00f0,
+    /* Horizontal positions 04+ occur during or immediately before horizontal 
+     * blank. Position 06 certainly hides the colour change behind flyback. */
+    0x9007, 0xfffe,
+    0x0180, 0x0fff, /* All good! White does not appear mid-line. */
+    0x9107, 0xfffe,
+    0x0180, 0x0f00,
     0xffff, 0xfffe,
 };
 
