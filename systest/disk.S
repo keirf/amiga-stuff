@@ -16,12 +16,8 @@ mfm_decode_track:
         sub.w   #0x438,d0
         lea     (a0,d0.w),a3      /* a3 = mfm end - 1 sector */
 .next_sector:
-        cmpa.l  a0,a3             /* bail if we scan to end of mfm buffer */
-        jmi     .done
-        cmpi.w  #0x4489,(a0)+
-        jne     .next_sector
         cmpi.w  #0x4489,(a0)      /* skip 4489 sync */
-        jeq     .next_sector
+        jeq     .find_sector
         movem.l (a0),d0-d1
         jbsr    decode_mfm_long
         move.l  d0,(a1)+          /* save the header longword */
@@ -41,6 +37,11 @@ mfm_decode_track:
         dbf     d2,.next_data_long
         and.l   d5,d4
         move.l  d4,(a1)+          /* save the EOR checksum */
+.find_sector:
+        cmpa.l  a0,a3             /* bail if we scan to end of mfm buffer */
+        jmi     .done
+        cmpi.w  #0x4489,(a0)+
+        jne     .find_sector
         jra     .next_sector
 .done:  move.l  d3,(sp)
         movem.l (sp)+,d0-d7/a0-a3
