@@ -7,5 +7,7 @@
 *.hex
 *.orig
 *.rej
+*.exe
+*.zip
 degzip
 rom-swizzle

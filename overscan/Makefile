@@ -12,4 +12,4 @@ overscan.adf: overscan.bin
 	adfwrite $@ $< 0 21 -r -c
 
 clean::
-	$(RM) *.adf
+	$(RM) *.adf ../base/*.o
