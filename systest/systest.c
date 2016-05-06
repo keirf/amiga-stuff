@@ -31,6 +31,14 @@ void mfm_encode_track(void *mfmbuf, uint16_t tracknr, uint16_t mfm_bytes);
 /* Space for bitplanes and unpacked font. */
 extern char GRAPHICS[];
 
+/* Write to INTREQ twice at end of ISR to prevent spurious re-entry on 
+ * A4000 with faster processors (040/060). */
+#define IRQ_RESET(bit) do {                     \
+    uint16_t __x = 1u<<bit;                     \
+    cust->intreq = __x;                         \
+    cust->intreq = __x;                         \
+} while (0)
+
 #define IRQ(name)                               \
 static void c_##name(void) attribute_used;      \
 void name(void);                                \
@@ -1994,7 +2002,7 @@ static void c_CIAA_IRQ(void)
      * it. For this same reason (latches level not edge) it is *not* racey to 
      * clear intreq.ciaa second. Indeed AmigaOS does the same (checked 
      * Kickstart 3.1). */
-    cust->intreq = 1u<<3;
+    IRQ_RESET(3);
 }
 
 IRQ(CIAB_IRQ);
@@ -2015,7 +2023,7 @@ static void c_CIAB_IRQ(void)
      * it. For this same reason (latches level not edge) it is *not* racey to 
      * clear intreq.ciab second. Indeed AmigaOS does the same (checked 
      * Kickstart 3.1). */
-    cust->intreq = 1u<<13;
+    IRQ_RESET(13);
 }
 
 IRQ(VBLANK_IRQ);
@@ -2028,7 +2036,7 @@ static void c_VBLANK_IRQ(void)
     stamp32 -= (uint16_t)(stamp16 - cur16);
     stamp16 = cur16;
 
-    cust->intreq = 1u<<5;
+    IRQ_RESET(5);
 }
 
 void cstart(void)
