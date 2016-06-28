@@ -143,13 +143,11 @@ int main(int argc, char **argv)
     if (split) {
         char outname[256];
         uint16_t *a, *b, *p;
-        outbuf[0] = malloc(insz);
-        outbuf[1] = malloc(insz);
+        a = (uint16_t *)(outbuf[0] = malloc(insz));
+        b = (uint16_t *)(outbuf[1] = malloc(insz));
         for (j = 0; j < 2; j++) {
             p = (uint16_t *)buf;
-            a = (uint16_t *)outbuf[0];
-            b = (uint16_t *)outbuf[1];
-            for (i = 0; i < insz/2; i++) {
+            for (i = 0; i < insz/4; i++) {
                 *a++ = *p++;
                 *b++ = *p++;
             }
