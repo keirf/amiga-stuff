@@ -2,10 +2,10 @@ ENTRY(start)
 
 SECTIONS
 {
-  GRAPHICS = 0x20000;
-  SUPER_SP = 0x80000;
-  USER_SP = 0x7fc00;
-  . = 0x70000;
+  SUPER_SP = 0x40000;
+  USER_SP = 0x3fc00;
+  HEAP_END = 0x3f000;
+  . = 0x400;
 
   .text : {
     _start = .;

@@ -28,9 +28,6 @@ unsigned int mfm_decode_track(void *mfmbuf, void *headers, void *data,
                               uint16_t mfm_bytes);
 void mfm_encode_track(void *mfmbuf, uint16_t tracknr, uint16_t mfm_bytes);
 
-/* Space for bitplanes and unpacked font. */
-extern char GRAPHICS[];
-
 /* Write to INTREQ twice at end of ISR to prevent spurious re-entry on 
  * A4000 with faster processors (040/060). */
 #define IRQ_RESET(bit) do {                     \
@@ -151,11 +148,22 @@ const static struct menu_option {
     { videocheck,    "Video" }
 };
 
+#define assert(_p) do { if (!(_p)) __assert_fail(); } while (0)
+
+static void __assert_fail(void)
+{
+    cust->dmacon = cust->intena = 0x7fff;
+    cust->color[0] = 0xf00;
+    for (;;) ;
+}
+
 /* Allocate chip memory. Automatically freed when sub-test exits. */
+extern char HEAP_END[];
 static void *allocmem(unsigned int sz)
 {
     void *p = alloc_p;
     alloc_p = (uint8_t *)alloc_p + sz;
+    assert((char *)alloc_p < HEAP_END);
     return p;
 }
 
@@ -617,7 +625,7 @@ static void test_memory(uint32_t slots, struct char_row *r)
         if (slots & (1u << nr))
             break;
     if (nr == 32) {
-        sprintf(s, "ERROR: No memory (above 512kB) to test!");
+        sprintf(s, "ERROR: No memory (above 256kB) to test!");
         print_line(r);
     wait_exit:
         while (!exit && ((keycode_buffer & 0x7f) != 0x45))
@@ -635,6 +643,8 @@ static void test_memory(uint32_t slots, struct char_row *r)
     while (!exit && ((keycode_buffer & 0x7f) != 0x45)) {
         start = (volatile uint16_t *)0 + (nr << 18);
         end = start + (1u << 18);
+        if (nr == 0)
+            start += 1u << 17; /* skip first 256kB chip */
         switch (round_minor) {
         case 0:
             /* Random numbers. */
@@ -799,9 +809,9 @@ static void memcheck(void)
             continue;
         p = (volatile uint16_t *)s + (i << 18);
         p[0] = 0x5555;
-        p[1] = 0xaaaa;
-        if ((p[0] != 0x5555) || (p[1] != 0xaaaa)) {
-            p[0] = p[1] = 0;
+        p[1<<17] = 0xaaaa;
+        if ((p[0] != 0x5555) || (p[1<<17] != 0xaaaa)) {
+            p[0] = p[1<<17] = 0;
             continue;
         }
         for (j = 0; j < i; j++) {
@@ -813,7 +823,7 @@ static void memcheck(void)
             ram_slots |= 1u << i;
         else
             aliased_slots |= 1u << i;
-        p[0] = p[1] = 0;
+        p[0] = p[1<<17] = 0;
     }
 
     /* Count up 512kB chunks of CHIP, FAST, and SLOW RAM. 
@@ -869,7 +879,7 @@ static void memcheck(void)
     r.y++;
 
     while (!exit) {
-        sprintf(s, "F1 - Test All Memory (excludes first 512kB Chip)");
+        sprintf(s, "F1 - Test All Memory (excludes first 256kB Chip)");
         print_line(&r);
         r.y++;
         if (dodgy_slow_ram) {
@@ -901,7 +911,7 @@ static void memcheck(void)
 
         switch (key) {
         case 0: /* F1 */
-            test_memory(ram_slots&~1, &_r);
+            test_memory(ram_slots, &_r);
             break;
         case 1: /* F2 */
             test_memory(1u<<24, &_r);
@@ -2059,7 +2069,7 @@ void cstart(void)
     memset(_sbss, 0, _ebss-_sbss);
 
     /* Bitplanes and unpacked font allocated as directed by linker. */
-    p = GRAPHICS;
+    p = _end;
     bpl[0] = (uint8_t *)p; p += bplsz;
     bpl[1] = (uint8_t *)p; p += bplsz;
     p = unpack_font(p);

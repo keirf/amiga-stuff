@@ -50,32 +50,15 @@
         lea.l   (USER_SP).l,a0
         move.l  a0,usp          /* USP */
 
-        lea.l   start(pc),a0
-        move.l  a0,d0           /* a0 = d0 = current location */
-        move.l  #start,d1       /* d1 = destination */
-        moveq   #4,d2
-        swap    d2              /* d2 = 0x40000 (256kB) */
-        eor.l   d1,d0           /* *Very* conservative test: could current */
-        and.l   d2,d0           /* location and destination overlap? */
-        jne     1f
-        /* Temp. copy to other half of bottom 512kB */
-        eor.l   d2,d1
-        jsr     copy
-        eor.l   d2,d1
-        move.l  #1f,d0
-        eor.l   d2,d0
-        move.l  d0,a0
-        jmp     (a0)
-1:      /* Main copy to final relocation point */
-        move.l  #main,-(sp)
-
-copy:   lea.l   start(pc),a0    /* a0 = current location */
-        move.l  d1,a1           /* a1 = destination */
+        /* Destination cannot overlap the tail of the source as the destination
+         * is as low as possible in memory (immediately after vector table). */
+        lea.l   start(pc),a0    /* a0 = current location */
+        move.l  #start,a1       /* a1 = destination */
         move.l  #_end-start,d0
         lsr.l   #2,d0
 1:      move.l  (a0)+,(a1)+
         dbf     d0,1b
-        rts
+        jsr     (main).l
 
 main:   move.w  #0x2000,sr      /* allow CPU interrupts now that we are */
                                 /* definitely executing clear of the stack */
