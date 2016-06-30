@@ -47,11 +47,37 @@ asm (                                           \
 "    rte                            \n"         \
 )
 
+static uint16_t pointer_sprite[] = {
+    0x0000, 0x0000,
+    0x8000, 0xc000,
+    0xc000, 0x7000,
+    0x7000, 0x3c00,
+    0x7c00, 0x3f00,
+    0x3f00, 0x1fc0,
+    0x3fc0, 0x1fc0,
+    0x1e00, 0x0f00,
+    0x1f00, 0x0d80,
+    0x0d80, 0x04c0,
+    0x0cc0, 0x0460,
+    0x0060, 0x0020,
+    0x0000, 0x0000
+};
+
+const static uint16_t dummy_sprite[] = {
+    0x0000, 0x0000
+};
+
+/* Display size and depth. */
 #define xres    640
 #define yres    169
 #define bplsz   (yres*xres/8)
 #define planes  2
 
+/* Top-left coordinates of the display. */
+#define diwstrt_h 0x81
+#define diwstrt_v 0x46
+
+/* Text area within the display. */
 #define xstart  110
 #define ystart  18
 #define yperline 10
@@ -91,19 +117,38 @@ static uint16_t *font;
 static void *alloc_start, *alloc_p;
 
 static uint16_t copper[] = {
-    0x008e, 0x4681, /* diwstrt.v = 0x46 */
-    0x0090, 0xefc1, /* diwstop.v = 0xef (169 lines) */
+    0x008e, (diwstrt_v << 8) | diwstrt_h,
+    0x0090, (((diwstrt_v+yres) & 0xFF) << 8) | ((diwstrt_h+xres/2) & 0xFF),
     0x0092, 0x003c, /* ddfstrt */
     0x0094, 0x00d4, /* ddfstop */
     0x0100, 0xa200, /* bplcon0 */
     0x0102, 0x0000, /* bplcon1 */
-    0x0104, 0x0000, /* bplcon2 */
+    0x0104, 0x0024, /* bplcon2 */
     0x0108, 0x0000, /* bpl1mod */
     0x010a, 0x0000, /* bpl2mod */
     0x00e0, 0x0000, /* bpl1pth */
     0x00e2, 0x0000, /* bpl1ptl */
     0x00e4, 0x0000, /* bpl2pth */
     0x00e6, 0x0000, /* bpl2ptl */
+    0x0120, 0x0000, /* spr0pth */
+    0x0122, 0x0000, /* spr0ptl */
+    0x0124, 0x0000, /* spr1pth */
+    0x0126, 0x0000, /* spr1ptl */
+    0x0128, 0x0000, /* spr2pth */
+    0x012a, 0x0000, /* spr2ptl */
+    0x012c, 0x0000, /* spr3pth */
+    0x012e, 0x0000, /* spr3ptl */
+    0x0130, 0x0000, /* spr4pth */
+    0x0132, 0x0000, /* spr4ptl */
+    0x0134, 0x0000, /* spr5pth */
+    0x0136, 0x0000, /* spr5ptl */
+    0x0138, 0x0000, /* spr6pth */
+    0x013a, 0x0000, /* spr6ptl */
+    0x013c, 0x0000, /* spr7pth */
+    0x013e, 0x0000, /* spr7ptl */
+    0x01a2, 0x0000, /* col17 */
+    0x01a4, 0x0eec, /* col18 */
+    0x01a6, 0x0e44, /* col19 */
     0x0182, 0x0222, /* col01 */
     0x0184, 0x0ddd, /* col02 */
     0x0186, 0x0ddd, /* col03 */
@@ -2037,8 +2082,11 @@ static void c_CIAB_IRQ(void)
 }
 
 IRQ(VBLANK_IRQ);
+static uint16_t vblank_joydat;
 static void c_VBLANK_IRQ(void)
 {
+    static uint16_t x, y;
+    uint16_t joydat, hstart, vstart, vstop;
     uint16_t cur16 = get_ciaatb();
 
     vblank_count++;
@@ -2046,12 +2094,27 @@ static void c_VBLANK_IRQ(void)
     stamp32 -= (uint16_t)(stamp16 - cur16);
     stamp16 = cur16;
 
+    /* Update mouse pointer coordinates based on mouse input. */
+    joydat = cust->joy0dat;
+    x += (int8_t)(joydat - vblank_joydat);
+    y += (int8_t)((joydat >> 8) - (vblank_joydat >> 8));
+    x = min_t(int16_t, max_t(int16_t, x, 0), xres-1);
+    y = min_t(int16_t, max_t(int16_t, y, 0), yres-1);
+    vblank_joydat = joydat;
+
+    /* Move the mouse pointer sprite. */
+    hstart = (x>>1) + diwstrt_h-1;
+    vstart = y + diwstrt_v;
+    vstop = vstart + 11;
+    pointer_sprite[0] = (vstart<<8)|(hstart>>1);
+    pointer_sprite[1] = (vstop<<8)|((vstart>>8)<<2)|((vstop>>8)<<1)|(hstart&1);
+
     IRQ_RESET(5);
 }
 
 void cstart(void)
 {
-    uint16_t i;
+    uint16_t i, j;
     char *p;
 
     /* Set up CIAA ICR. We only care about keyboard. */
@@ -2083,6 +2146,16 @@ void cstart(void)
     copper[i+5] = (uint32_t)bpl[1] >> 16;
     copper[i+7] = (uint32_t)bpl[1];
     
+    /* Poke sprite addresses into the copper. */
+    for (i = 0; copper[i] != 0x0120/*spr0pth*/; i++)
+        continue;
+    copper[i+1] = (uint32_t)pointer_sprite >> 16;
+    copper[i+3] = (uint32_t)pointer_sprite;
+    for (j = 1; j < 8; j++) {
+        copper[i+j*4+1] = (uint32_t)dummy_sprite >> 16;
+        copper[i+j*4+3] = (uint32_t)dummy_sprite;
+    }
+
     /* Clear bitplanes. */
     clear_screen_rows(0, yres);
 
@@ -2094,8 +2167,10 @@ void cstart(void)
     cust->cop1lc.p = copper;
     cust->cop2lc.p = copper_2;
 
+    vblank_joydat = cust->joy0dat;
+
     wait_bos();
-    cust->dmacon = 0x81d0; /* enable copper/bitplane/blitter/disk DMA */
+    cust->dmacon = 0x81f0; /* enable copper/bitplane/sprite/blitter/disk DMA */
     cust->intena = 0xa028; /* enable CIA-A/CIA-B/VBLANK interrupts */
 
     /* Start CIAA Timer B in continuous mode. */
