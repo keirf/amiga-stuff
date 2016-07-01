@@ -561,7 +561,7 @@ static void print_menu_nav_line(void)
 {
     char s[80];
     struct char_row r = { .x = 4, .y = 14, .s = s };
-    sprintf(s, "Ctrl + L.Alt: main menu; ESC: up one menu");
+    sprintf(s, "Ctrl + L.Alt: main menu  ESC: up one menu");
     print_line(&r);
 }
 
@@ -581,7 +581,7 @@ static void menu(void)
     print_line(&r);
     r.y++;
     for (i = 0; i < ARRAY_SIZE(menu_option); i++) {
-        sprintf(s, "F%u - %s", i+1, menu_option[i].name);
+        sprintf(s, "F%u: %s", i+1, menu_option[i].name);
         print_line(&r);
         r.y++;
     }
@@ -924,11 +924,11 @@ static void memcheck(void)
     r.y++;
 
     while (!exit) {
-        sprintf(s, "F1 - Test All Memory (excludes first 256kB Chip)");
+        sprintf(s, "F1: Test All Memory (excludes first 256kB Chip)");
         print_line(&r);
         r.y++;
         if (dodgy_slow_ram) {
-            sprintf(s, "F2 - Force Test 0.5MB Slow (Trapdoor) RAM");
+            sprintf(s, "F2: Force Test 0.5MB Slow (Trapdoor) RAM");
             print_line(&r);
         }
         r.y--;
@@ -1407,9 +1407,12 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
         print_line(r);
         r->y += 3;
 
-        sprintf(s, "F1-F4: DF0-DF3; F5: Motor On/Off; F6: Step");
+        sprintf(s, "F1: DF0  F2: DF1  F3: DF2  F4: DF3");
         print_line(r);
-        r->y -= 2;
+        r->y++;
+        sprintf(s, "F5: Motor On/Off  F6: Step");
+        print_line(r);
+        r->y -= 3;
 
         old_pra = ciaa->pra;
         mtr_time = get_time();
@@ -1707,16 +1710,16 @@ static void floppycheck(void)
         sprintf(s, "-- DF%u: Selected --", drv);
         print_line(&r);
         r.y++;
-        sprintf(s, "F1-F4 - DF0-DF3");
+        sprintf(s, "F1: DF0  F2: DF1  F3: DF2  F4: DF3");
         print_line(&r);
         r.y++;
-        sprintf(s, "F5 - Signal Test");
+        sprintf(s, "F5: Signal Test");
         print_line(&r);
         r.y++;
-        sprintf(s, "F6 - Read Test");
+        sprintf(s, "F6: Read Test");
         print_line(&r);
         r.y++;
-        sprintf(s, "F7 - Write Test");
+        sprintf(s, "F7: Write Test");
         print_line(&r);
         r.y -= 4;
 
@@ -1878,22 +1881,22 @@ static void audiocheck(void)
     print_line(&r);
     r.y += 2;
 
-    sprintf(s, "F1 - Channel 0 (L)");
+    sprintf(s, "F1: Channel 0 (L)");
     print_line(&r);
     r.y++;
-    sprintf(s, "F2 - Channel 1 (R)");
+    sprintf(s, "F2: Channel 1 (R)");
     print_line(&r);
     r.y++;
-    sprintf(s, "F3 - Channel 2 (R)");
+    sprintf(s, "F3: Channel 2 (R)");
     print_line(&r);
     r.y++;
-    sprintf(s, "F4 - Channel 3 (L)");
+    sprintf(s, "F4: Channel 3 (L)");
     print_line(&r);
     r.y++;
-    sprintf(s, "F5 - Frequency 500Hz / 10kHz");
+    sprintf(s, "F5: Frequency 500Hz / 10kHz");
     print_line(&r);
     r.y++;
-    sprintf(s, "F6 - Low Pass Filter On / Off");
+    sprintf(s, "F6: Low Pass Filter On / Off");
     print_line(&r);
     r.y += 2;
 
