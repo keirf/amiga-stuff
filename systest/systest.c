@@ -187,20 +187,11 @@ static void joymousecheck(void);
 static void audiocheck(void);
 static void videocheck(void);
 
-/* Menu keys */
-#define K_ESC  0x45
-#define K_F1   0x50
-#define K_F2   0x51
-#define K_F3   0x52
-#define K_F4   0x53
-#define K_F5   0x54
-#define K_F6   0x55
-#define K_F7   0x56
-#define K_F8   0x57
-#define K_F9   0x58
-#define K_F10  0x59
-#define K_CTRL 0x63
-#define K_LALT 0x64
+/* Keycodes used for menu navigation. */
+enum {
+    K_ESC = 0x45, K_CTRL = 0x63, K_LALT = 0x64,
+    K_F1 = 0x50, K_F2, K_F3, K_F4, K_F5, K_F6, K_F7, K_F8, K_F9, K_F10
+};
 
 /* Menu options with associated key (c) and bounding box (x1,y),(x2,y). */
 static uint8_t nr_menu_options, _menu_option_lock;
@@ -2314,11 +2305,15 @@ static void c_VBLANK_IRQ(void)
         vbl_menu_option = m;
     }
 
-    /* One LMB press, emit a keycode if we are within a menu-option box. */
+    /* LMB pressed or released? */
     if (!(ciaa->pra & CIAAPRA_FIR0) != lmb) {
         lmb ^= 1;
-        if (lmb && m && ((keycode_buffer = m->c) == K_CTRL))
-            exit = 1;
+        /* When pressed emit a keycode if we are within a menu-option box. */
+        if (lmb && (m != NULL)) {
+            keycode_buffer = m->c;
+            if (m->c == K_CTRL)
+                exit = 1; /* Ctrl (+ L.Alt) sets the exit flag */
+        }
     }
 
 out:
