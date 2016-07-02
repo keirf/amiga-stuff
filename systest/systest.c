@@ -71,7 +71,7 @@ const static uint16_t dummy_sprite[] = {
 #define xres    640
 #define yres    169
 #define bplsz   (yres*xres/8)
-#define planes  2
+#define planes  3
 
 /* Top-left coordinates of the display. */
 #define diwstrt_h 0x81
@@ -112,7 +112,7 @@ static volatile uint8_t keycode_buffer, exit;
 static volatile unsigned int disk_index_count;
 static volatile uint32_t disk_index_time, disk_index_period;
 
-static uint8_t *bpl[2];
+static uint8_t *bpl[planes];
 static uint16_t *font;
 static void *alloc_start, *alloc_p;
 
@@ -121,7 +121,7 @@ static uint16_t copper[] = {
     0x0090, (((diwstrt_v+yres) & 0xFF) << 8) | ((diwstrt_h+xres/2) & 0xFF),
     0x0092, 0x003c, /* ddfstrt */
     0x0094, 0x00d4, /* ddfstop */
-    0x0100, 0xa200, /* bplcon0 */
+    0x0100, 0xb200, /* bplcon0 */
     0x0102, 0x0000, /* bplcon1 */
     0x0104, 0x0024, /* bplcon2 */
     0x0108, 0x0000, /* bpl1mod */
@@ -130,6 +130,8 @@ static uint16_t copper[] = {
     0x00e2, 0x0000, /* bpl1ptl */
     0x00e4, 0x0000, /* bpl2pth */
     0x00e6, 0x0000, /* bpl2ptl */
+    0x00e8, 0x0000, /* bpl3pth */
+    0x00ea, 0x0000, /* bpl3ptl */
     0x0120, 0x0000, /* spr0pth */
     0x0122, 0x0000, /* spr0ptl */
     0x0124, 0x0000, /* spr1pth */
@@ -149,10 +151,14 @@ static uint16_t copper[] = {
     0x01a2, 0x0000, /* col17 */
     0x01a4, 0x0eec, /* col18 */
     0x01a6, 0x0e44, /* col19 */
+    0x0180, 0x0103, /* col00 */
     0x0182, 0x0222, /* col01 */
     0x0184, 0x0ddd, /* col02 */
     0x0186, 0x0ddd, /* col03 */
-    0x0180, 0x0103, /* col00 */
+    0x0188, 0x04c4, /* col04 */
+    0x018a, 0x0222, /* col05 */
+    0x018c, 0x0ddd, /* col06 */
+    0x018e, 0x0ddd, /* col07 */
     0x008a, 0x0000, /* copjmp2 */
 };
 
@@ -181,26 +187,67 @@ static void joymousecheck(void);
 static void audiocheck(void);
 static void videocheck(void);
 
-const static struct menu_option {
-    void (*fn)(void);
-    const char *name;
-} menu_option[] = {
-    { memcheck,      "Memory" },
-    { kbdcheck,      "Keyboard" },
-    { floppycheck,   "Floppy Drive" },
-    { joymousecheck, "Mouse / Joystick Ports" },
-    { audiocheck,    "Audio" },
-    { videocheck,    "Video" }
-};
+/* Menu keys */
+#define K_ESC  0x45
+#define K_F1   0x50
+#define K_F2   0x51
+#define K_F3   0x52
+#define K_F4   0x53
+#define K_F5   0x54
+#define K_F6   0x55
+#define K_F7   0x56
+#define K_F8   0x57
+#define K_F9   0x58
+#define K_F10  0x59
+#define K_CTRL 0x63
+#define K_LALT 0x64
+
+/* Menu options with associated key (c) and bounding box (x1,y),(x2,y). */
+static uint8_t nr_menu_options, _menu_option_lock;
+static struct menu_option {
+    uint8_t x1, x2, y, c;
+} *vbl_menu_option, menu_option[12]; /* sorted by y, then x1. */
+static int menu_option_cmp(struct menu_option *m, uint8_t x, uint8_t y)
+{
+    if (m->y < y)
+        return -1;
+    if (m->y == y)
+        return (m->x1 < x) ? -1 : (m->x1 > x) ? 1 : 0;
+    return 1;
+}
+
+/* Lock menu options to prevent VBL IRQ from seeing inconsistent state. */
+static void menu_option_lock(void)
+{
+    _menu_option_lock = 1;
+    barrier();
+}
+
+static void menu_option_unlock(void)
+{
+    barrier();
+    _menu_option_lock = 0;
+}
+
+/* Checked by VBL IRQ. */
+static int menu_option_is_locked(void)
+{
+    return _menu_option_lock;
+}
 
 #define assert(_p) do { if (!(_p)) __assert_fail(); } while (0)
 
+#if 1
 static void __assert_fail(void)
 {
     cust->dmacon = cust->intena = 0x7fff;
     cust->color[0] = 0xf00;
     for (;;) ;
 }
+#else
+/* Set a memory watchpoint in your debugger to catch this. */
+#define __assert_fail() (*(volatile int *)0x80000 = 0)
+#endif
 
 /* Allocate chip memory. Automatically freed when sub-test exits. */
 extern char HEAP_END[];
@@ -459,16 +506,50 @@ static void draw_filled_rect(
 
 static void clear_screen_rows(uint16_t y_start, uint16_t y_nr)
 {
+    uint16_t i;
     waitblit();
     cust->bltcon0 = 0x0100;
     cust->bltcon1 = 0x0000;
-    cust->bltdpt.p = bpl[0] + y_start * (xres/8);
     cust->bltdmod = 0;
-    cust->bltsize = (xres/16)|(y_nr<<6);
-    waitblit();
-    cust->bltdpt.p = bpl[1] + y_start * (xres/8);
-    cust->bltsize = (xres/16)|(y_nr<<6);
-    waitblit();
+    for (i = 0; i < planes; i++) {
+        cust->bltdpt.p = bpl[i] + y_start * (xres/8);
+        cust->bltsize = (xres/16)|(y_nr<<6);
+        waitblit();
+    }
+}
+
+static void clear_whole_screen(void)
+{
+    menu_option_lock();
+    vbl_menu_option = NULL;
+    nr_menu_options = 0;
+    menu_option_unlock();
+    clear_screen_rows(0, yres);
+}
+
+static void clear_text_rows(uint16_t y_start, uint16_t y_nr)
+{
+    struct menu_option *m, *n;
+    uint16_t i, j;
+
+    /* Remove any menu options which are being cleared. */
+    menu_option_lock();
+    for (i = 0, m = menu_option; i < nr_menu_options; i++, m++)
+        if (m->y >= y_start)
+            break;
+    for (j = i, n = m; j < nr_menu_options; j++, n++)
+        if (n->y >= (y_start + y_nr))
+            break;
+    if (vbl_menu_option >= n) {
+        vbl_menu_option -= j-i;
+    } else if (vbl_menu_option >= m) {
+        vbl_menu_option = NULL;
+    }
+    memmove(m, n, (nr_menu_options-j)*sizeof(*m));
+    nr_menu_options -= j-i;
+    menu_option_unlock();
+
+    clear_screen_rows(ystart + y_start * yperline, y_nr * yperline);
 }
 
 static void clear_colors(void)
@@ -546,32 +627,91 @@ static void print_char(uint16_t x, uint16_t y, char c)
 
 static void print_line(const struct char_row *r)
 {
-    uint16_t x = xstart + r->x * 8;
-    uint16_t y = ystart + r->y * yperline;
+    struct menu_option *m = NULL;
+    uint16_t _x = r->x, x = xstart + _x * 8;
+    uint16_t _y = r->y, y = ystart + _y * yperline;
     const char *p = r->s;
     char c;
-    clear_screen_rows(y, yperline);
+    clear_text_rows(_y, 1);
     while ((c = *p++) != '\0') {
+        if (c == '$') {
+            if (m == NULL) {
+                /* Starting a menu option */
+                uint16_t i;
+                char s[20];
+                menu_option_lock();
+                assert(nr_menu_options < ARRAY_SIZE(menu_option));
+                /* Find location within sorted menu-option array. */
+                for (i = 0, m = menu_option; i < nr_menu_options; i++, m++)
+                    if (menu_option_cmp(m, _x, _y) > 0)
+                        break;
+                /* Shuffle and insert into the array. */
+                if (vbl_menu_option >= m)
+                    vbl_menu_option++;
+                memmove(m+1, m, (nr_menu_options - i) * sizeof(*m));
+                m->c = *p++;
+                m->x1 = _x;
+                m->y = _y;
+                nr_menu_options++;
+                /* Construct key-combo text. */
+                if ((m->c >= '1') && (m->c <= '9')) {
+                    sprintf(s, "F%c:", m->c);
+                    m->c = m->c - '1' + K_F1;
+                } else if (m->c == 'E') {
+                    sprintf(s, "ESC:");
+                    m->c = K_ESC;
+                } else if (m->c == 'C') {
+                    sprintf(s, "Ctrl + L.Alt:");
+                    m->c = K_CTRL;
+                }
+                /* Print key-combo text. */
+                for (i = 0; (c = s[i]) != '\0'; i++) {
+                    print_char(x, y, c);
+                    x += 8;
+                    _x++;
+                }
+            } else {
+                /* Ending a menu option */
+                m->x2 = _x;
+                m = NULL;
+                menu_option_unlock();
+            }
+            continue;
+        }
         print_char(x, y, c);
         x += 8;
+        _x++;
     }
+    assert(m == NULL);
 }
 
 static void print_menu_nav_line(void)
 {
     char s[80];
     struct char_row r = { .x = 4, .y = 14, .s = s };
-    sprintf(s, "Ctrl + L.Alt: main menu  ESC: up one menu");
+    sprintf(s, "$C main menu$  $E up one menu$");
     print_line(&r);
 }
 
-static void menu(void)
+static void mainmenu(void)
 {
+    const static struct {
+        void (*fn)(void);
+        const char *name;
+    } mainmenu_option[] = {
+        { memcheck,      "Memory" },
+        { kbdcheck,      "Keyboard" },
+        { floppycheck,   "Floppy Drive" },
+        { joymousecheck, "Mouse / Joystick Ports" },
+        { audiocheck,    "Audio" },
+        { videocheck,    "Video" }
+    };
+
     uint8_t i;
     char s[80];
     struct char_row r = { .x = 4, .y = 0, .s = s };
 
-    clear_screen_rows(0, yres);
+    clear_whole_screen();
     keycode_buffer = 0;
 
     sprintf(s, "SysTest - by KAF <keir.xen@gmail.com>");
@@ -580,8 +720,8 @@ static void menu(void)
     sprintf(s, "------------------------------------");
     print_line(&r);
     r.y++;
-    for (i = 0; i < ARRAY_SIZE(menu_option); i++) {
-        sprintf(s, "F%u: %s", i+1, menu_option[i].name);
+    for (i = 0; i < ARRAY_SIZE(mainmenu_option); i++) {
+        sprintf(s, "$%u %s$", i+1, mainmenu_option[i].name);
         print_line(&r);
         r.y++;
     }
@@ -600,13 +740,13 @@ static void menu(void)
 
     print_menu_nav_line();
 
-    while ((i = keycode_buffer - 0x50) >= ARRAY_SIZE(menu_option))
+    while ((i = keycode_buffer - K_F1) >= ARRAY_SIZE(mainmenu_option))
         continue;
-    clear_screen_rows(0, yres);
+    clear_whole_screen();
     keycode_buffer = 0;
     exit = 0;
     alloc_p = alloc_start;
-    (*menu_option[i].fn)();
+    (*mainmenu_option[i].fn)();
 }
 
 static inline __attribute__((always_inline)) uint16_t lfsr(uint16_t x)
@@ -673,7 +813,7 @@ static void test_memory(uint32_t slots, struct char_row *r)
         sprintf(s, "ERROR: No memory (above 256kB) to test!");
         print_line(r);
     wait_exit:
-        while (!exit && ((keycode_buffer & 0x7f) != 0x45))
+        while (!exit && ((keycode_buffer & 0x7f) != K_ESC))
             continue;
         keycode_buffer = 0;
         return;
@@ -685,7 +825,7 @@ static void test_memory(uint32_t slots, struct char_row *r)
      * 0/1 pattern in each memory cell (assuming 1-bit DRAM chips). */
     a = 0;
     round_major = round_minor = 0;
-    while (!exit && ((keycode_buffer & 0x7f) != 0x45)) {
+    while (!exit && ((keycode_buffer & 0x7f) != K_ESC)) {
         start = (volatile uint16_t *)0 + (nr << 18);
         end = start + (1u << 18);
         if (nr == 0)
@@ -924,11 +1064,11 @@ static void memcheck(void)
     r.y++;
 
     while (!exit) {
-        sprintf(s, "F1: Test All Memory (excludes first 256kB Chip)");
+        sprintf(s, "$1 Test All Memory (excludes first 256kB Chip)$");
         print_line(&r);
         r.y++;
         if (dodgy_slow_ram) {
-            sprintf(s, "F2: Force Test 0.5MB Slow (Trapdoor) RAM");
+            sprintf(s, "$2 Force Test 0.5MB Slow (Trapdoor) RAM$");
             print_line(&r);
         }
         r.y--;
@@ -939,11 +1079,11 @@ static void memcheck(void)
                 continue;
             keycode_buffer = 0;
             /* Handle exit conditions */
-            exit |= (key == 0x45); /* ESC = exit */
+            exit |= (key == K_ESC); /* ESC = exit */
             if (exit)
                 break;
             /* Check for keys F1-F2 only */
-            key -= 0x50; /* Offsets from F1 */
+            key -= K_F1; /* Offsets from F1 */
             if (key <= (dodgy_slow_ram ? 1 : 0))
                 break;
         }
@@ -951,7 +1091,7 @@ static void memcheck(void)
         if (exit)
             break;
 
-        clear_screen_rows(ystart + r.y * yperline, 4 * yperline);
+        clear_text_rows(r.y, 4);
         _r = r;
 
         switch (key) {
@@ -963,7 +1103,7 @@ static void memcheck(void)
             break;
         }
 
-        clear_screen_rows(ystart + r.y * yperline, 4 * yperline);
+        clear_text_rows(r.y, 4);
     }
 }
 
@@ -1156,7 +1296,7 @@ static void kbdcheck(void)
     sprintf(s, "Raw Keycodes:");
     print_line(&r);
     r.y = 14;
-    sprintf(s, "Ctrl + L.Alt: main menu");
+    sprintf(s, "$C main menu$");
     print_line(&r);
     r.y = 11;
 
@@ -1390,7 +1530,7 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
     /* Motor on for 30 seconds at a time when there is no user input. */
     mtr_timeout = 30 * div32(cpu_hz, 10);
 
-    while (!exit && (key != 0x45)) {
+    while (!exit && (key != K_ESC)) {
 
         on = 0;
         drive_select_motor(drv, 0);
@@ -1407,10 +1547,10 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
         print_line(r);
         r->y += 3;
 
-        sprintf(s, "F1: DF0  F2: DF1  F3: DF2  F4: DF3");
+        sprintf(s, "$1 DF0$  $2 DF1$  $3 DF2$  $4 DF3$");
         print_line(r);
         r->y++;
-        sprintf(s, "F5: Motor On/Off  F6: Step");
+        sprintf(s, "$5 Motor On/Off$  $6 Step$");
         print_line(r);
         r->y -= 3;
 
@@ -1456,9 +1596,9 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
                 continue;
             keycode_buffer = 0;
             key_time = get_time();
-            if ((key >= 0x50) && (key <= 0x53)) { /* F1-F4 */
+            if ((key >= K_F1) && (key <= 0x53)) { /* F1-F4 */
                 drive_select_motor(drv, 0);
-                drv = key - 0x50;
+                drv = key - K_F1;
                 r->y--;
                 break;
             } else if (key == 0x54) { /* F5 */
@@ -1470,7 +1610,7 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
             } else if (key == 0x55) { /* F6 */
                 seek_track((cur_cyl == 0) ? 2 : 0);
                 key = 0; /* don't force print */
-            } else if (key == 0x45) { /* ESC */
+            } else if (key == K_ESC) { /* ESC */
                 break;
             } else {
                 key = 0;
@@ -1535,7 +1675,7 @@ static unsigned int drive_read_test(unsigned int drv, struct char_row *r)
                 sprintf(retrystr, " attempt %u", retries+1);
             sprintf(s, "Reading Track %u...%s", i, retrystr);
             print_line(r);
-            done = (exit || (keycode_buffer&0x7f) == 0x45);
+            done = (exit || (keycode_buffer&0x7f) == K_ESC);
             if (done)
                 goto out;
             if (retries++)
@@ -1567,7 +1707,7 @@ out:
     alloc_p = alloc_s;
 
     while (!done)
-        done = (exit || keycode_buffer == 0x45);
+        done = (exit || keycode_buffer == K_ESC);
     keycode_buffer = 0;
 
     return drv;
@@ -1627,7 +1767,7 @@ static unsigned int drive_write_test(unsigned int drv, struct char_row *r)
                 sprintf(retrystr, " attempt %u", retries+1);
             sprintf(s, "Writing Track %u...%s", i, retrystr);
             print_line(r);
-            done = (exit || (keycode_buffer&0x7f) == 0x45);
+            done = (exit || (keycode_buffer&0x7f) == K_ESC);
             if (done)
                 goto out;
             if (retries++)
@@ -1675,7 +1815,7 @@ out:
     alloc_p = alloc_s;
 
     while (!done)
-        done = (exit || keycode_buffer == 0x45);
+        done = (exit || keycode_buffer == K_ESC);
     keycode_buffer = 0;
 
     return drv;
@@ -1710,16 +1850,16 @@ static void floppycheck(void)
         sprintf(s, "-- DF%u: Selected --", drv);
         print_line(&r);
         r.y++;
-        sprintf(s, "F1: DF0  F2: DF1  F3: DF2  F4: DF3");
+        sprintf(s, "$1 DF0$  $2 DF1$  $3 DF2$  $4 DF3$");
         print_line(&r);
         r.y++;
-        sprintf(s, "F5: Signal Test");
+        sprintf(s, "$5 Signal Test$");
         print_line(&r);
         r.y++;
-        sprintf(s, "F6: Read Test");
+        sprintf(s, "$6 Read Test$");
         print_line(&r);
         r.y++;
-        sprintf(s, "F7: Write Test");
+        sprintf(s, "$7 Write Test$");
         print_line(&r);
         r.y -= 4;
 
@@ -1729,11 +1869,11 @@ static void floppycheck(void)
                 continue;
             keycode_buffer = 0;
             /* Handle exit conditions */
-            exit |= (key == 0x45); /* ESC = exit */
+            exit |= (key == K_ESC); /* ESC = exit */
             if (exit)
                 break;
             /* Check for keys F1-F7 only */
-            key -= 0x50; /* Offsets from F1 */
+            key -= K_F1; /* Offsets from F1 */
             if (key >= 7)
                 continue;
             /* F5-F7: handled outside this loop */
@@ -1748,7 +1888,7 @@ static void floppycheck(void)
         if (exit)
             break;
 
-        clear_screen_rows(ystart + r.y * yperline, 6 * yperline);
+        clear_text_rows(r.y, 6);
         _r = r;
 
         switch (key) {
@@ -1762,6 +1902,8 @@ static void floppycheck(void)
             drv = drive_write_test(drv, &_r);
             break;
         }
+
+        clear_text_rows(r.y, 6);
     }
 }
 
@@ -1810,7 +1952,7 @@ static void joymousecheck(void)
     for (i = 0; !exit; i++) {
 
         /* ESC also means exit */
-        exit |= (keycode_buffer & 0x7f) == 0x45;
+        exit |= (keycode_buffer & 0x7f) == K_ESC;
 
         if (i & 1) {
             /* Odd frames: print button/direction info */
@@ -1881,22 +2023,22 @@ static void audiocheck(void)
     print_line(&r);
     r.y += 2;
 
-    sprintf(s, "F1: Channel 0 (L)");
+    sprintf(s, "$1 Channel 0 (L)$");
     print_line(&r);
     r.y++;
-    sprintf(s, "F2: Channel 1 (R)");
+    sprintf(s, "$2 Channel 1 (R)$");
     print_line(&r);
     r.y++;
-    sprintf(s, "F3: Channel 2 (R)");
+    sprintf(s, "$3 Channel 2 (R)$");
     print_line(&r);
     r.y++;
-    sprintf(s, "F4: Channel 3 (L)");
+    sprintf(s, "$4 Channel 3 (L)$");
     print_line(&r);
     r.y++;
-    sprintf(s, "F5: Frequency 500Hz / 10kHz");
+    sprintf(s, "$5 Frequency 500Hz / 10kHz$");
     print_line(&r);
     r.y++;
-    sprintf(s, "F6: Low Pass Filter On / Off");
+    sprintf(s, "$6 Low Pass Filter On / Off$");
     print_line(&r);
     r.y += 2;
 
@@ -1911,7 +2053,7 @@ static void audiocheck(void)
     }
     cust->dmacon = 0x800f; /* all audio channels */
 
-    while (!exit) {
+    for (;;) {
         sprintf(s, "Waveform: %s",
                 lowfreq ? "500Hz Sine" : "10kHz Square");
         wait_bos();
@@ -1932,14 +2074,16 @@ static void audiocheck(void)
         print_line(&r);
         r.y -= 2;
 
-        if (!(key = keycode_buffer))
+        while (!(key = keycode_buffer) && !exit)
             continue;
         keycode_buffer = 0;
 
         /* ESC also means exit */
-        exit |= (key & 0x7f) == 0x45;
+        exit |= (key & 0x7f) == K_ESC;
+        if (exit)
+            break;
 
-        key -= 0x50;
+        key -= K_F1;
         if (key < 4) {
             /* F1-F4: Switch channel 0-3 */
             channels ^= 1u << key;
@@ -1976,6 +2120,7 @@ static void videocheck(void)
 {
     uint16_t *p, *cop, wait;
     unsigned int i, j, k;
+    uint32_t bpl3;
 
     cop = p = allocmem(16384 /* plenty */);
 
@@ -1985,6 +2130,19 @@ static void videocheck(void)
     /* Top border black. */
     *p++ = 0x0180;
     *p++ = 0x0000;
+
+    /* Reduce to 2-plane depth as otherwise copper timings are slowed.  */
+    *p++ = 0x0100; /* bplcon0 */
+    *p++ = 0xa200; /* hires, 2 planes */
+
+    /* Adjust bitplane 3 start for when we re-enable third bitplane at 
+     * bottom of screen. */
+    bpl3 = (uint32_t)bpl[2];
+    bpl3 += 158 * xres/8;
+    *p++ = 0x00e8; /* bpl3pth */
+    *p++ = bpl3 >> 16;
+    *p++ = 0x00ea; /* bpl3ptl */
+    *p++ = bpl3;
 
     /* Create a vertical gradient of red, green, blue (across screen). 
      * Alternate white/black markers to indicate gradient changes. */
@@ -2014,6 +2172,12 @@ static void videocheck(void)
         }
     }
 
+    /* WAIT line, then re-enable third bitplane. */
+    *p++ = wait | 0x06;
+    *p++ = 0xfffe;
+    *p++ = 0x0100; /* bplcon0 */
+    *p++ = 0xb200; /* hires, 3 planes */
+
     /* End of copper list. */
     *p++ = 0xffff;
     *p++ = 0xfffe;
@@ -2026,7 +2190,7 @@ static void videocheck(void)
 
     /* All work is done by the copper. Just wait for exit. */
     while (!exit)
-        exit |= (keycode_buffer == 0x45); /* ESC */
+        exit |= (keycode_buffer == K_ESC);
 
     /* Clean up. */
     wait_bos();
@@ -2044,7 +2208,7 @@ static void c_CIAA_IRQ(void)
         /* Grab and decode the keycode. */
         uint8_t keycode = ~ciaa->sdr;
         keycode_buffer = (keycode >> 1) | (keycode << 7); /* ROR 1 */
-        if ((prev_key == 0x63) && (keycode_buffer == 0x64))
+        if ((prev_key == K_CTRL) && (keycode_buffer == K_LALT))
             exit = 1; /* Ctrl + L.Alt */
         prev_key = keycode_buffer;
         /* Handshake over the serial line. */
@@ -2088,9 +2252,10 @@ IRQ(VBLANK_IRQ);
 static uint16_t vblank_joydat;
 static void c_VBLANK_IRQ(void)
 {
-    static uint16_t x, y;
-    uint16_t joydat, hstart, vstart, vstop;
+    static uint16_t x, y, lmb;
+    uint16_t joydat, hstart, vstart, vstop, i;
     uint16_t cur16 = get_ciaatb();
+    struct menu_option *vm, *m;
 
     vblank_count++;
 
@@ -2112,6 +2277,51 @@ static void c_VBLANK_IRQ(void)
     pointer_sprite[0] = (vstart<<8)|(hstart>>1);
     pointer_sprite[1] = (vstop<<8)|((vstart>>8)<<2)|((vstop>>8)<<1)|(hstart&1);
 
+    if (menu_option_is_locked())
+        goto out;
+
+    m = NULL;
+    vm = vbl_menu_option;
+
+    /* Is mouse pointer currently within a menu-option bounding box? */
+    if ((x >= xstart) && (y >= ystart)) {
+        uint8_t cx = (x - xstart) >> 3;
+        uint8_t cy = div32(y - ystart, yperline);
+        for (i = 0, m = menu_option; i < nr_menu_options; i++, m++) {
+            if ((m->x1 <= cx) && (m->x2 > cx) && (m->y == cy))
+                break;
+        }
+        if (i == nr_menu_options)
+            m = NULL;
+    }
+
+    /* Has current bounding box (or lack thereof) changed since last check? 
+     * Update the display if so. */
+    if (m != vm) {
+        uint16_t fx, fw, fy;
+        if (vm != NULL) {
+            fx = xstart + vm->x1 * 8 - 1;
+            fw = (vm->x2 - vm->x1) * 8 + 3;
+            fy = ystart + vm->y * yperline;
+            draw_filled_rect(bpl[2], fx, fy, fw, yperline, 0);
+        }
+        if (m != NULL) {
+            fx = xstart + m->x1 * 8 - 1;
+            fw = (m->x2 - m->x1) * 8 + 3;
+            fy = ystart + m->y * yperline;
+            draw_filled_rect(bpl[2], fx, fy, fw, yperline, 1);
+        }
+        vbl_menu_option = m;
+    }
+
+    /* One LMB press, emit a keycode if we are within a menu-option box. */
+    if (!(ciaa->pra & CIAAPRA_FIR0) != lmb) {
+        lmb ^= 1;
+        if (lmb && m && ((keycode_buffer = m->c) == K_CTRL))
+            exit = 1;
+    }
+
+out:
     IRQ_RESET(5);
 }
 
@@ -2136,18 +2346,20 @@ void cstart(void)
 
     /* Bitplanes and unpacked font allocated as directed by linker. */
     p = _end;
-    bpl[0] = (uint8_t *)p; p += bplsz;
-    bpl[1] = (uint8_t *)p; p += bplsz;
+    for (i = 0; i < planes; i++) {
+        bpl[i] = (uint8_t *)p;
+        p += bplsz;
+    }
     p = unpack_font(p);
     alloc_start = p;
 
     /* Poke bitplane addresses into the copper. */
     for (i = 0; copper[i] != 0x00e0/*bpl1pth*/; i++)
         continue;
-    copper[i+1] = (uint32_t)bpl[0] >> 16;
-    copper[i+3] = (uint32_t)bpl[0];
-    copper[i+5] = (uint32_t)bpl[1] >> 16;
-    copper[i+7] = (uint32_t)bpl[1];
+    for (j = 0; j < planes; j++) {
+        copper[i+j*4+1] = (uint32_t)bpl[j] >> 16;
+        copper[i+j*4+3] = (uint32_t)bpl[j];
+    }
     
     /* Poke sprite addresses into the copper. */
     for (i = 0; copper[i] != 0x0120/*spr0pth*/; i++)
@@ -2160,7 +2372,7 @@ void cstart(void)
     }
 
     /* Clear bitplanes. */
-    clear_screen_rows(0, yres);
+    clear_whole_screen();
 
     clear_colors();
 
@@ -2189,7 +2401,7 @@ void cstart(void)
     cpu_hz = is_pal ? PAL_HZ : NTSC_HZ;
 
     for (;;)
-        menu();
+        mainmenu();
 }
 
 asm (
