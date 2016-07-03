@@ -107,6 +107,11 @@ static volatile unsigned int vblank_count;
 
 /* CIAA IRQ: Keyboard variables. */
 static volatile uint8_t keycode_buffer, exit;
+/* A buffer ring for holding up to 1024 consecutive keycodes without loss.
+ * Avoids losing key events during the keyboard test. Note no use of volatile:
+ * make sure to use barrier() as needed to synchronise with the irq handler. */
+static uint8_t keycode_ring[1024];
+static uint16_t keycode_prod, keycode_cons;
 
 /* CIAB IRQ: FLAG (disk index) pulse counter. */
 static volatile unsigned int disk_index_count;
@@ -1251,6 +1256,9 @@ static uint16_t copper_kbd[] = {
     /* reverse video */
     0x0182, 0x0ddd, /* col01 = foreground */
     0x0186, 0x0222, /* col03 = shadow */
+    0x0188, 0x0484, /* col04 = previously-pressed highlight */
+    0x018a, 0x0ddd, /* col05 = foreground */
+    0x018e, 0x0222, /* col07 = shadow */
     0x4407, 0xfffe,
     0x0180, 0x0ddd,
     0x4507, 0xfffe,
@@ -1259,6 +1267,9 @@ static uint16_t copper_kbd[] = {
     /* normal video */
     0x0182, 0x0222, /* col01 = shadow */
     0x0186, 0x0ddd, /* col03 = foreground */
+    0x0188, 0x04c4, /* col04 = menu-option highlight */
+    0x018a, 0x0222, /* col05 = shadow */
+    0x018e, 0x0ddd, /* col07 = foreground */
     0xf007, 0xfffe,
     0x0180, 0x0ddd,
     0xf107, 0xfffe,
@@ -1315,13 +1326,13 @@ static void kbdcheck(void)
 
     i = 0;
     s[0] = '\0';
-    keycode_buffer = 0x7f;
+    keycode_cons = keycode_prod; /* clear the keycode ring */
     while (!exit) {
-        /* Wait for a key. Latch it. */
-        uint8_t key = keycode_buffer;
-        if (key == 0x7f)
-            continue;
-        keycode_buffer = 0x7f;
+        /* Wait for a key in the keycode ring and then consume it. */
+        uint8_t key;
+        while (keycode_cons == keycode_prod)
+            barrier(); /* see updates from keyboard irq */
+        key = keycode_ring[keycode_cons++ & (ARRAY_SIZE(keycode_ring)-1)];
 
         /* Out of list space. Clear the keycode-list area. */
         if (r.y == 14) {
@@ -1349,13 +1360,19 @@ static void kbdcheck(void)
         x = 30 + cap->x;
         y = 13 + cap->y;
         draw_filled_rect(bpl[0], x+1, y+1, cap->w-1, cap->h-1, !(key & 0x80));
-        if ((key & 0x7f) == 0x44) /* Return needs a bodge.*/
+        if (!(key & 0x80)) /* permanent highlight in bpl[2] */
+            draw_filled_rect(bpl[2], x+1, y+1, cap->w-1, cap->h-1, 1);
+        if ((key & 0x7f) == 0x44) { /* Return needs a bodge.*/
             draw_filled_rect(bpl[0], x-7, y+1, 8, 14, !(key & 0x80));
+            if (!(key & 0x80)) /* permanent highlight in bpl[2] */
+                draw_filled_rect(bpl[2], x-7, y+1, 8, 14, 1);
+        }
     }
 
     /* Clean up. */
     wait_bos();
     cust->cop2lc.p = copper_2;
+    keycode_buffer = 0;
 }
 
 /* Select @drv and set motor on or off. */
@@ -2215,15 +2232,18 @@ static void c_CIAA_IRQ(void)
 {
     uint16_t i;
     uint8_t icr = ciaa->icr;
-    static uint8_t prev_key;
+    static uint8_t prev_key, key;
 
     if (icr & (1u<<3)) { /* SDR finished a byte? */
         /* Grab and decode the keycode. */
         uint8_t keycode = ~ciaa->sdr;
-        keycode_buffer = (keycode >> 1) | (keycode << 7); /* ROR 1 */
-        if ((prev_key == K_CTRL) && (keycode_buffer == K_LALT))
+        keycode_buffer = key = (keycode >> 1) | (keycode << 7); /* ROR 1 */
+        if ((prev_key == K_CTRL) && (key == K_LALT))
             exit = 1; /* Ctrl + L.Alt */
-        prev_key = keycode_buffer;
+        prev_key = key;
+        /* Place the keycode in the buffer ring if there is space. */
+        if ((keycode_prod - keycode_cons) != ARRAY_SIZE(keycode_ring))
+            keycode_ring[keycode_prod++ & (ARRAY_SIZE(keycode_ring)-1)] = key;
         /* Handshake over the serial line. */
         ciaa->cra |= 1u<<6; /* start the handshake */
         for (i = 0; i < 3; i++) /* wait ~100us */
