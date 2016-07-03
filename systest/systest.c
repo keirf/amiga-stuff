@@ -208,20 +208,20 @@ static int menu_option_cmp(struct menu_option *m, uint8_t x, uint8_t y)
 }
 
 /* Lock menu options to prevent VBL IRQ from seeing inconsistent state. */
-static void menu_option_lock(void)
+static void menu_option_update_start(void)
 {
     _menu_option_lock = 1;
-    barrier();
+    barrier(); /* lock /then/ modify */
 }
 
-static void menu_option_unlock(void)
+static void menu_option_update_end(void)
 {
-    barrier();
+    barrier(); /* modify /then/ unlock */
     _menu_option_lock = 0;
 }
 
 /* Checked by VBL IRQ. */
-static int menu_option_is_locked(void)
+static int menu_option_is_being_updated(void)
 {
     return _menu_option_lock;
 }
@@ -511,10 +511,13 @@ static void clear_screen_rows(uint16_t y_start, uint16_t y_nr)
 
 static void clear_whole_screen(void)
 {
-    menu_option_lock();
+    /* This also clears the entire menu-option array. */
+    menu_option_update_start();
     vbl_menu_option = NULL;
     nr_menu_options = 0;
-    menu_option_unlock();
+    menu_option_update_end();
+
+    /* Physically clear the screen. */
     clear_screen_rows(0, yres);
 }
 
@@ -523,14 +526,16 @@ static void clear_text_rows(uint16_t y_start, uint16_t y_nr)
     struct menu_option *m, *n;
     uint16_t i, j;
 
-    /* Remove any menu options which are being cleared. */
-    menu_option_lock();
+    /* Search for any menu options which are being cleared. */
     for (i = 0, m = menu_option; i < nr_menu_options; i++, m++)
         if (m->y >= y_start)
             break;
     for (j = i, n = m; j < nr_menu_options; j++, n++)
         if (n->y >= (y_start + y_nr))
             break;
+
+    /* Remove those menu options from the menu-option array. */
+    menu_option_update_start();
     if (vbl_menu_option >= n) {
         vbl_menu_option -= j-i;
     } else if (vbl_menu_option >= m) {
@@ -538,8 +543,9 @@ static void clear_text_rows(uint16_t y_start, uint16_t y_nr)
     }
     memmove(m, n, (nr_menu_options-j)*sizeof(*m));
     nr_menu_options -= j-i;
-    menu_option_unlock();
+    menu_option_update_end();
 
+    /* Physically clear the display rows. */
     clear_screen_rows(ystart + y_start * yperline, y_nr * yperline);
 }
 
@@ -618,61 +624,77 @@ static void print_char(uint16_t x, uint16_t y, char c)
 
 static void print_line(const struct char_row *r)
 {
-    struct menu_option *m = NULL;
+    struct menu_option _m, *m = NULL;
+    uint16_t mi = 0;
     uint16_t _x = r->x, x = xstart + _x * 8;
     uint16_t _y = r->y, y = ystart + _y * yperline;
     const char *p = r->s;
     char c;
+
     clear_text_rows(_y, 1);
+
     while ((c = *p++) != '\0') {
-        if (c == '$') {
-            if (m == NULL) {
-                /* Starting a menu option */
-                uint16_t i;
-                char s[20];
-                menu_option_lock();
-                assert(nr_menu_options < ARRAY_SIZE(menu_option));
-                /* Find location within sorted menu-option array. */
-                for (i = 0, m = menu_option; i < nr_menu_options; i++, m++)
-                    if (menu_option_cmp(m, _x, _y) > 0)
-                        break;
-                /* Shuffle and insert into the array. */
-                if (vbl_menu_option >= m)
-                    vbl_menu_option++;
-                memmove(m+1, m, (nr_menu_options - i) * sizeof(*m));
-                m->c = *p++;
-                m->x1 = _x;
-                m->y = _y;
-                nr_menu_options++;
-                /* Construct key-combo text. */
-                if ((m->c >= '1') && (m->c <= '9')) {
-                    sprintf(s, "F%c:", m->c);
-                    m->c = m->c - '1' + K_F1;
-                } else if (m->c == 'E') {
-                    sprintf(s, "ESC:");
-                    m->c = K_ESC;
-                } else if (m->c == 'C') {
-                    sprintf(s, "Ctrl + L.Alt:");
-                    m->c = K_CTRL;
-                }
-                /* Print key-combo text. */
-                for (i = 0; (c = s[i]) != '\0'; i++) {
-                    print_char(x, y, c);
-                    x += 8;
-                    _x++;
-                }
-            } else {
-                /* Ending a menu option */
-                m->x2 = _x;
-                m = NULL;
-                menu_option_unlock();
+
+        if (c != '$') {
+
+            /* Normal character. */
+            print_char(x, y, c);
+            x += 8;
+            _x++;
+
+        } else if (m == NULL) {
+
+            /* '$' starting a menu option */
+            uint16_t i;
+            char s[20];
+
+            _m.c = *p++;
+            _m.x1 = _x;
+            _m.y = _y;
+
+            /* Find location within sorted menu-option array. */
+            assert(nr_menu_options < ARRAY_SIZE(menu_option));
+            for (mi = 0, m = menu_option; mi < nr_menu_options; mi++, m++)
+                if (menu_option_cmp(m, _x, _y) > 0)
+                    break;
+
+            /* Construct key-combo text. */
+            if ((_m.c >= '1') && (_m.c <= '9')) {
+                sprintf(s, "F%c:", _m.c);
+                _m.c = _m.c - '1' + K_F1;
+            } else if (_m.c == 'E') {
+                sprintf(s, "ESC:");
+                _m.c = K_ESC;
+            } else if (_m.c == 'C') {
+                sprintf(s, "Ctrl + L.Alt:");
+                _m.c = K_CTRL;
             }
-            continue;
+
+            /* Print key-combo text. */
+            for (i = 0; (c = s[i]) != '\0'; i++) {
+                print_char(x, y, c);
+                x += 8;
+                _x++;
+            }
+
+        } else {
+
+            /* '$' ending a menu option */
+            _m.x2 = _x;
+
+            /* Shuffle and insert into the array. */
+            menu_option_update_start();
+            if (vbl_menu_option >= m)
+                vbl_menu_option++;
+            memmove(m+1, m, (nr_menu_options - mi) * sizeof(*m));
+            *m = _m;
+            nr_menu_options++;
+            menu_option_update_end();
+            m = NULL;
+
         }
-        print_char(x, y, c);
-        x += 8;
-        _x++;
     }
+
     assert(m == NULL);
 }
 
@@ -2268,7 +2290,9 @@ static void c_VBLANK_IRQ(void)
     pointer_sprite[0] = (vstart<<8)|(hstart>>1);
     pointer_sprite[1] = (vstop<<8)|((vstart>>8)<<2)|((vstop>>8)<<1)|(hstart&1);
 
-    if (menu_option_is_locked())
+    /* Skip menu-option handling if the array is being updated. This avoids us
+     * seeing inconsistent state if we interrupted an update halfway. */
+    if (menu_option_is_being_updated())
         goto out;
 
     m = NULL;
