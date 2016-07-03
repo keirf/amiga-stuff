@@ -1851,8 +1851,8 @@ static void floppycheck(void)
         uint32_t id = drive_id(i);
         sprintf(s, "DF%u: %08x (%s)", i, id,
                 (id == -!!i) ? "Present" :
-                (id ==  -!i) ? "Not Present" :
-                "???");
+                (id !=  -!i) ? "???" :
+                (i == 0) ? "Gotek?" : "Not Present");
         print_line(&r);
         r.y++;
     }
