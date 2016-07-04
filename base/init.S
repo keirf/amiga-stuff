@@ -1,5 +1,5 @@
 /*
- * entry.S
+ * init.S
  *
  * Common startup/entry code
  *
@@ -11,8 +11,24 @@
 
 #define EXEC_Supervisor -0x1e
 
-        /* a4 = current VBR */
+#ifdef DETECT_MEMORY
+        /* Walk Exec memory list to find all memory regions. */
         move.l  4,a6
+        move.l  0x142(a6),a0 /* ExecBase->MemList.lh_Head */
+        lea.l   mem_region(pc),a1
+        lea.l   nr_mem_regions(pc),a2
+        move.w  (a2),d0      /* d0.w = max # regions */
+        subq.w  #1,d0
+.mem:   move.w  14(a0),(a1)+ /* mh_Attributes */
+        move.l  20(a0),(a1)+ /* mh_Lower */
+        move.l  24(a0),(a1)+ /* mh_Upper */
+        move.l  (a0),a0      /* ln_Succ */
+        tst.l   (a0)         /* ... != NULL? */
+        dbeq    d0,.mem
+        sub.w   d0,(a2)      /* update nr_mem_regions with actual # */
+#endif
+
+        /* a4 = current VBR */
         sub.l   a4,a4
         btst.b  #0,297(a6) /* check for 68010+ in AttnFlags */
         jeq     .novbr     /* If a mere 68000 then there is no VBR */

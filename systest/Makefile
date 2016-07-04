@@ -14,11 +14,11 @@ systest.zip: systest.adf systest.exe SysTest.info
 	zip -q $@ $(subst systest.exe,SysTest,$^)
 	$(RM) SysTest
 
-systest_exe.elf: OBJS := ../base/dos_entry.o $(OBJS)
-systest_exe.elf: ../base/dos_entry.o
+systest_exe.elf: OBJS := dos_entry.o $(OBJS)
+systest_exe.elf: dos_entry.o
 
-systest_adf.elf: OBJS := ../base/bootblock.o $(OBJS)
-systest_adf.elf: ../base/bootblock.o
+systest_adf.elf: OBJS := bootblock.o $(OBJS)
+systest_adf.elf: bootblock.o
 
 systest.exe: systest_exe.bin
 	python ../base/mk_amiga_exe.py $< $@

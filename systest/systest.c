@@ -47,6 +47,13 @@ asm (                                           \
 "    rte                            \n"         \
 )
 
+/* Initialised by init.S */
+struct mem_region {
+    uint16_t attr;
+    uint32_t lower, upper;
+} mem_region[16] __attribute__((__section__(".bss.early_init")));
+uint16_t nr_mem_regions = 16;
+
 static uint16_t pointer_sprite[] = {
     0x0000, 0x0000,
     0x8000, 0xc000,
