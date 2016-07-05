@@ -66,15 +66,36 @@
         lea.l   (USER_SP).l,a0
         move.l  a0,usp          /* USP */
 
-        /* Destination cannot overlap the tail of the source as the destination
-         * is as low as possible in memory (immediately after vector table). */
-        lea.l   start(pc),a0    /* a0 = current location */
-        move.l  #start,a1       /* a1 = destination */
+        /* Check whether current location and final destination overlap.
+         * Since the final destination is as low as possible in memory, this
+         * can only occur by the end of the destination running into the start
+         * of the current location. */
+        lea.l   start(pc),a0
+        move.l  a0,d0           /* d0 = current location */
+        move.l  #_end,d1        /* d1 = end of destination */
+        cmp.l   d1,d0           /* Does the destination overlap with us? */
+        jcc     1f
+        /* It does overlap so make a temp. copy immediately beyond us.
+         * This is safe because we are so low in memory there is guaranteed
+         * to be enough memory beyond us to copy into. If we were high enough
+         * in memory for this to be a problem we would not be overlapping
+         * with the final destination in the first place. */
+        lea.l   _end(pc),a1
+        move.l  a1,d1           /* d1 = temp. location (current end loc.)*/
+        jbsr    copy
+        move.l  d1,a0           /* a0 = temp. location */
+        jmp     1f-start(a0)
+1:      /* Main copy to final relocation point */
+        move.l  #main,-(sp)     /* jump to final destination after the copy */
+        move.l  #start,d1       /* d1 = destination */
+
+copy:   lea.l   start(pc),a0    /* a0 = current location */
+        move.l  d1,a1           /* a1 = destination */
         move.l  #_end-start,d0
         lsr.l   #2,d0
 1:      move.l  (a0)+,(a1)+
         dbf     d0,1b
-        jsr     (main).l
+        rts
 
 main:   move.w  #0x2000,sr      /* allow CPU interrupts now that we are */
                                 /* definitely executing clear of the stack */
