@@ -210,6 +210,14 @@ char *strcat(char *dest, const char *src)
     return p;
 }
 
+size_t strlen(const char *s)
+{
+    const char *p = s;
+    while (*p != '\0')
+        p++;
+    return p - s;
+}
+
 void sort(void *base, size_t nmemb, size_t size,
           int (*compar)(const void *, const void *))
 {
