@@ -210,6 +210,26 @@ char *strcat(char *dest, const char *src)
     return p;
 }
 
+void sort(void *base, size_t nmemb, size_t size,
+          int (*compar)(const void *, const void *))
+{
+    int16_t i;
+    char _p[32], *p = base, *q;
+
+    for (i = 1; i < nmemb; i++) {
+        p += size;
+        for (q = p - size; q >= (char *)base; q -= size)
+            if (compar(p, q) > 0)
+                break;
+        q += size;
+        if (p != q) {
+            memcpy(&_p, p, size);
+            memmove(q + size, q, p - q);
+            memcpy(q, &_p, size);
+        }
+    }
+}
+
 /*
  * Local variables:
  * mode: C

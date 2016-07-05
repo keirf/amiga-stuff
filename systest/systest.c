@@ -53,6 +53,12 @@ struct mem_region {
     uint32_t lower, upper;
 } mem_region[16] __attribute__((__section__(".bss.early_init")));
 uint16_t nr_mem_regions = 16;
+static int mem_region_cmp(const void *p, const void *q)
+{
+    const struct mem_region *_p = (const struct mem_region *)p;
+    const struct mem_region *_q = (const struct mem_region *)q;
+    return (_p->lower < _q->lower) ? -1 : (_p->lower > _q->lower) ? 1 : 0;
+}
 
 static uint16_t pointer_sprite[] = {
     0x0000, 0x0000,
@@ -974,19 +980,26 @@ static void test_memory(uint32_t slots, struct char_row *r)
     keycode_buffer = 0;
 }
 
-static void memcheck(void)
+static void memcheck_direct_scan(void)
 {
     volatile uint16_t *p;
     volatile uint16_t *q;
     char s[80];
-    struct char_row r = { .x = 0, .y = 3, .s = s }, _r;
+    struct char_row r = { .s = s }, _r;
     uint32_t ram_slots = 0, aliased_slots = 0;
     uint16_t a, b, i, j;
     uint8_t key = 0xff;
     unsigned int fast_chunks, chip_chunks, slow_chunks, tot_chunks, holes;
     int dodgy_slow_ram = 0;
 
+    clear_whole_screen();
     print_menu_nav_line();
+
+    r.x = 4;
+    sprintf(s, "-- Direct Memory Scan --");
+    print_line(&r);
+    r.x = 0;
+    r.y += 2;
 
     /* 0xA00000-0xBFFFFF: CIA registers alias throughout this range */
     for (i = 20; i < 24; i++)
@@ -1088,7 +1101,7 @@ static void memcheck(void)
 
     r.y++;
 
-    while (!exit) {
+    for (;;) {
         sprintf(s, "$1 Test All Memory (excludes first 256kB Chip)$");
         print_line(&r);
         r.y++;
@@ -1104,17 +1117,13 @@ static void memcheck(void)
                 continue;
             keycode_buffer = 0;
             /* Handle exit conditions */
-            exit |= (key == K_ESC); /* ESC = exit */
-            if (exit)
-                break;
+            if (exit || (key == K_ESC))
+                goto out;
             /* Check for keys F1-F2 only */
             key -= K_F1; /* Offsets from F1 */
             if (key <= (dodgy_slow_ram ? 1 : 0))
                 break;
         }
-
-        if (exit)
-            break;
 
         clear_text_rows(r.y, 4);
         _r = r;
@@ -1130,6 +1139,158 @@ static void memcheck(void)
 
         clear_text_rows(r.y, 4);
     }
+
+out:
+    clear_whole_screen();
+}
+
+static void kickstart_memory_list(void)
+{
+    char s[80];
+    struct char_row r = { .s = s };
+    unsigned int i, base = 0;
+    uint32_t a, b;
+    uint8_t key;
+
+    clear_whole_screen();
+    print_menu_nav_line();
+
+    r.x = 4;
+    sprintf(s, "-- Kickstart Memory List --");
+    print_line(&r);
+
+    r.x = 0;
+    r.y = 2;
+    sprintf(s, " #: LOWER    - UPPER     TYPE   SIZE");
+    print_line(&r);
+
+    for (;;) {
+    print_page:
+        clear_text_rows(3, 10);
+        r.x = 0;
+        r.y = 3;
+        for (i = base; (i < nr_mem_regions) && (i < base+8); i++) {
+            a = mem_region[i].lower & ~0xffff;
+            b = (mem_region[i].upper + 0xffff) & ~ 0xffff;
+            sprintf(s, "%2u: %08x - %08x  %s  %3u.%u MB",
+                    i, a, b,
+                    mem_region[i].attr & 2 ? "Chip" :
+                    (a >= 0x00c00000) && (a < 0x00d00000) ? "Slow" : "Fast",
+                    (b-a) >> 20, ((b-a)>>19)&1 ? 5 : 0);
+            print_line(&r);
+            r.y++;
+        }
+
+        r.x = 4;
+        r.y = 12;
+        sprintf(s, "Page %u/%u  $1 Prev$  $2 Next$",
+                (base+8)>>3, (nr_mem_regions+7)>>3);
+        print_line(&r);
+
+        for (;;) {
+            while (!(key = keycode_buffer) && !exit)
+                continue;
+            keycode_buffer = 0;
+            
+            if (exit || (key == K_ESC))
+                goto out;
+
+            switch (key) {
+            case K_F1:
+                if (base != 0) {
+                    base -= 8;
+                    goto print_page;
+                }
+                break;
+            case K_F2:
+                if (base+8 < nr_mem_regions) {
+                    base += 8;
+                    goto print_page;
+                }
+                break;
+            }
+        }
+    }
+
+out:
+    clear_whole_screen();
+}
+
+static void memcheck(void)
+{
+    char s[80];
+    struct char_row r = { .s = s };
+    uint32_t a, b, chip, fast, slow, tot;
+    uint8_t key;
+    unsigned int i;
+
+    for (;;) {
+        print_menu_nav_line();
+
+        r.x = 4;
+        r.y = 0;
+        sprintf(s, "-- Kickstart Memory Scan --");
+        print_line(&r);
+        r.x = 0;
+        r.y += 2;
+
+        chip = fast = slow = 0;
+        for (i = 0; i < nr_mem_regions; i++) {
+            a = mem_region[i].lower & ~0xffff;
+            b = (mem_region[i].upper + 0xffff) & ~ 0xffff;
+            if (mem_region[i].attr & 2)
+                chip += b-a;
+            else if ((a >= 0x00c00000) && (a < 0x00d00000))
+                slow += b-a;
+            else
+                fast += b-a;
+        }
+        tot = chip + fast + slow;
+
+        sprintf(s, "** %u.%u MB Total Memory Detected **",
+                tot >> 20, (tot>>19)&1 ? 5 : 0);
+        print_line(&r);
+        r.y++;
+        sprintf(s, "(Chip %u.%u MB -- Fast %u.%u MB -- Slow %u.%u MB)",
+                chip >> 20, (chip>>19)&1 ? 5 : 0,
+                fast >> 20, (fast>>19)&1 ? 5 : 0,
+                slow >> 20, (slow>>19)&1 ? 5 : 0);
+        print_line(&r);
+        r.y += 2;
+
+        sprintf(s, "$1 Test All Memory (excludes first 256kB Chip)$");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "$2 List Memory Regions$");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "$3 Direct Memory Scan (Ignores Kickstart)$");
+        print_line(&r);
+        r.y++;
+
+        do {
+            while (!(key = keycode_buffer) && !exit)
+                continue;
+            keycode_buffer = 0;
+
+            if (exit || (key == K_ESC))
+                goto out;
+        } while ((key < K_F1) || (key > K_F3));
+
+        switch (key) {
+        case K_F1:
+            break;
+        case K_F2:
+            kickstart_memory_list();
+            break;
+        case K_F3:
+            memcheck_direct_scan();
+            break;
+        }
+    }
+
+out:
+    clear_whole_screen();
 }
 
 /* List of keycaps and their locations, for drawing the keymap. 
@@ -2445,6 +2606,8 @@ void cstart(void)
     vbl_hz = detect_vbl_hz();
     is_pal = detect_pal_chipset();
     cpu_hz = is_pal ? PAL_HZ : NTSC_HZ;
+
+    sort(mem_region, nr_mem_regions, sizeof(mem_region[0]), mem_region_cmp);
 
     for (;;)
         mainmenu();
