@@ -43,3 +43,13 @@ struct m68k_vector_table {
     m68k_vector_t _rsvd2[16];
     m68k_vector_t user_interrupt[16];
 };
+
+/* An exception frame for entry to a normal C function (which may clobber
+ * D0-D1/A0-A1). SR/PC are saved automatically during exception processing.
+ * There may be other state saved beyond those two registers depending on the
+ * exception type and CPU model. */
+struct c_exception_frame {
+    uint32_t d0, d1, a0, a1;
+    uint16_t sr;
+    uint32_t pc;
+};

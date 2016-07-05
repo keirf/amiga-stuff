@@ -1,3 +1,4 @@
+OBJS += ../base/cancellation.o
 OBJS += ../base/util.o
 OBJS += disk.o
 OBJS += systest.o

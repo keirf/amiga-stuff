@@ -17,6 +17,7 @@
 #include "util.h"
 #include "m68k.h"
 #include "amiga_hw.h"
+#include "cancellation.h"
 
 /*
  * Local variables:
