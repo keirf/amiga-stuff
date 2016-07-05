@@ -1,5 +1,6 @@
 # GNU Make cross-dev build rules
 # My own cross-dev setup is binutils-2.24 + gcc-4.9.2
+# Also tested with binutils-2.26 + gcc-5.3.0
 # Target is m68k-unknown-elf
 
 TOOL_PREFIX = m68k-unknown-elf-
