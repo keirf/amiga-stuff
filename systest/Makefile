@@ -25,7 +25,7 @@ systest.exe: systest_exe.bin
 
 systest.adf: systest_adf.bin
 	dd if=/dev/zero of=$@ bs=512 count=1760 status=none
-	adfwrite $@ $< 0 43 -r -c
+	adfwrite $@ $< 0 1759 -r -c
 
 clean::
 	$(RM) *.adf *.exe *.zip ../base/*.o SysTest
