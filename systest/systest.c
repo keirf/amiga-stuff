@@ -2454,7 +2454,7 @@ static uint16_t vblank_joydat;
 static void c_VBLANK_IRQ(void)
 {
     static uint16_t x, y, lmb;
-    uint16_t joydat, hstart, vstart, vstop, i;
+    uint16_t new_lmb, joydat, hstart, vstart, vstop, i;
     uint16_t cur16 = get_ciaatb();
     struct menu_option *vm, *m;
 
@@ -2518,8 +2518,9 @@ static void c_VBLANK_IRQ(void)
     }
 
     /* LMB pressed or released? */
-    if (!(ciaa->pra & CIAAPRA_FIR0) != lmb) {
-        lmb ^= 1;
+    new_lmb = !(ciaa->pra & CIAAPRA_FIR0);
+    if (lmb != new_lmb) {
+        lmb = new_lmb;
         /* When pressed emit a keycode if we are within a menu-option box. */
         if (lmb && (m != NULL)) {
             keycode_buffer = m->c;
