@@ -1123,7 +1123,7 @@ static void memcheck_direct_scan(void)
 
     r.y++;
 
-    for (;;) {
+    while (!exit) {
         struct test_memory_args tm_args;
 
         sprintf(s, "$1 Test All Memory (excludes first 256kB Chip)$");
@@ -1244,7 +1244,7 @@ static void memcheck(void)
     uint8_t key;
     unsigned int i;
 
-    for (;;) {
+    while (!exit) {
         print_menu_nav_line();
 
         r.x = 4;
@@ -2552,6 +2552,9 @@ static void c_VBLANK_IRQ(void)
             keycode_buffer = m->c;
             if (m->c == K_CTRL)
                 exit = 1; /* Ctrl (+ L.Alt) sets the exit flag */
+            /* Cancel any long-running check if instructed to exit. */
+            if (exit || (m->c == K_ESC))
+                cancel_call(&test_cancellation);
         }
     }
 
