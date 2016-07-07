@@ -15,6 +15,11 @@ struct cancellation {
     void *sp;
 };
 
+static inline int cancellation_is_running(struct cancellation *c)
+{
+    return c->sp != NULL;
+}
+
 /* During interrupt processing: Points to current 'user'/non-interrupt context.
  * (ie. the context saved by the first/outermost interrupt, if we are nesting
  * interrupt invocations). */

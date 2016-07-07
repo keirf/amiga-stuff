@@ -51,6 +51,9 @@ asm (                                                                      \
 "    rte                            \n"                                    \
 )
 
+/* Long-running test may be asynchronously cancelled by exit event. */
+static struct cancellation test_cancellation;
+
 /* Initialised by init.S */
 struct mem_region {
     uint16_t attr;
@@ -201,6 +204,20 @@ struct char_row {
     const char *s;
 };
 
+#define assert(_p) do { if (!(_p)) __assert_fail(); } while (0)
+
+#if 1
+static void __assert_fail(void)
+{
+    cust->dmacon = cust->intena = 0x7fff;
+    cust->color[0] = 0xf00;
+    for (;;) ;
+}
+#else
+/* Set a memory watchpoint in your debugger to catch this. */
+#define __assert_fail() (*(volatile int *)0x80000 = 0)
+#endif
+
 /* Test suite. */
 static void memcheck(void);
 static void kbdcheck(void);
@@ -232,6 +249,10 @@ static int menu_option_cmp(struct menu_option *m, uint8_t x, uint8_t y)
 /* Lock menu options to prevent VBL IRQ from seeing inconsistent state. */
 static void menu_option_update_start(void)
 {
+    /* The critical region must run to completion thus it is incompatible with
+     * asynchronous cancellations. */
+    assert(!cancellation_is_running(&test_cancellation));
+
     _menu_option_lock = 1;
     barrier(); /* lock /then/ modify */
 }
@@ -247,20 +268,6 @@ static int menu_option_is_being_updated(void)
 {
     return _menu_option_lock;
 }
-
-#define assert(_p) do { if (!(_p)) __assert_fail(); } while (0)
-
-#if 1
-static void __assert_fail(void)
-{
-    cust->dmacon = cust->intena = 0x7fff;
-    cust->color[0] = 0xf00;
-    for (;;) ;
-}
-#else
-/* Set a memory watchpoint in your debugger to catch this. */
-#define __assert_fail() (*(volatile int *)0x80000 = 0)
-#endif
 
 /* Allocate chip memory. Automatically freed when sub-test exits. */
 extern char HEAP_END[];
@@ -556,16 +563,18 @@ static void clear_text_rows(uint16_t y_start, uint16_t y_nr)
         if (n->y >= (y_start + y_nr))
             break;
 
-    /* Remove those menu options from the menu-option array. */
-    menu_option_update_start();
-    if (vbl_menu_option >= n) {
-        vbl_menu_option -= j-i;
-    } else if (vbl_menu_option >= m) {
-        vbl_menu_option = NULL;
+    /* Remove those menu options, if any, from the menu-option array. */
+    if (i != j) {
+        menu_option_update_start();
+        if (vbl_menu_option >= n) {
+            vbl_menu_option -= j-i;
+        } else if (vbl_menu_option >= m) {
+            vbl_menu_option = NULL;
+        }
+        memmove(m, n, (nr_menu_options-j)*sizeof(*m));
+        nr_menu_options -= j-i;
+        menu_option_update_end();
     }
-    memmove(m, n, (nr_menu_options-j)*sizeof(*m));
-    nr_menu_options -= j-i;
-    menu_option_update_end();
 
     /* Physically clear the display rows. */
     clear_screen_rows(ystart + y_start * yperline, y_nr * yperline);
@@ -831,7 +840,6 @@ static uint16_t check_pattern(
     return (uint16_t)val;
 }
 
-static struct cancellation memcheck_cancellation;
 struct test_memory_args {
     uint32_t slots;
     struct char_row *r;
@@ -1146,7 +1154,7 @@ static void memcheck_direct_scan(void)
         tm_args.slots = ((key == K_F1) ? ram_slots :
                          /* key == K_F2 */ 1u << 24);
         tm_args.r = &_r;
-        call_cancellable_fn(&memcheck_cancellation, test_memory, &tm_args);
+        call_cancellable_fn(&test_cancellation, test_memory, &tm_args);
         keycode_buffer = 0;
 
         clear_text_rows(r.y, 4);
@@ -2429,7 +2437,7 @@ static void c_CIAA_IRQ(void)
             keycode_ring[keycode_prod++ & (ARRAY_SIZE(keycode_ring)-1)] = key;
         /* Cancel any long-running check if instructed to exit. */
         if (exit || (key == K_ESC))
-            cancel_call(&memcheck_cancellation);
+            cancel_call(&test_cancellation);
         /* Handshake over the serial line. */
         ciaa->cra |= 1u<<6; /* start the handshake */
         for (i = 0; i < 3; i++) /* wait ~100us */
