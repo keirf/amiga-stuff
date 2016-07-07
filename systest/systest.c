@@ -857,7 +857,7 @@ static int test_memory(void *_args)
         sprintf(s, "ERROR: No memory (above 256kB) to test!");
         print_line(r);
     wait_exit:
-        while (!exit && ((keycode_buffer & 0x7f) != K_ESC))
+        while (!exit && (keycode_buffer != K_ESC))
             continue;
         keycode_buffer = 0;
         return 0;
@@ -869,7 +869,7 @@ static int test_memory(void *_args)
      * 0/1 pattern in each memory cell (assuming 1-bit DRAM chips). */
     a = 0;
     round_major = round_minor = 0;
-    while (!exit && ((keycode_buffer & 0x7f) != K_ESC)) {
+    while (!exit && (keycode_buffer != K_ESC)) {
         start = (volatile uint16_t *)0 + (nr << 18);
         end = start + (1u << 18);
         if (nr == 0)
@@ -1885,7 +1885,7 @@ static unsigned int drive_read_test(unsigned int drv, struct char_row *r)
                 sprintf(retrystr, " attempt %u", retries+1);
             sprintf(s, "Reading Track %u...%s", i, retrystr);
             print_line(r);
-            done = (exit || (keycode_buffer&0x7f) == K_ESC);
+            done = (exit || (keycode_buffer == K_ESC));
             if (done)
                 goto out;
             if (retries++)
@@ -1977,7 +1977,7 @@ static unsigned int drive_write_test(unsigned int drv, struct char_row *r)
                 sprintf(retrystr, " attempt %u", retries+1);
             sprintf(s, "Writing Track %u...%s", i, retrystr);
             print_line(r);
-            done = (exit || (keycode_buffer&0x7f) == K_ESC);
+            done = (exit || (keycode_buffer == K_ESC));
             if (done)
                 goto out;
             if (retries++)
@@ -2162,7 +2162,7 @@ static void joymousecheck(void)
     for (i = 0; !exit; i++) {
 
         /* ESC also means exit */
-        exit |= (keycode_buffer & 0x7f) == K_ESC;
+        exit |= (keycode_buffer == K_ESC);
 
         if (i & 1) {
             /* Odd frames: print button/direction info */
@@ -2289,7 +2289,7 @@ static void audiocheck(void)
         keycode_buffer = 0;
 
         /* ESC also means exit */
-        exit |= (key & 0x7f) == K_ESC;
+        exit |= (key == K_ESC);
         if (exit)
             break;
 
@@ -2417,10 +2417,13 @@ static void c_CIAA_IRQ(void)
     if (icr & (1u<<3)) { /* SDR finished a byte? */
         /* Grab and decode the keycode. */
         uint8_t keycode = ~ciaa->sdr;
-        keycode_buffer = key = (keycode >> 1) | (keycode << 7); /* ROR 1 */
+        key = (keycode >> 1) | (keycode << 7); /* ROR 1 */
         if ((prev_key == K_CTRL) && (key == K_LALT))
             exit = 1; /* Ctrl + L.Alt */
         prev_key = key;
+        /* Don't place key release events in the basic keycode buffer. */
+        if (!(key & 0x80))
+            keycode_buffer = key;
         /* Place the keycode in the buffer ring if there is space. */
         if ((keycode_prod - keycode_cons) != ARRAY_SIZE(keycode_ring))
             keycode_ring[keycode_prod++ & (ARRAY_SIZE(keycode_ring)-1)] = key;
