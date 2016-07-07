@@ -831,8 +831,17 @@ static uint16_t check_pattern(
     return (uint16_t)val;
 }
 
-static void test_memory(uint32_t slots, struct char_row *r)
+static struct cancellation memcheck_cancellation;
+struct test_memory_args {
+    uint32_t slots;
+    struct char_row *r;
+};
+static int test_memory(void *_args)
 {
+    struct test_memory_args *args = _args;
+    uint32_t slots = args->slots;
+    struct char_row *r = args->r;
+
     volatile uint16_t *p;
     volatile uint16_t *start;
     volatile uint16_t *end;
@@ -851,7 +860,7 @@ static void test_memory(uint32_t slots, struct char_row *r)
         while (!exit && ((keycode_buffer & 0x7f) != K_ESC))
             continue;
         keycode_buffer = 0;
-        return;
+        return 0;
     }
 
     r->y++;
@@ -982,6 +991,7 @@ static void test_memory(uint32_t slots, struct char_row *r)
     }
 
     keycode_buffer = 0;
+    return 0;
 }
 
 static void memcheck_direct_scan(void)
@@ -1106,6 +1116,8 @@ static void memcheck_direct_scan(void)
     r.y++;
 
     for (;;) {
+        struct test_memory_args tm_args;
+
         sprintf(s, "$1 Test All Memory (excludes first 256kB Chip)$");
         print_line(&r);
         r.y++;
@@ -1124,22 +1136,18 @@ static void memcheck_direct_scan(void)
             if (exit || (key == K_ESC))
                 goto out;
             /* Check for keys F1-F2 only */
-            key -= K_F1; /* Offsets from F1 */
-            if (key <= (dodgy_slow_ram ? 1 : 0))
+            if ((key == K_F1) || (dodgy_slow_ram && (key == K_F2)))
                 break;
         }
 
         clear_text_rows(r.y, 4);
         _r = r;
 
-        switch (key) {
-        case 0: /* F1 */
-            test_memory(ram_slots, &_r);
-            break;
-        case 1: /* F2 */
-            test_memory(1u<<24, &_r);
-            break;
-        }
+        tm_args.slots = ((key == K_F1) ? ram_slots :
+                         /* key == K_F2 */ 1u << 24);
+        tm_args.r = &_r;
+        call_cancellable_fn(&memcheck_cancellation, test_memory, &tm_args);
+        keycode_buffer = 0;
 
         clear_text_rows(r.y, 4);
     }
@@ -2416,6 +2424,9 @@ static void c_CIAA_IRQ(void)
         /* Place the keycode in the buffer ring if there is space. */
         if ((keycode_prod - keycode_cons) != ARRAY_SIZE(keycode_ring))
             keycode_ring[keycode_prod++ & (ARRAY_SIZE(keycode_ring)-1)] = key;
+        /* Cancel any long-running check if instructed to exit. */
+        if (exit || (key == K_ESC))
+            cancel_call(&memcheck_cancellation);
         /* Handshake over the serial line. */
         ciaa->cra |= 1u<<6; /* start the handshake */
         for (i = 0; i < 3; i++) /* wait ~100us */
