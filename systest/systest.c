@@ -1146,7 +1146,7 @@ static void kickstart_memory_list(void)
     print_menu_nav_line();
 
     r.x = 4;
-    sprintf(s, "-- Kickstart Memory Test --");
+    sprintf(s, "-- Kickstart Memory List --");
     print_line(&r);
 
     r.x = 0;
