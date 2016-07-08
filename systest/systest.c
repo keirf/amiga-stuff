@@ -832,22 +832,119 @@ static uint16_t check_pattern(
     return (uint16_t)val;
 }
 
+
 struct test_memory_args {
-    uint32_t slots;
-    struct char_row *r;
+    unsigned int round;
+    struct char_row r;
+    uint32_t start, end;
 };
-static int test_memory(void *_args)
+static int test_memory_range(void *_args)
 {
     struct test_memory_args *args = _args;
-    uint32_t slots = args->slots;
-    struct char_row *r = args->r;
-
+    struct char_row *r = &args->r;
     volatile uint16_t *p;
-    volatile uint16_t *start;
-    volatile uint16_t *end;
+    volatile uint16_t *start = (volatile uint16_t *)args->start;
+    volatile uint16_t *end = (volatile uint16_t *)args->end;
     char *s = (char *)r->s;
-    uint16_t a, i, j, x, nr, seed = 0x1234;
-    unsigned int round_major, round_minor;
+    uint16_t a = 0, i, j, x;
+    static uint16_t seed = 0x1234;
+
+    /* We are run with asynchronous exit but async setup may have raced an exit
+     * command so check for that before we start. */
+    if (exit || (keycode_buffer == K_ESC))
+        return 0;
+
+    sprintf(s, "Testing 0x%p-0x%p", (char *)start, (char *)end-1);
+    print_line(r);
+    r->y++;
+
+    /* 1. Random numbers. */
+    sprintf(s, "Round %u.%u: Random Fill",
+            args->round+1, 1);
+    print_line(r);
+    x = seed;
+    for (p = start; p != end;) {
+        *p++ = x = lfsr(x);
+        *p++ = x = lfsr(x);
+        *p++ = x = lfsr(x);
+        *p++ = x = lfsr(x);
+    }
+    x = seed;
+    for (p = start; p != end;) {
+        a |= *p++ ^ (x = lfsr(x));
+        a |= *p++ ^ (x = lfsr(x));
+        a |= *p++ ^ (x = lfsr(x));
+        a |= *p++ ^ (x = lfsr(x));
+    }
+    seed = x;
+
+    /* Start with all 0s. Write 1s to even words. */
+    sprintf(s, "Round %u.%u: Checkboard #1",
+            args->round+1, 2);
+    print_line(r);
+    fill_32(0, start, end);
+    fill_alt_16(~0, start, end);
+    a |= check_pattern(0xffff0000, start, end);
+
+    /* Start with all 0s. Write 1s to odd words. */
+    sprintf(s, "Round %u.%u: Checkboard #2",
+            args->round+1, 3);
+    print_line(r);
+    fill_32(0, start, end);
+    fill_alt_16(~0, start+1, end);
+    a |= check_pattern(0x0000ffff, start, end);
+
+    /* Start with all 1s. Write 0s to even words. */
+    sprintf(s, "Round %u.%u: Checkboard #3",
+            args->round+1, 4);
+    print_line(r);
+    fill_32(~0, start, end);
+    fill_alt_16(0, start, end);
+    a |= check_pattern(0x0000ffff, start, end);
+
+    /* Start with all 1s. Write 0s to odd words. */
+    sprintf(s, "Round %u.%u: Checkboard #4",
+            args->round+1, 5);
+    print_line(r);
+    fill_32(~0, start, end);
+    fill_alt_16(0, start+1, end);
+    a |= check_pattern(0xffff0000, start, end);
+
+    /* Errors found: then print diagnostic and wait to exit. */
+    if (a != 0) {
+        for (i = j = 0; i < 16; i++)
+            if ((a >> i) & 1)
+                j++;
+        sprintf(s, "Round %u: Errors found in %u bit position%c",
+                args->round+1, j, (j > 1) ? 's' : ' ');
+        print_line(r);
+        r->y++;
+        sprintf(s, "16-bit word: FEDCBA9876543210");
+        print_line(r);
+        r->y++;
+        sprintf(s, " (X=error)   %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c",
+                (a & (1u<<15)) ? 'X' : '-', (a & (1u<<14)) ? 'X' : '-',
+                (a & (1u<<13)) ? 'X' : '-', (a & (1u<<12)) ? 'X' : '-',
+                (a & (1u<<11)) ? 'X' : '-', (a & (1u<<10)) ? 'X' : '-',
+                (a & (1u<< 9)) ? 'X' : '-', (a & (1u<< 8)) ? 'X' : '-',
+                (a & (1u<< 7)) ? 'X' : '-', (a & (1u<< 6)) ? 'X' : '-',
+                (a & (1u<< 5)) ? 'X' : '-', (a & (1u<< 4)) ? 'X' : '-',
+                (a & (1u<< 3)) ? 'X' : '-', (a & (1u<< 2)) ? 'X' : '-',
+                (a & (1u<< 1)) ? 'X' : '-', (a & (1u<< 0)) ? 'X' : '-');
+        print_line(r);
+        /* Wait for async exit. */
+        for (;;)
+            continue;
+    }
+
+    return 0;
+}
+
+static void test_memory_slots(uint32_t slots, struct char_row *r)
+{
+    struct test_memory_args tm_args;
+    char *s = (char *)r->s;
+    uint16_t nr;
 
     /* Find first 0.5MB slot to test */
     for (nr = 0; nr < 32; nr++)
@@ -856,142 +953,31 @@ static int test_memory(void *_args)
     if (nr == 32) {
         sprintf(s, "ERROR: No memory (above 256kB) to test!");
         print_line(r);
-    wait_exit:
         while (!exit && (keycode_buffer != K_ESC))
             continue;
-        keycode_buffer = 0;
-        return 0;
+        goto out;
     }
 
-    r->y++;
-
-    /* This uses an inversions algorithm where we try to set an alternating 
-     * 0/1 pattern in each memory cell (assuming 1-bit DRAM chips). */
-    a = 0;
-    round_major = round_minor = 0;
+    tm_args.round = 0;
     while (!exit && (keycode_buffer != K_ESC)) {
-        start = (volatile uint16_t *)0 + (nr << 18);
-        end = start + (1u << 18);
-        if (nr == 0)
-            start += 1u << 17; /* skip first 256kB chip */
-        switch (round_minor) {
-        case 0:
-            /* Random numbers. */
-            r->y--;
-            sprintf(s, "Testing 0x%p-0x%p", (char *)start, (char *)end-1);
-            print_line(r);
-            r->y++;
-            sprintf(s, "Round %u.%u: Random Fill",
-                    round_major+1, round_minor+1);
-            print_line(r);
-            x = seed;
-            for (p = start; p != end;) {
-                *p++ = x = lfsr(x);
-                *p++ = x = lfsr(x);
-                *p++ = x = lfsr(x);
-                *p++ = x = lfsr(x);
-            }
-            if (exit) break;
-            x = seed;
-            for (p = start; p != end;) {
-                a |= *p++ ^ (x = lfsr(x));
-                a |= *p++ ^ (x = lfsr(x));
-                a |= *p++ ^ (x = lfsr(x));
-                a |= *p++ ^ (x = lfsr(x));
-            }
-            seed = x;
-            break;
 
-        case 1:
-            /* Start with all 0s. Write 1s to even words. */
-            sprintf(s, "Round %u.%u: Checkboard #1",
-                    round_major+1, round_minor+1);
-            print_line(r);
-            fill_32(0, start, end);
-            if (exit) break;
-            fill_alt_16(~0, start, end);
-            if (exit) break;
-            a |= check_pattern(0xffff0000, start, end);
-            break;
+        tm_args.start = (nr == 0) ? 1 << 18 : nr << 19;
+        tm_args.end = (nr + 1) << 19;
 
-        case 2:
-            /* Start with all 0s. Write 1s to odd words. */
-            sprintf(s, "Round %u.%u: Checkboard #2",
-                    round_major+1, round_minor+1);
-            print_line(r);
-            fill_32(0, start, end);
-            if (exit) break;
-            fill_alt_16(~0, start+1, end);
-            if (exit) break;
-            a |= check_pattern(0x0000ffff, start, end);
-            break;
+        tm_args.r = *r;
+        call_cancellable_fn(&test_cancellation, test_memory_range, &tm_args);
 
-        case 3:
-            /* Start with all 1s. Write 0s to even words. */
-            sprintf(s, "Round %u.%u: Checkboard #3",
-                    round_major+1, round_minor+1);
-            print_line(r);
-            fill_32(~0, start, end);
-            if (exit) break;
-            fill_alt_16(0, start, end);
-            if (exit) break;
-            a |= check_pattern(0x0000ffff, start, end);
-            break;
-
-        case 4:
-            /* Start with all 1s. Write 0s to odd words. */
-            sprintf(s, "Round %u.%u: Checkboard #4",
-                    round_major+1, round_minor+1);
-            print_line(r);
-            fill_32(~0, start, end);
-            if (exit) break;
-            fill_alt_16(0, start+1, end);
-            if (exit) break;
-            a |= check_pattern(0xffff0000, start, end);
-            break;
-        }
-
-        if (++round_minor != 5)
-            continue;
-
-        /* Errors found: then print diagnostic and bail. */
-        if (a != 0) {
-            for (i = j = 0; i < 16; i++)
-                if ((a >> i) & 1)
-                    j++;
-            sprintf(s, "After round %u: errors in %u bit positions",
-                    round_major+1, j);
-            print_line(r);
-            r->y++;
-            if (j != 0) {
-                char num[8];
-                sprintf(s, " -> Bits ");
-                for (i = 0; i < 16; i++) {
-                    if (!((a >> i) & 1))
-                        continue;
-                    sprintf(num, "%u", i);
-                    if (--j)
-                        strcat(num, ",");
-                    strcat(s, num);
-                }
-                print_line(r);
-                r->y++;
-            }
-            goto wait_exit;
-        }
-
-        /* Next memory range, or next major round if all ranges done. */
-        round_minor = 0;
+        /* Next memory range, or next round if all ranges done. */
         do {
             if (++nr == 32) {
                 nr = 0;
-                round_major++;
+                tm_args.round++;
             }
         } while (!(slots & (1u << nr)));
     }
 
+out:
     keycode_buffer = 0;
-    return 0;
 }
 
 static void memcheck_direct_scan(void)
@@ -1116,8 +1102,6 @@ static void memcheck_direct_scan(void)
     r.y++;
 
     while (!exit) {
-        struct test_memory_args tm_args;
-
         sprintf(s, "$1 Test All Memory (excludes first 256kB Chip)$");
         print_line(&r);
         r.y++;
@@ -1142,13 +1126,7 @@ static void memcheck_direct_scan(void)
 
         clear_text_rows(r.y, 4);
         _r = r;
-
-        tm_args.slots = ((key == K_F1) ? ram_slots :
-                         /* key == K_F2 */ 1u << 24);
-        tm_args.r = &_r;
-        call_cancellable_fn(&test_cancellation, test_memory, &tm_args);
-        keycode_buffer = 0;
-
+        test_memory_slots((key == K_F1) ? ram_slots : 1u << 24, &_r);
         clear_text_rows(r.y, 4);
     }
 
@@ -1168,7 +1146,7 @@ static void kickstart_memory_list(void)
     print_menu_nav_line();
 
     r.x = 4;
-    sprintf(s, "-- Kickstart Memory List --");
+    sprintf(s, "-- Kickstart Memory Test --");
     print_line(&r);
 
     r.x = 0;
@@ -1228,6 +1206,52 @@ out:
     clear_whole_screen();
 }
 
+static void kickstart_memory_test(struct char_row *r)
+{
+    struct test_memory_args tm_args;
+    unsigned int i, nr_done;
+    uint32_t a, b;
+
+    tm_args.round = 0;
+    while (!exit && (keycode_buffer != K_ESC)) {
+        nr_done = 0;
+        for (i = 0; i < nr_mem_regions; i++) {
+            /* Calculate inclusive range [a,b] with limits expanded to 64kB
+             * alignment (Kickstart sometimes steals RAM from the limits). */
+            a = max_t(uint32_t, 0x40000, mem_region[i].lower & ~0xffff);
+            b = ((mem_region[i].upper + 0xffff) & ~0xffff) - 1;
+            tm_args.start = a;
+            while (!exit && (keycode_buffer != K_ESC)
+                   && tm_args.start && (tm_args.start < b)) {
+                /* Calculate inclusive end limit for this chunk. Chunk size
+                 * is 512kB or remainder of region, whichever is smaller. */
+                tm_args.end = ((tm_args.start + 0x80000) & ~0x7ffff) - 1;
+                tm_args.end = min_t(uint32_t, tm_args.end, b);
+                /* test_memory_range() expects the end bound to be +1. */
+                tm_args.end++;
+                tm_args.r = *r;
+                call_cancellable_fn(&test_cancellation, test_memory_range,
+                                    &tm_args);
+                tm_args.start = tm_args.end;
+                nr_done++;
+            }
+        }
+        /* If we did't do any work report this as an error and wait to exit. */
+        if (!nr_done) {
+            sprintf((char *)r->s, "ERROR: No memory (above 256kB) to test!");
+            print_line(r);
+            while (!exit && (keycode_buffer != K_ESC))
+                continue;
+            goto out;
+        }
+        /* Otherwise onto the next round... */
+        tm_args.round++;
+    }
+
+out:
+    keycode_buffer = 0;
+}
+
 static void memcheck(void)
 {
     char s[80];
@@ -1270,6 +1294,7 @@ static void memcheck(void)
         print_line(&r);
         r.y += 2;
 
+    menu_items:
         sprintf(s, "$1 Test All Memory (excludes first 256kB Chip)$");
         print_line(&r);
         r.y++;
@@ -1291,6 +1316,13 @@ static void memcheck(void)
 
         switch (key) {
         case K_F1:
+            r.y = 5;
+            clear_text_rows(r.y, 4);
+            kickstart_memory_test(&r);
+            r.y = 5;
+            clear_text_rows(r.y, 4);
+            if (!exit)
+                goto menu_items;
             break;
         case K_F2:
             kickstart_memory_list();
