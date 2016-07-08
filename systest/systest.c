@@ -2657,15 +2657,14 @@ void cstart(void)
 
     vblank_joydat = cust->joy0dat;
 
-    wait_bos();
-    cust->dmacon = (DMA_SETCLR | DMA_BPLEN | DMA_COPEN
-                    | DMA_BLTEN | DMA_SPREN | DMA_DSKEN);
-    cust->intena = (INT_SETCLR | INT_CIAA | INT_CIAB | INT_VBLANK);
-
     /* Start CIAA Timer B in continuous mode. */
     ciaa->tblo = 0xff;
     ciaa->tbhi = 0xff;
     ciaa->crb = CIACRB_LOAD | CIACRB_START;
+
+    wait_bos();
+    cust->dmacon = DMA_SETCLR | DMA_COPEN | DMA_DSKEN;
+    cust->intena = (INT_SETCLR | INT_CIAA | INT_CIAB | INT_VBLANK);
 
     /* Detect our hardware environment. */
     cpu_model = detect_cpu_model();
@@ -2675,6 +2674,12 @@ void cstart(void)
     cpu_hz = is_pal ? PAL_HZ : NTSC_HZ;
 
     sort(mem_region, nr_mem_regions, sizeof(mem_region[0]), mem_region_cmp);
+
+    /* Make sure the copper has run once through, then enable bitplane 
+     * and sprite DMA starting from the next frame. */
+    delay_ms(1);
+    wait_bos();
+    cust->dmacon = DMA_SETCLR | DMA_BPLEN | DMA_SPREN;
 
     for (;;)
         mainmenu();
