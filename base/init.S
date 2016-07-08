@@ -18,14 +18,21 @@
         lea.l   mem_region(pc),a1
         lea.l   nr_mem_regions(pc),a2
         move.w  (a2),d0      /* d0.w = max # regions */
-        subq.w  #1,d0
-.mem:   move.w  14(a0),(a1)+ /* mh_Attributes */
+.mem:   /* First check mh_Attributes specifies some valid flags: at least one
+         * of MEMF_PUBLIC, MEMF_CHIP, or MEMF_FAST. This fixes memory detection
+         * with AROS which includes some dummy regions in the MemList. */
+        move.b  15(a0),d1    /* mh_Attributes */
+        and.b   #0x7,d1      /* MEMF_PUBLIC|MEMF_CHIP|MEMF_FAST */
+        jeq     1f           /* Skip this chunk if none of the above */
+        move.w  14(a0),(a1)+ /* mh_Attributes */
         move.l  20(a0),(a1)+ /* mh_Lower */
         move.l  24(a0),(a1)+ /* mh_Upper */
-        move.l  (a0),a0      /* ln_Succ */
+        subq.w  #1,d0        /* #regions-- */
+        jeq     2f           /* done if we can fit no more regions */
+1:      move.l  (a0),a0      /* ln_Succ */
         tst.l   (a0)         /* ... != NULL? */
-        dbeq    d0,.mem
-        sub.w   d0,(a2)      /* update nr_mem_regions with actual # */
+        jne     .mem
+2:      sub.w   d0,(a2)      /* update nr_mem_regions with actual # */
 #endif
 
         /* a4 = current VBR */
