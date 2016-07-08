@@ -30,8 +30,8 @@ void mfm_encode_track(void *mfmbuf, uint16_t tracknr, uint16_t mfm_bytes);
 
 /* Write to INTREQ twice at end of ISR to prevent spurious re-entry on 
  * A4000 with faster processors (040/060). */
-#define IRQ_RESET(bit) do {                     \
-    uint16_t __x = 1u<<bit;                     \
+#define IRQ_RESET(x) do {                       \
+    uint16_t __x = (x);                         \
     cust->intreq = __x;                         \
     cust->intreq = __x;                         \
 } while (0)
@@ -449,7 +449,7 @@ static uint8_t detect_cpu_model(void)
 /* Wait for blitter idle. */
 static void waitblit(void)
 {
-    while (*(volatile uint8_t *)&cust->dmaconr & (1u << 6))
+    while (*(volatile uint8_t *)&cust->dmaconr & (DMA_BBUSY >> 8))
         continue;
 }
 
@@ -457,14 +457,6 @@ static void waitblit(void)
 static void wait_bos(void)
 {
     while (*(volatile uint8_t *)&cust->vhposr != 0xf0)
-        continue;
-}
-
-/* Wait for beam to move to next scanline. */
-static void wait_line(void)
-{
-    uint8_t v = *(volatile uint8_t *)&cust->vhposr;
-    while (*(volatile uint8_t *)&cust->vhposr == v)
         continue;
 }
 
@@ -1684,7 +1676,7 @@ static void disk_read_track(void *mfm, uint16_t mfm_bytes)
 {
     cust->dskpt.p = mfm;
     cust->adkcon = 0x7f00; /* clear disk flags */
-    cust->intreq = 2; /* clear dsk-blk-done */
+    cust->intreq = INT_DSKBLK; /* clear dsk-blk-done */
     cust->adkcon = 0x9500; /* MFM, wordsync */
     cust->dsksync = 0x4489; /* sync 4489 */
     cust->dsklen = 0x8000 + mfm_bytes / 2;
@@ -1695,7 +1687,7 @@ static void disk_write_track(void *mfm, uint16_t mfm_bytes)
 {
     cust->dskpt.p = mfm;
     cust->adkcon = 0x7f00; /* clear disk flags */
-    cust->intreq = 2; /* clear dsk-blk-done */
+    cust->intreq = INT_DSKBLK; /* clear dsk-blk-done */
     /* 140ns precomp for cylinders 40-79 (exactly the same as
      * trackdisk.device, tested on Kickstart 3.1). */
     if (cur_cyl >= 40)
@@ -1709,7 +1701,7 @@ static void disk_wait_dma(void)
 {
     unsigned int i;
     for (i = 0; i < 1000; i++) {
-        if (cust->intreqr & 2) /* dsk-blk-done? */
+        if (cust->intreqr & INT_DSKBLK) /* dsk-blk-done? */
             break;
         delay_ms(1);
     }
@@ -2269,7 +2261,7 @@ static void audiocheck(void)
         cust->aud[i].per = (uint16_t)period;
         cust->aud[i].vol = 0;
     }
-    cust->dmacon = 0x800f; /* all audio channels */
+    cust->dmacon = DMA_SETCLR | DMA_AUDxEN; /* dma on */
 
     for (;;) {
         sprintf(s, "Waveform: %s",
@@ -2309,7 +2301,7 @@ static void audiocheck(void)
         } else if (key == 4) {
             /* F5: Frequency */
             lowfreq ^= 1;
-            cust->dmacon = 0x000f; /* dma off */
+            cust->dmacon = DMA_AUDxEN; /* dma off */
             for (i = 0; i < 4; i++) {
                 /* NB. programmed period does not change: sample lengths 
                  * determine the frequency. */
@@ -2321,7 +2313,7 @@ static void audiocheck(void)
                     cust->aud[i].len = nr_10khz_samples / 2;
                 }
             }
-            cust->dmacon = 0x800f; /* dma on */
+            cust->dmacon = DMA_SETCLR | DMA_AUDxEN; /* dma on */
         } else if (key == 5) {
             /* F6: Low Pass Filter */
             ciaa->pra ^= CIAAPRA_LED;
@@ -2331,7 +2323,7 @@ static void audiocheck(void)
     /* Clean up. */
     for (i = 0; i < 4; i++)
         cust->aud[i].vol = 0;
-    cust->dmacon = 0x000f;
+    cust->dmacon = DMA_AUDxEN; /* dma off */
 }
 
 static void videocheck(void)
@@ -2418,31 +2410,42 @@ static void videocheck(void)
 IRQ(CIAA_IRQ);
 static void c_CIAA_IRQ(void)
 {
-    uint16_t i;
-    uint8_t icr = ciaa->icr;
+    uint16_t t_s;
+    uint8_t keycode, icr = ciaa->icr;
     static uint8_t prev_key, key;
 
-    if (icr & (1u<<3)) { /* SDR finished a byte? */
-        /* Grab and decode the keycode. */
-        uint8_t keycode = ~ciaa->sdr;
+    if (icr & CIAICR_SERIAL) {
+        /* Received a byte from the keyboard MPU. */
+
+        /* Grab the keycode and begin handshake. */
+        keycode = ~ciaa->sdr;
+        ciaa->cra |= CIACRA_SPMODE; /* start the handshake */
+        t_s = get_ciaatb();
+
+        /* Decode the keycode, detect Ctrl + L.Alt. */
         key = (keycode >> 1) | (keycode << 7); /* ROR 1 */
         if ((prev_key == K_CTRL) && (key == K_LALT))
             exit = 1; /* Ctrl + L.Alt */
         prev_key = key;
-        /* Don't place key release events in the basic keycode buffer. */
+
+        /* Place key-down events in the basic keycode buffer. */
         if (!(key & 0x80))
             keycode_buffer = key;
-        /* Place the keycode in the buffer ring if there is space. */
+
+        /* Place all keycodes in the buffer ring if there is space. */
         if ((keycode_prod - keycode_cons) != ARRAY_SIZE(keycode_ring))
             keycode_ring[keycode_prod++ & (ARRAY_SIZE(keycode_ring)-1)] = key;
+
         /* Cancel any long-running check if instructed to exit. */
         if (exit || (key == K_ESC))
             cancel_call(&test_cancellation);
-        /* Handshake over the serial line. */
-        ciaa->cra |= 1u<<6; /* start the handshake */
-        for (i = 0; i < 3; i++) /* wait ~100us */
-            wait_line();
-        ciaa->cra &= ~(1u<<6); /* finish the handshake */
+
+        /* Wait to finish handshake over the serial line. We wait for 65 CIA
+         * ticks, which is approx 90us: Longer than the 85us minimum dictated
+         * by the HRM.  */
+        while ((uint16_t)(t_s - get_ciaatb()) < 65)
+            continue;
+        ciaa->cra &= ~CIACRA_SPMODE; /* finish the handshake */
     }
 
     /* NB. Clear intreq.ciaa *after* reading/clearing ciaa.icr else we get a 
@@ -2451,7 +2454,7 @@ static void c_CIAA_IRQ(void)
      * it. For this same reason (latches level not edge) it is *not* racey to 
      * clear intreq.ciaa second. Indeed AmigaOS does the same (checked 
      * Kickstart 3.1). */
-    IRQ_RESET(3);
+    IRQ_RESET(INT_CIAA);
 }
 
 IRQ(CIAB_IRQ);
@@ -2459,7 +2462,8 @@ static void c_CIAB_IRQ(void)
 {
     uint8_t icr = ciab->icr;
 
-    if (icr & (1u<<4)) { /* FLAG (disk index)? */
+    if (icr & CIAICR_FLAG) {
+        /* Disk index. */
         uint32_t time = get_time();
         disk_index_count++;
         disk_index_period = time - disk_index_time;
@@ -2472,7 +2476,7 @@ static void c_CIAB_IRQ(void)
      * it. For this same reason (latches level not edge) it is *not* racey to 
      * clear intreq.ciab second. Indeed AmigaOS does the same (checked 
      * Kickstart 3.1). */
-    IRQ_RESET(13);
+    IRQ_RESET(INT_CIAB);
 }
 
 IRQ(VBLANK_IRQ);
@@ -2556,7 +2560,7 @@ static void c_VBLANK_IRQ(void)
     prev_lmb = lmb;
 
 out:
-    IRQ_RESET(5);
+    IRQ_RESET(INT_VBLANK);
 }
 
 void cstart(void)
@@ -2564,16 +2568,19 @@ void cstart(void)
     uint16_t i, j;
     char *p;
 
+    /* Set keyboard serial line to input mode. */
+    ciaa->cra &= ~CIACRA_SPMODE;
+
     /* Set up CIAA ICR. We only care about keyboard. */
-    ciaa->icr = 0x7f;
-    ciaa->icr = 0x88;
+    ciaa->icr = (uint8_t)~CIAICR_SETCLR;
+    ciaa->icr = CIAICR_SETCLR | CIAICR_SERIAL;
 
     /* Set up CIAB ICR. We only care about FLAG line (disk index). */
-    ciab->icr = 0x7f;
-    ciab->icr = 0x90;
+    ciab->icr = (uint8_t)~CIAICR_SETCLR;
+    ciab->icr = CIAICR_SETCLR | CIAICR_FLAG;
 
     /* Enable blitter DMA. */
-    cust->dmacon = 0x8040;
+    cust->dmacon = DMA_SETCLR | DMA_BLTEN;
 
     /* Clear BSS. */
     memset(_sbss, 0, _ebss-_sbss);
@@ -2619,13 +2626,14 @@ void cstart(void)
     vblank_joydat = cust->joy0dat;
 
     wait_bos();
-    cust->dmacon = 0x81f0; /* enable copper/bitplane/sprite/blitter/disk DMA */
-    cust->intena = 0xa028; /* enable CIA-A/CIA-B/VBLANK interrupts */
+    cust->dmacon = (DMA_SETCLR | DMA_BPLEN | DMA_COPEN
+                    | DMA_BLTEN | DMA_SPREN | DMA_DSKEN);
+    cust->intena = (INT_SETCLR | INT_CIAA | INT_CIAB | INT_VBLANK);
 
     /* Start CIAA Timer B in continuous mode. */
     ciaa->tblo = 0xff;
     ciaa->tbhi = 0xff;
-    ciaa->crb = 0x11;
+    ciaa->crb = CIACRB_LOAD | CIACRB_START;
 
     /* Detect our hardware environment. */
     cpu_model = detect_cpu_model();

@@ -194,6 +194,62 @@ struct amiga_cia {
 #define CIABPRB_SEL3 0x40
 #define CIABPRB_MTR  0x80
 
+#define CIAICR_TIMER_A 0x01
+#define CIAICR_TIMER_B 0x02
+#define CIAICR_TOD     0x04
+#define CIAICR_SERIAL  0x08
+#define CIAICR_FLAG    0x10
+#define CIAICR_SETCLR  0x80
+
+#define CIACRA_START   0x01
+#define CIACRA_PBON    0x02
+#define CIACRA_OUTMODE 0x04
+#define CIACRA_RUNMODE 0x08
+#define CIACRA_LOAD    0x10
+#define CIACRA_INMODE  0x20
+#define CIACRA_SPMODE  0x40
+
+#define CIACRB_START   0x01
+#define CIACRB_PBON    0x02
+#define CIACRB_OUTMODE 0x04
+#define CIACRB_RUNMODE 0x08
+#define CIACRB_LOAD    0x10
+#define CIACRB_INMODE  0x60
+#define CIACRB_ALARM   0x80
+
+#define DMA_AUD0EN 0x0001
+#define DMA_AUD1EN 0x0002
+#define DMA_AUD2EN 0x0004
+#define DMA_AUD3EN 0x0008
+#define DMA_AUDxEN 0x000f /* all channels */
+#define DMA_DSKEN  0x0010
+#define DMA_SPREN  0x0020
+#define DMA_BLTEN  0x0040
+#define DMA_COPEN  0x0080
+#define DMA_BPLEN  0x0100
+#define DMA_DMAEN  0x0200
+#define DMA_BLTPRI 0x0400
+#define DMA_BZERO  0x2000
+#define DMA_BBUSY  0x4000
+#define DMA_SETCLR 0x8000
+
+#define INT_SER_TX 0x0001
+#define INT_DSKBLK 0x0002
+#define INT_SOFT   0x0004
+#define INT_CIAA   0x0008
+#define INT_COPPER 0x0010
+#define INT_VBLANK 0x0020
+#define INT_BLIT   0x0040
+#define INT_AUD0   0x0080
+#define INT_AUD1   0x0100
+#define INT_AUD2   0x0200
+#define INT_AUD3   0x0400
+#define INT_SER_RX 0x0800
+#define INT_DSKSYN 0x1000
+#define INT_CIAB   0x2000
+#define INT_INTEN  0x4000
+#define INT_SETCLR 0x8000
+
 /*
  * Local variables:
  * mode: C
