@@ -35,6 +35,17 @@ void mfm_encode_track(void *mfmbuf, uint16_t tracknr, uint16_t mfm_bytes);
     cust->intreq = __x;                         \
     cust->intreq = __x;                         \
 } while (0)
+/* Similarly for disabling an IRQ, write INTENA twice to be sure that an 
+ * interrupt won't creep in after the IRQ_DISABLE(). */
+#define IRQ_DISABLE(x) do {                     \
+    uint16_t __x = (x);                         \
+    cust->intena = __x;                         \
+    cust->intena = __x;                         \
+} while (0)
+#define IRQ_ENABLE(x) do {                      \
+    uint16_t __x = INT_SETCLR | (x);            \
+    cust->intena = __x;                         \
+} while (0)
 
 #define IRQ(name)                                                          \
 static void c_##name(void) attribute_used;                                 \
@@ -50,9 +61,6 @@ asm (                                                                      \
 "    movem.l (%sp)+,%d0-%d1/%a0-%a1 \n"                                    \
 "    rte                            \n"                                    \
 )
-
-/* Long-running test may be asynchronously cancelled by exit event. */
-static struct cancellation test_cancellation;
 
 /* Initialised by init.S */
 struct mem_region {
@@ -233,10 +241,10 @@ enum {
 };
 
 /* Menu options with associated key (c) and bounding box (x1,y),(x2,y). */
-static uint8_t nr_menu_options, _menu_option_lock;
+static uint8_t nr_menu_options;
 static struct menu_option {
     uint8_t x1, x2, y, c;
-} *vbl_menu_option, menu_option[12]; /* sorted by y, then x1. */
+} *active_menu_option, menu_option[12]; /* sorted by y, then x1. */
 static int menu_option_cmp(struct menu_option *m, uint8_t x, uint8_t y)
 {
     if (m->y < y)
@@ -246,27 +254,33 @@ static int menu_option_cmp(struct menu_option *m, uint8_t x, uint8_t y)
     return 1;
 }
 
-/* Lock menu options to prevent VBL IRQ from seeing inconsistent state. */
+/* Lock menu options for modification. */
 static void menu_option_update_start(void)
 {
-    /* The critical region must run to completion thus it is incompatible with
-     * asynchronous cancellations. */
-    assert(!cancellation_is_running(&test_cancellation));
-
-    _menu_option_lock = 1;
-    barrier(); /* lock /then/ modify */
+    /* Simply prevent INT_SOFT from running, as otherwise it could observe
+     * inconsistent state during our critical section. This also prevents
+     * asynchronous cancellations while we are in the critical section, since
+     * they are only triggered from INT_SOFT. */
+    IRQ_DISABLE(INT_SOFT);
 }
 
 static void menu_option_update_end(void)
 {
-    barrier(); /* modify /then/ unlock */
-    _menu_option_lock = 0;
+    IRQ_ENABLE(INT_SOFT);
 }
 
-/* Checked by VBL IRQ. */
-static int menu_option_is_being_updated(void)
+/* Long-running test may be asynchronously cancelled by exit event. */
+static struct cancellation test_cancellation;
+static uint8_t do_cancel;
+static void call_cancellable_test(int (*fn)(void *), void *arg)
 {
-    return _menu_option_lock;
+    /* Clear the cancellation flag unless there is already an exit command
+     * pending. */
+    do_cancel = exit || (keycode_buffer == K_ESC);
+    barrier();
+    call_cancellable_fn(&test_cancellation, fn, arg);
+    /* We can't be in any blitter or menu-option-update critical section. */
+    assert(cust->intenar & INT_SOFT);
 }
 
 /* Allocate chip memory. Automatically freed when sub-test exits. */
@@ -457,8 +471,8 @@ static void waitblit(void)
  * blitter is available and inactive. */
 static void blitter_acquire(void)
 {
-    /* Blitter is used by VBL irq. Don't let it trample our blitter state. */
-    cust->intena = INT_VBLANK;
+    /* Blitter is used by INT_SOFT. Don't let it trample our blitter state. */
+    IRQ_DISABLE(INT_SOFT);
     /* Make sure previous operation is complete before we modify state. */
     waitblit();
 }
@@ -467,8 +481,7 @@ static void blitter_acquire(void)
  * state after you call this function (though they must waitblit first). */
 static void blitter_release(void)
 {
-    /* VBL irq can run and access the blitter now. */
-    cust->intena = INT_SETCLR | INT_VBLANK;    
+    IRQ_ENABLE(INT_SOFT);
 }
 
 /* Wait for end of bitplane DMA. */
@@ -563,7 +576,7 @@ static void clear_whole_screen(void)
 {
     /* This also clears the entire menu-option array. */
     menu_option_update_start();
-    vbl_menu_option = NULL;
+    active_menu_option = NULL;
     nr_menu_options = 0;
     menu_option_update_end();
 
@@ -587,10 +600,10 @@ static void clear_text_rows(uint16_t y_start, uint16_t y_nr)
     /* Remove those menu options, if any, from the menu-option array. */
     if (i != j) {
         menu_option_update_start();
-        if (vbl_menu_option >= n) {
-            vbl_menu_option -= j-i;
-        } else if (vbl_menu_option >= m) {
-            vbl_menu_option = NULL;
+        if (active_menu_option >= n) {
+            active_menu_option -= j-i;
+        } else if (active_menu_option >= m) {
+            active_menu_option = NULL;
         }
         memmove(m, n, (nr_menu_options-j)*sizeof(*m));
         nr_menu_options -= j-i;
@@ -738,8 +751,8 @@ static void print_line(const struct char_row *r)
 
             /* Shuffle and insert into the array. */
             menu_option_update_start();
-            if (vbl_menu_option >= m)
-                vbl_menu_option++;
+            if (active_menu_option >= m)
+                active_menu_option++;
             memmove(m+1, m, (nr_menu_options - mi) * sizeof(*m));
             *m = _m;
             nr_menu_options++;
@@ -896,11 +909,6 @@ static int test_memory_range(void *_args)
     uint16_t a = 0, i, j, x;
     static uint16_t seed = 0x1234;
 
-    /* We are run with asynchronous exit but async setup may have raced an exit
-     * command so check for that before we start. */
-    if (exit || (keycode_buffer == K_ESC))
-        return 0;
-
     sprintf(s, "Testing 0x%p-0x%p", (char *)start, (char *)end-1);
     print_line(r);
     r->y++;
@@ -1012,7 +1020,7 @@ static void test_memory_slots(uint32_t slots, struct char_row *r)
         tm_args.end = (nr + 1) << 19;
 
         tm_args.r = *r;
-        call_cancellable_fn(&test_cancellation, test_memory_range, &tm_args);
+        call_cancellable_test(test_memory_range, &tm_args);
 
         /* Next memory range, or next round if all ranges done. */
         do {
@@ -1277,8 +1285,7 @@ static void kickstart_memory_test(struct char_row *r)
                 /* test_memory_range() expects the end bound to be +1. */
                 tm_args.end++;
                 tm_args.r = *r;
-                call_cancellable_fn(&test_cancellation, test_memory_range,
-                                    &tm_args);
+                call_cancellable_test(test_memory_range, &tm_args);
                 tm_args.start = tm_args.end;
                 nr_done++;
             }
@@ -2529,9 +2536,10 @@ static void c_CIAA_IRQ(void)
         if ((keycode_prod - keycode_cons) != ARRAY_SIZE(keycode_ring))
             keycode_ring[keycode_prod++ & (ARRAY_SIZE(keycode_ring)-1)] = key;
 
-        /* Cancel any long-running check if instructed to exit. */
+        /* Cancel any long-running check if instructed to exit. 
+         * The actual cancellation occurs in level-1 interrupt INT_SOFT. */
         if (exit || (key == K_ESC))
-            cancel_call(&test_cancellation);
+            do_cancel = 1;
 
         /* Wait to finish handshake over the serial line. We wait for 65 CIA
          * ticks, which is approx 90us: Longer than the 85us minimum dictated
@@ -2573,13 +2581,11 @@ static void c_CIAB_IRQ(void)
 }
 
 IRQ(VBLANK_IRQ);
-static uint16_t vblank_joydat;
+static uint16_t vblank_joydat, mouse_x, mouse_y;
 static void c_VBLANK_IRQ(void)
 {
-    static uint16_t x, y, prev_lmb;
-    uint16_t lmb, joydat, hstart, vstart, vstop, i;
+    uint16_t joydat, hstart, vstart, vstop;
     uint16_t cur16 = get_ciaatb();
-    struct menu_option *vm, *m;
 
     vblank_count++;
 
@@ -2588,31 +2594,39 @@ static void c_VBLANK_IRQ(void)
 
     /* Update mouse pointer coordinates based on mouse input. */
     joydat = cust->joy0dat;
-    x += (int8_t)(joydat - vblank_joydat);
-    y += (int8_t)((joydat >> 8) - (vblank_joydat >> 8));
-    x = min_t(int16_t, max_t(int16_t, x, 0), xres-1);
-    y = min_t(int16_t, max_t(int16_t, y, 0), yres-1);
+    mouse_x += (int8_t)(joydat - vblank_joydat);
+    mouse_y += (int8_t)((joydat >> 8) - (vblank_joydat >> 8));
+    mouse_x = min_t(int16_t, max_t(int16_t, mouse_x, 0), xres-1);
+    mouse_y = min_t(int16_t, max_t(int16_t, mouse_y, 0), yres-1);
     vblank_joydat = joydat;
 
     /* Move the mouse pointer sprite. */
-    hstart = (x>>1) + diwstrt_h-1;
-    vstart = y + diwstrt_v;
+    hstart = (mouse_x>>1) + diwstrt_h-1;
+    vstart = mouse_y + diwstrt_v;
     vstop = vstart + 11;
     pointer_sprite[0] = (vstart<<8)|(hstart>>1);
     pointer_sprite[1] = (vstop<<8)|((vstart>>8)<<2)|((vstop>>8)<<1)|(hstart&1);
 
-    /* Skip menu-option handling if the array is being updated. This avoids us
-     * seeing inconsistent state if we interrupted an update halfway. */
-    if (menu_option_is_being_updated())
-        goto out;
+    /* Defer menu-option handling to lowest-priority interrupt group. */
+    cust->intreq = INT_SETCLR | INT_SOFT;
+
+    IRQ_RESET(INT_VBLANK);
+}
+
+IRQ(SOFT_IRQ);
+static void c_SOFT_IRQ(void)
+{
+    static uint16_t prev_lmb;
+    uint16_t lmb, i;
+    struct menu_option *am, *m;
 
     m = NULL;
-    vm = vbl_menu_option;
+    am = active_menu_option;
 
     /* Is mouse pointer currently within a menu-option bounding box? */
-    if ((x >= xstart) && (y >= ystart)) {
-        uint8_t cx = (x - xstart) >> 3;
-        uint8_t cy = div32(y - ystart, yperline);
+    if ((mouse_x >= xstart) && (mouse_y >= ystart)) {
+        uint8_t cx = (mouse_x - xstart) >> 3;
+        uint8_t cy = div32(mouse_y - ystart, yperline);
         for (i = 0, m = menu_option; i < nr_menu_options; i++, m++) {
             if ((m->x1 <= cx) && (m->x2 > cx) && (m->y == cy))
                 break;
@@ -2623,12 +2637,12 @@ static void c_VBLANK_IRQ(void)
 
     /* Has current bounding box (or lack thereof) changed since last check? 
      * Update the display if so. */
-    if (m != vm) {
+    if (m != am) {
         uint16_t fx, fw, fy;
-        if (vm != NULL) {
-            fx = xstart + vm->x1 * 8 - 1;
-            fw = (vm->x2 - vm->x1) * 8 + 3;
-            fy = ystart + vm->y * yperline;
+        if (am != NULL) {
+            fx = xstart + am->x1 * 8 - 1;
+            fw = (am->x2 - am->x1) * 8 + 3;
+            fy = ystart + am->y * yperline;
             draw_filled_rect(fx, fy, fw, yperline, 1<<2, 0); /* bpl[2] */
         }
         if (m != NULL) {
@@ -2637,7 +2651,7 @@ static void c_VBLANK_IRQ(void)
             fy = ystart + m->y * yperline;
             draw_filled_rect(fx, fy, fw, yperline, 1<<2, 1); /* bpl[2] */
         }
-        vbl_menu_option = m;
+        active_menu_option = m;
     }
 
     /* When LMB is first pressed emit a keycode if we are within a menu box. */
@@ -2648,12 +2662,15 @@ static void c_VBLANK_IRQ(void)
             exit = 1; /* Ctrl (+ L.Alt) sets the exit flag */
         /* Cancel any long-running check if instructed to exit. */
         if (exit || (m->c == K_ESC))
-            cancel_call(&test_cancellation);
+            do_cancel = 1;
     }
     prev_lmb = lmb;
 
-out:
-    IRQ_RESET(INT_VBLANK);
+    /* Perform an asynchronous function cancellation if so instructed. */
+    if (do_cancel)
+        cancel_call(&test_cancellation);
+
+    IRQ_RESET(INT_SOFT);
 }
 
 void cstart(void)
@@ -2710,6 +2727,7 @@ void cstart(void)
 
     clear_colors();
 
+    m68k_vec->level1_autovector.p = SOFT_IRQ;
     m68k_vec->level2_autovector.p = CIAA_IRQ;
     m68k_vec->level6_autovector.p = CIAB_IRQ;
     m68k_vec->level3_autovector.p = VBLANK_IRQ;
@@ -2725,7 +2743,7 @@ void cstart(void)
 
     wait_bos();
     cust->dmacon = DMA_SETCLR | DMA_COPEN | DMA_DSKEN;
-    cust->intena = (INT_SETCLR | INT_CIAA | INT_CIAB | INT_VBLANK);
+    cust->intena = (INT_SETCLR | INT_CIAA | INT_CIAB | INT_VBLANK | INT_SOFT);
 
     /* Detect our hardware environment. */
     cpu_model = detect_cpu_model();
