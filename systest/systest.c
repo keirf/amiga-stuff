@@ -2620,6 +2620,11 @@ static void c_SOFT_IRQ(void)
     uint16_t lmb, i;
     struct menu_option *am, *m;
 
+    /* Shouldn't happen but just in case we race IRQ_DISABLE() bail immediately
+     * and leave the interrupt pending in INTREQ. */
+    if (!(cust->intenar & INT_SOFT))
+        return;
+
     m = NULL;
     am = active_menu_option;
 
