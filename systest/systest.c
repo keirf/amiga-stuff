@@ -453,6 +453,24 @@ static void waitblit(void)
         continue;
 }
 
+/* Must be called before modifying the blitter registers. On return the
+ * blitter is available and inactive. */
+static void blitter_acquire(void)
+{
+    /* Blitter is used by VBL irq. Don't let it trample our blitter state. */
+    cust->intena = INT_VBLANK;
+    /* Make sure previous operation is complete before we modify state. */
+    waitblit();
+}
+
+/* Called after modifying blitter registers. Others may trample your blitter 
+ * state after you call this function (though they must waitblit first). */
+static void blitter_release(void)
+{
+    /* VBL irq can run and access the blitter now. */
+    cust->intena = INT_SETCLR | INT_VBLANK;    
+}
+
 /* Wait for end of bitplane DMA. */
 static void wait_bos(void)
 {
@@ -488,38 +506,48 @@ static void draw_hollow_rect(
     }
 }
 
+/* Draw rectangle (x,y),(x+w,y+h) into bitplanes specified by plane_mask. 
+ * The rectangle sets pixels if set is specified, else it clears pixels. */
 static void draw_filled_rect(
-    uint8_t *plane,
     unsigned int x, unsigned int y,
     unsigned int w, unsigned int h,
-    int set)
+    uint8_t plane_mask, int set)
 {
-    unsigned int i, j;
-    uint8_t b, *p;
-    plane += y * (xres/8) + (x/8);
-    for (j = 0; j < h; j++) {
-        p = plane;
-        plane += xres/8;
-        for (i = x; i < x+w; i = (i+8)&~7) {
-            b = 0xff;
-            y = i&7;
-            if (y) /* first byte in row is partial fill? */
-                b >>= y;
-            y += x+w-i-1;
-            if (y < 7) /* last byte in row is partial fill? */
-                b &= 0xff << (7-y);
-            if (!set)
-                *p++ &= ~b;
-            else
-                *p++ |= b;
-        }
+    uint16_t i, bpl_off = y * (xres/8) + (x/16) * 2;
+    uint16_t _w = (w+x+15)/16 - x/16, mask;
+
+    blitter_acquire();
+
+    /* DMA=BD, D=~AB (clear) D=A|B (set) */
+    cust->bltcon0 = set ? 0x05fc : 0x050c;
+    cust->bltcon1 = 0;
+    cust->bltbmod = xres/8 - _w*2;
+    cust->bltdmod = xres/8 - _w*2;
+    /* Channel A is a pixel-granularity row mask. */
+    mask = 0xffff;
+    if (x&15) mask >>= x&15;
+    cust->bltafwm = mask;
+    mask = 0xffff;
+    if ((x+w)&15) mask <<= 16-((x+w)&15);
+    cust->bltalwm = mask;
+    cust->bltadat = 0xffff;
+
+    for (i = 0; i < planes; i++, plane_mask >>= 1) {
+        if (!(plane_mask & 1))
+            continue;
+        cust->bltbpt.p = bpl[i] + bpl_off;
+        cust->bltdpt.p = bpl[i] + bpl_off;
+        cust->bltsize = _w | (h<<6);
+        waitblit();
     }
+
+    blitter_release();
 }
 
 static void clear_screen_rows(uint16_t y_start, uint16_t y_nr)
 {
     uint16_t i;
-    waitblit();
+    blitter_acquire();
     cust->bltcon0 = 0x0100;
     cust->bltcon1 = 0x0000;
     cust->bltdmod = 0;
@@ -528,6 +556,7 @@ static void clear_screen_rows(uint16_t y_start, uint16_t y_nr)
         cust->bltsize = (xres/16)|(y_nr<<6);
         waitblit();
     }
+    blitter_release();
 }
 
 static void clear_whole_screen(void)
@@ -626,7 +655,7 @@ static void print_char(uint16_t x, uint16_t y, char c)
     uint16_t *font_char = font + c * yperline * 2;
     uint16_t i, bpl_off = y * (xres/8) + (x/16) * 2;
 
-    waitblit();
+    blitter_acquire();
 
     cust->bltcon0 = 0x0dfc | ((x&15)<<12); /* ABD DMA, D = A|B, pre-shift A */
     cust->bltcon1 = 0;
@@ -643,6 +672,8 @@ static void print_char(uint16_t x, uint16_t y, char c)
         cust->bltdpt.p = bpl[i] + bpl_off;
         cust->bltsize = 2 | (yperline<<6); /* 2 words * yperline rows */
     }
+
+    blitter_release();
 }
 
 static void print_line(const struct char_row *r)
@@ -727,6 +758,22 @@ static void print_menu_nav_line(void)
     struct char_row r = { .x = 4, .y = 14, .s = s };
     sprintf(s, "$C main menu$  $E up one menu$");
     print_line(&r);
+}
+
+/* Print a simple string into a sub-section of a text row. */
+static void print_text_box(unsigned int x, unsigned int y, const char *s)
+{
+    uint16_t _x = xstart + x * 8;
+    uint16_t _y = ystart + y * yperline;
+    char c;
+
+    /* Clear the area we are going to print into. */
+    draw_filled_rect(_x, _y, strlen(s)*8+1, yperline, 3, 0);
+
+    while ((c = *s++) != '\0') {
+        print_char(_x, _y, c);
+        _x += 8;
+    }
 }
 
 static void mainmenu(void)
@@ -1571,13 +1618,13 @@ static void kbdcheck(void)
             continue;
         x = 30 + cap->x;
         y = 13 + cap->y;
-        draw_filled_rect(bpl[0], x+1, y+1, cap->w-1, cap->h-1, !(key & 0x80));
+        draw_filled_rect(x+1, y+1, cap->w-1, cap->h-1, 1<<0, !(key & 0x80));
         if (!(key & 0x80)) /* permanent highlight in bpl[2] */
-            draw_filled_rect(bpl[2], x+1, y+1, cap->w-1, cap->h-1, 1);
+            draw_filled_rect(x+1, y+1, cap->w-1, cap->h-1, 1<<2, 1);
         if ((key & 0x7f) == 0x44) { /* Return needs a bodge.*/
-            draw_filled_rect(bpl[0], x-7, y+1, 8, 14, !(key & 0x80));
+            draw_filled_rect(x-7, y+1, 8, 14, 1<<0, !(key & 0x80));
             if (!(key & 0x80)) /* permanent highlight in bpl[2] */
-                draw_filled_rect(bpl[2], x-7, y+1, 8, 14, 1);
+                draw_filled_rect(x-7, y+1, 8, 14, 1<<2, 1);
         }
     }
 
@@ -2149,18 +2196,21 @@ static void floppycheck(void)
     }
 }
 
-static void printport(char *s, unsigned int port)
+static void printport(char *b, char *d, unsigned int port)
 {
     uint16_t joy = port ? cust->joy1dat : cust->joy0dat;
     uint8_t buttons = cust->potinp >> (port ? 12 : 8);
-    sprintf(s, "Button=(%c%c%c) Dir=(%c%c%c%c)",
-            !(ciaa->pra & (1u << (port ? 7 : 6))) ? '1' : ' ',
-            !(buttons & 1) ? '2' : ' ',
-            !(buttons & 4) ? '3' : ' ',
-            (joy & 0x200) ? 'L' : ' ',
-            (joy & 2) ? 'R' : ' ',
-            ((joy & 0x100) ^ ((joy & 0x200) >> 1)) ? 'U' : ' ',
-            ((joy & 1) ^ ((joy & 2) >> 1)) ? 'D' : ' ');
+
+    b[0] = !(ciaa->pra & (1u << (port ? 7 : 6))) ? '1' : ' ';
+    b[1] = !(buttons & 1) ? '2' : ' ';
+    b[2] = !(buttons & 4) ? '3' : ' ';
+    b[3] = '\0';
+
+    d[0] = (joy & 0x200) ? 'L' : ' ';
+    d[1] = (joy & 2) ? 'R' : ' ';
+    d[2] = ((joy & 0x100) ^ ((joy & 0x200) >> 1)) ? 'U' : ' ';
+    d[3] = ((joy & 1) ^ ((joy & 2) >> 1)) ? 'D' : ' ';
+    d[4] = '\0';
 }
 
 static void updatecoords(uint16_t oldjoydat, uint16_t newjoydat, int *coords)
@@ -2173,7 +2223,7 @@ static void updatecoords(uint16_t oldjoydat, uint16_t newjoydat, int *coords)
 
 static void joymousecheck(void)
 {
-    char sub[2][30], s[80];
+    char sub[2][30], s[80], button_s[2][4], dir_s[2][5], coord_s[2][8];
     struct char_row r = { .x = 8, .y = 1, .s = s };
     int i, coords[2][2] = { { 0 } };
     uint16_t joydat[2], newjoydat[2];
@@ -2191,40 +2241,51 @@ static void joymousecheck(void)
     r.x = 0;
     r.y += 3;
 
-    for (i = 0; !exit; i++) {
+    /* Print the port-info text strings. Data areas are filled dynamically. */
+    for (i = 0; i < 2; i++)
+        sprintf(sub[i], "Port %d: (   ,   )", i+1);
+    sprintf(s, "%37s%s", sub[0], sub[1]);
+    print_line(&r);
+    r.y++;
+    sprintf(sub[0], "Button=(   ) Dir=(    )");
+    sprintf(s, "%37s%s", sub[0], sub[0]);
+    print_line(&r);
 
-        /* ESC also means exit */
+    while (!exit) {
+
+        /* ESC also means exit. */
         exit |= (keycode_buffer == K_ESC);
 
-        if (i & 1) {
-            /* Odd frames: print button/direction info */
-            printport(sub[0], 0);
-            printport(sub[1], 1);
-            r.y++;
-        } else {
-            /* Even frames: print coordinate info */
-            sprintf(sub[0], "Port 1: (%3u,%3u)", coords[0][0], coords[0][1]);
-            sprintf(sub[1], "Port 2: (%3u,%3u)", coords[1][0], coords[1][1]);
-            r.y--;
+        /* New port data strings. */
+        for (i = 0; i < 2; i++) {
+            printport(button_s[i], dir_s[i], i);
+            sprintf(coord_s[i], "%3u,%3u", coords[i][0], coords[i][1]);
         }
-        sprintf(s, "%37s%s", sub[0], sub[1]);
 
         newjoydat[0] = cust->joy0dat;
         newjoydat[1] = cust->joy1dat;
 
         /* Wait for end of display, then start screen updates. */
         wait_bos();
-        print_line(&r); /* sloooow, allows only one per vbl */
-        draw_filled_rect(bpl[1], coords[0][0] + 100, coords[0][1]/2 + 80,
-                         4, 2, 0);
-        draw_filled_rect(bpl[1], coords[1][0] + 400, coords[1][1]/2 + 80,
-                         4, 2, 0);
+        /* Clear the old port data strings and print the new ones. */
+        for (i = 0; i < 2; i++) {
+            uint16_t x_off = i ? 37 : 0;
+            print_text_box(9 + x_off, 4, coord_s[i]);
+            print_text_box(8 + x_off, 5, button_s[i]);
+            print_text_box(18 + x_off, 5, dir_s[i]);
+        }
+        /* Clear the old cursor boxes. */
+        draw_filled_rect(coords[0][0] + 100, coords[0][1]/2 + 80,
+                         4, 2, 1<<1, 0);
+        draw_filled_rect(coords[1][0] + 400, coords[1][1]/2 + 80,
+                         4, 2, 1<<1, 0);
         updatecoords(joydat[0], newjoydat[0], coords[0]);
         updatecoords(joydat[1], newjoydat[1], coords[1]);
-        draw_filled_rect(bpl[1], coords[0][0] + 100, coords[0][1]/2 + 80,
-                         4, 2, 1);
-        draw_filled_rect(bpl[1], coords[1][0] + 400, coords[1][1]/2 + 80,
-                         4, 2, 1);
+        /* Draw the new cursor boxes. */
+        draw_filled_rect(coords[0][0] + 100, coords[0][1]/2 + 80,
+                         4, 2, 1<<1, 1);
+        draw_filled_rect(coords[1][0] + 400, coords[1][1]/2 + 80,
+                         4, 2, 1<<1, 1);
 
         joydat[0] = newjoydat[0];
         joydat[1] = newjoydat[1];
@@ -2568,13 +2629,13 @@ static void c_VBLANK_IRQ(void)
             fx = xstart + vm->x1 * 8 - 1;
             fw = (vm->x2 - vm->x1) * 8 + 3;
             fy = ystart + vm->y * yperline;
-            draw_filled_rect(bpl[2], fx, fy, fw, yperline, 0);
+            draw_filled_rect(fx, fy, fw, yperline, 1<<2, 0); /* bpl[2] */
         }
         if (m != NULL) {
             fx = xstart + m->x1 * 8 - 1;
             fw = (m->x2 - m->x1) * 8 + 3;
             fy = ystart + m->y * yperline;
-            draw_filled_rect(bpl[2], fx, fy, fw, yperline, 1);
+            draw_filled_rect(fx, fy, fw, yperline, 1<<2, 1); /* bpl[2] */
         }
         vbl_menu_option = m;
     }
