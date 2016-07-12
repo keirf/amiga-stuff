@@ -2432,6 +2432,13 @@ static void videocheck(void)
     unsigned int i, j, k;
     uint32_t bpl3;
 
+    /* This test has two uses: 
+     * (1) It show a colour gradient for each of R, G, B components. 
+     *     This will show up any errors that affect a particular component, 
+     *     including any bit failures in any of {R,G,B}[3:0]. 
+     * (2) Boundary lines are drawn for standard NTSC and PAL playfields. 
+     *     These are useful for calibrating the TV or monitor. */
+
     cop = p = allocmem(16384 /* plenty */);
 
     /* First line of gradient. */
@@ -2454,6 +2461,20 @@ static void videocheck(void)
     *p++ = 0x00ea; /* bpl3ptl */
     *p++ = bpl3;
 
+    /* Change diwstrt/diwstop for standard PAL display. Repeat the same
+     * bitplane line repeatedly at top section of display to achieve the
+     * left/right boundary lines. */
+    *p++ = 0x008e; *p++ = 0x2c81; /* diwstrt */
+    *p++ = 0x0090; *p++ = 0x2cc1; /* diwstop */
+    *p++ = 0x0108; *p++ = -(xres/8); /* bpl1mod: same line repeatedly */
+    *p++ = 0x010a; *p++ = -(xres/8); /* bpl2mod: same line repeatedly */
+
+    /* Horizontal line at the top of the normal (NTSC or PAL) playfield. */
+    *p++ = 0x2c41; *p++ = 0xfffe;
+    *p++ = 0x0180; *p++ = 0x0ddd;
+    *p++ = 0x2cdd; *p++ = 0xfffe;
+    *p++ = 0x0180; *p++ = 0x0000;
+
     /* Create a vertical gradient of red, green, blue (across screen). 
      * Alternate white/black markers to indicate gradient changes. */
     for (i = 0; i < 16; i++) {
@@ -2464,6 +2485,13 @@ static void videocheck(void)
             /* color = black or white */
             *p++ = 0x0180;
             *p++ = (i & 1) ? 0x0000 : 0x0fff;
+
+            /* At our normal playfield start position un-kludge the 
+             * bitplane modulos. */
+            if (wait == ((diwstrt_v<<8)|1)) {
+                *p++ = 0x0108; *p++ = 0; /* bpl1mod */
+                *p++ = 0x010a; *p++ = 0; /* bpl2mod */
+            }
 
             for (k = 0; k < 4; k++) {
                 /* WAIT horizontal */
@@ -2488,6 +2516,26 @@ static void videocheck(void)
     *p++ = 0x0100; /* bplcon0 */
     *p++ = 0xb200; /* hires, 3 planes */
 
+    /* End of our normal playfield: re-kludge the bitplane modulos to 
+     * achieve the left/right playfield boundary lines. */
+    *p++ = ((diwstrt_v+yres) << 8) | 7; *p++ = 0xfffe;
+    *p++ = 0x0100; *p++ = 0x9200; /* bplcon0: 1 bitplane */
+    *p++ = 0x0182; *p++ = 0x0ddd; /* color[1]: light grey */
+    *p++ = 0x0108; *p++ = -(xres/8); /* bpl1mod: same line repeatedly */
+
+    /* Horizontal line at bottom of normal NTSC playfield.  */
+    *p++ = 0xf341; *p++ = 0xfffe;
+    *p++ = 0x0180; *p++ = 0x0ddd;
+    *p++ = 0xf3dd; *p++ = 0xfffe;
+    *p++ = 0x0180; *p++ = 0x0000;
+
+    /* Horizontal line at bottom of normal PAL playfield. */
+    *p++ = 0xffdf; *p++ = 0xfffe;
+    *p++ = 0x2b41; *p++ = 0xfffe;
+    *p++ = 0x0180; *p++ = 0x0ddd;
+    *p++ = 0x2bdd; *p++ = 0xfffe;
+    *p++ = 0x0180; *p++ = 0x0000;
+
     /* End of copper list. */
     *p++ = 0xffff;
     *p++ = 0xfffe;
@@ -2497,6 +2545,10 @@ static void videocheck(void)
     cust->cop2lc.p = cop;
 
     print_menu_nav_line();
+
+    /* Left/right boundary lines for a normal (NTSC or PAL) playfield. */
+    draw_filled_rect(0, 0, 2, yres, 3, 1);
+    draw_filled_rect(xres-2, 0, 2, yres, 3, 1);
 
     /* All work is done by the copper. Just wait for exit. */
     while (!exit)
