@@ -2547,8 +2547,8 @@ static void videocheck(void)
     print_menu_nav_line();
 
     /* Left/right boundary lines for a normal (NTSC or PAL) playfield. */
-    draw_filled_rect(0, 0, 2, yres, 3, 1);
-    draw_filled_rect(xres-2, 0, 2, yres, 3, 1);
+    draw_filled_rect(0, 0, 10, yres, 3, 1);
+    draw_filled_rect(xres-10, 0, 10, yres, 3, 1);
 
     /* All work is done by the copper. Just wait for exit. */
     while (!exit)
