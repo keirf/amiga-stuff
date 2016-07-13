@@ -493,7 +493,7 @@ static void wait_bos(void)
 
 /* Draw rectangle (x,y),(x+w,y+h) into bitplanes specified by plane_mask. 
  * The rectangle sets pixels if set is specified, else it clears pixels. */
-static void _draw_filled_rect(
+static void draw_rect(
     unsigned int x, unsigned int y,
     unsigned int w, unsigned int h,
     uint8_t plane_mask, int set)
@@ -528,17 +528,17 @@ static void _draw_filled_rect(
 
     blitter_release();
 }
-#define draw_filled_rect(x,y,w,h,p) _draw_filled_rect(x,y,w,h,p,1)
-#define clear_filled_rect(x,y,w,h,p) _draw_filled_rect(x,y,w,h,p,0)
+#define fill_rect(x,y,w,h,p) draw_rect(x,y,w,h,p,1)
+#define clear_rect(x,y,w,h,p) draw_rect(x,y,w,h,p,0)
 
-static void draw_hollow_rect(
+static void hollow_rect(
     unsigned int x, unsigned int y,
     unsigned int w, unsigned int h,
     uint8_t plane_mask)
 {
-    draw_filled_rect(x, y, w, h, plane_mask);
+    fill_rect(x, y, w, h, plane_mask);
     if ((w > 2) && (h > 2))
-        clear_filled_rect(x+1, y+1, w-2, h-2, plane_mask);
+        clear_rect(x+1, y+1, w-2, h-2, plane_mask);
 }
 
 static void clear_screen_rows(uint16_t y_start, uint16_t y_nr)
@@ -765,7 +765,7 @@ static void print_text_box(unsigned int x, unsigned int y, const char *s)
     char c;
 
     /* Clear the area we are going to print into. */
-    clear_filled_rect(_x, _y, strlen(s)*8+1, yperline, 3);
+    clear_rect(_x, _y, strlen(s)*8+1, yperline, 3);
 
     while ((c = *s++) != '\0') {
         print_char(_x, _y, c);
@@ -1542,7 +1542,7 @@ static void kbdcheck(void)
      * in bitplane 0 to indicate keys which are currently pressed. The reverse
      * video effect causes the key to be highlighted with the key name still
      * visible. */
-    draw_hollow_rect(20, 8, 601, 106, 1<<1);
+    hollow_rect(20, 8, 601, 106, 1<<1);
     for (i = 0; i < ARRAY_SIZE(keymap); i++) {
         cap = &keymap[i];
         if (!cap->h)
@@ -1550,9 +1550,9 @@ static void kbdcheck(void)
         /* Draw the outline rectangle. */
         x = 30 + cap->x;
         y = 13 + cap->y;
-        draw_hollow_rect(x, y, cap->w+1, cap->h+1, 1<<1);
+        hollow_rect(x, y, cap->w+1, cap->h+1, 1<<1);
         if (i == 0x44) /* Return key is not a rectangle. Bodge it.*/
-            clear_filled_rect(x, y+1, 1, 14, 1<<1);
+            clear_rect(x, y+1, 1, 14, 1<<1);
         /* Drawn the name in the centre of the outline rectangle. */
         for (l = 0; cap->name[l]; l++)
             continue;
@@ -1611,9 +1611,9 @@ static void kbdcheck(void)
         y = 13 + cap->y;
         setclr = !(key & 0x80);
         bpls = setclr ? (1<<2)|(1<<0) : (1<<0); /* sticky highlight bpl[2] */
-        _draw_filled_rect(x+1, y+1, cap->w-1, cap->h-1, bpls, setclr);
+        draw_rect(x+1, y+1, cap->w-1, cap->h-1, bpls, setclr);
         if ((key & 0x7f) == 0x44) /* Return needs a bodge.*/
-            _draw_filled_rect(x-7, y+1, 8, 14, bpls, setclr);
+            draw_rect(x-7, y+1, 8, 14, bpls, setclr);
     }
 
     /* Clean up. */
@@ -2263,13 +2263,13 @@ static void joymousecheck(void)
             print_text_box(18 + x_off, 5, dir_s[i]);
         }
         /* Clear the old cursor boxes. */
-        clear_filled_rect(coords[0][0] + 100, coords[0][1]/2 + 80, 4, 2, 1<<1);
-        clear_filled_rect(coords[1][0] + 400, coords[1][1]/2 + 80, 4, 2, 1<<1);
+        clear_rect(coords[0][0] + 100, coords[0][1]/2 + 80, 4, 2, 1<<1);
+        clear_rect(coords[1][0] + 400, coords[1][1]/2 + 80, 4, 2, 1<<1);
         updatecoords(joydat[0], newjoydat[0], coords[0]);
         updatecoords(joydat[1], newjoydat[1], coords[1]);
         /* Draw the new cursor boxes. */
-        draw_filled_rect(coords[0][0] + 100, coords[0][1]/2 + 80, 4, 2, 1<<1);
-        draw_filled_rect(coords[1][0] + 400, coords[1][1]/2 + 80, 4, 2, 1<<1);
+        fill_rect(coords[0][0] + 100, coords[0][1]/2 + 80, 4, 2, 1<<1);
+        fill_rect(coords[1][0] + 400, coords[1][1]/2 + 80, 4, 2, 1<<1);
 
         joydat[0] = newjoydat[0];
         joydat[1] = newjoydat[1];
@@ -2524,8 +2524,8 @@ static void videocheck(void)
     print_menu_nav_line();
 
     /* Left/right boundary lines for a normal (NTSC or PAL) playfield. */
-    draw_filled_rect(0, 0, 10, yres, 3);
-    draw_filled_rect(xres-10, 0, 10, yres, 3);
+    fill_rect(0, 0, 10, yres, 3);
+    fill_rect(xres-10, 0, 10, yres, 3);
 
     /* All work is done by the copper. Just wait for exit. */
     while (!exit)
@@ -2677,13 +2677,13 @@ static void c_SOFT_IRQ(void)
             fx = xstart + am->x1 * 8 - 1;
             fw = (am->x2 - am->x1) * 8 + 3;
             fy = ystart + am->y * yperline;
-            clear_filled_rect(fx, fy, fw, yperline, 1<<2); /* bpl[2] */
+            clear_rect(fx, fy, fw, yperline, 1<<2); /* bpl[2] */
         }
         if (m != NULL) {
             fx = xstart + m->x1 * 8 - 1;
             fw = (m->x2 - m->x1) * 8 + 3;
             fy = ystart + m->y * yperline;
-            draw_filled_rect(fx, fy, fw, yperline, 1<<2); /* bpl[2] */
+            fill_rect(fx, fy, fw, yperline, 1<<2); /* bpl[2] */
         }
         active_menu_option = m;
     }
