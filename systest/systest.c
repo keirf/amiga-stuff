@@ -2626,12 +2626,12 @@ static void c_VBLANK_IRQ(void)
     mouse_x += (int8_t)(joydat - vblank_joydat);
     mouse_y += (int8_t)((joydat >> 8) - (vblank_joydat >> 8));
     mouse_x = min_t(int16_t, max_t(int16_t, mouse_x, 0), xres-1);
-    mouse_y = min_t(int16_t, max_t(int16_t, mouse_y, 0), yres-1);
+    mouse_y = min_t(int16_t, max_t(int16_t, mouse_y, 0), 2*yres-1);
     vblank_joydat = joydat;
 
     /* Move the mouse pointer sprite. */
     hstart = (mouse_x>>1) + diwstrt_h-1;
-    vstart = mouse_y + diwstrt_v;
+    vstart = (mouse_y>>1) + diwstrt_v;
     vstop = vstart + 11;
     pointer_sprite[0] = (vstart<<8)|(hstart>>1);
     pointer_sprite[1] = (vstop<<8)|((vstart>>8)<<2)|((vstop>>8)<<1)|(hstart&1);
@@ -2646,7 +2646,7 @@ IRQ(SOFT_IRQ);
 static void c_SOFT_IRQ(void)
 {
     static uint16_t prev_lmb;
-    uint16_t lmb, i;
+    uint16_t lmb, i, x, y;
     struct menu_option *am, *m;
 
     /* Shouldn't happen but just in case we race IRQ_DISABLE() bail immediately
@@ -2658,9 +2658,11 @@ static void c_SOFT_IRQ(void)
     am = active_menu_option;
 
     /* Is mouse pointer currently within a menu-option bounding box? */
-    if ((mouse_x >= xstart) && (mouse_y >= ystart)) {
-        uint8_t cx = (mouse_x - xstart) >> 3;
-        uint8_t cy = div32(mouse_y - ystart, yperline);
+    x = mouse_x;
+    y = mouse_y >> 1;
+    if ((x >= xstart) && (y >= ystart)) {
+        uint8_t cx = (x - xstart) >> 3;
+        uint8_t cy = div32(y - ystart, yperline);
         for (i = 0, m = menu_option; i < nr_menu_options; i++, m++) {
             if ((m->x1 <= cx) && (m->x2 > cx) && (m->y == cy))
                 break;
