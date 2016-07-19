@@ -233,6 +233,7 @@ static void floppycheck(void);
 static void joymousecheck(void);
 static void audiocheck(void);
 static void videocheck(void);
+static void ciacheck(void);
 
 /* Keycodes used for menu navigation. */
 enum {
@@ -299,17 +300,18 @@ static uint32_t div32(uint32_t dividend, uint16_t divisor)
     return dividend;
 }
 
+/* Loop to get consistent current CIA timer value. */
+#define get_ciatime(_cia, _tim) ({              \
+    uint8_t __hi, __lo;                         \
+    do {                                        \
+        __hi = (_cia)->_tim##hi;                \
+        __lo = (_cia)->_tim##lo;                \
+    } while (__hi != (_cia)->_tim##hi);         \
+    ((uint16_t)__hi << 8) | __lo; })
+
 static uint16_t get_ciaatb(void)
 {
-    uint8_t hi, lo;
-
-    /* Loop to get consistent current CIA timer value. */
-    do {
-        hi = ciaa->tbhi;
-        lo = ciaa->tblo;
-    } while (hi != ciaa->tbhi);
-
-    return ((uint16_t)hi << 8) | lo;
+    return get_ciatime(ciaa, tb);
 }
 
 static uint32_t get_time(void)
@@ -784,7 +786,8 @@ static void mainmenu(void)
         { floppycheck,   "Floppy Drive" },
         { joymousecheck, "Mouse / Joystick Ports" },
         { audiocheck,    "Audio" },
-        { videocheck,    "Video" }
+        { videocheck,    "Video" },
+        { ciacheck,      "CIA" }
     };
 
     uint8_t i;
@@ -2536,6 +2539,66 @@ static void videocheck(void)
     cust->cop2lc.p = copper_2;
 }
 
+static void get_cia_times(uint16_t *times)
+{
+    times[0] = get_ciatime(ciaa, ta);
+    times[1] = get_ciatime(ciaa, tb);
+    times[2] = get_ciatime(ciab, ta);
+    times[3] = get_ciatime(ciab, tb);
+}
+
+static void ciacheck(void)
+{
+    char s[80];
+    struct char_row r = { .x = 8, .y = 1, .s = s };
+    uint16_t i, times[2][4];
+    uint32_t exp, tot[4] = { 0 };
+
+    print_menu_nav_line();
+
+    sprintf(s, "-- CIA Test --");
+    print_line(&r);
+    r.x = 0;
+    r.y += 3;
+
+    /* Get CIA timestamps at time of a VBL IRQ. */
+    vblank_count = 0;
+    do {
+        get_cia_times(times[0]);
+    } while (!vblank_count);
+
+    /* Wait for 10 more VBL periods and accumulate CIA ticks into 
+     * an array of 32-bit counters (tot[]). */
+    do {
+        get_cia_times(times[1]);
+        for (i = 0; i < 4; i++) {
+            tot[i] += (uint16_t)(times[0][i] - times[1][i]);
+            times[0][i] = times[1][i];
+        }
+    } while (vblank_count < 11);
+
+    exp = div32(cpu_hz, vbl_hz);
+    sprintf(s, "Timer ticks during 10 VBLs (Expect approx. %u):", exp);
+    print_line(&r);
+    r.y++;
+
+    /* Print the actual tick values and whether they are within 
+     * one-percent tolerance (which is pretty generous). */
+    for (i = 0; i < 4; i++) {
+        static const char *name[] = { "ATA", "ATB", "BTA", "BTB" };
+        uint32_t diff = tot[i] > exp ? tot[i] - exp : exp - tot[i];
+        int in_tol = diff < (100*exp);
+        sprintf(s, "CIA%s %u -> %s", name[i], tot[i],
+                in_tol ? "OK (<1%, within tolerance)"
+                : "FAILED (>1%, out of tolerance)");
+        print_line(&r);
+        r.y++;
+    }
+
+    while (!exit && (keycode_buffer != K_ESC))
+        continue;
+}
+
 IRQ(CIAA_IRQ);
 static void c_CIAA_IRQ(void)
 {
@@ -2772,10 +2835,11 @@ void cstart(void)
 
     vblank_joydat = cust->joy0dat;
 
-    /* Start CIAA Timer B in continuous mode. */
-    ciaa->tblo = 0xff;
-    ciaa->tbhi = 0xff;
-    ciaa->crb = CIACRB_LOAD | CIACRB_START;
+    /* Start all CIA timers in continuous mode. */
+    ciaa->talo = ciaa->tahi = ciab->talo = ciab->tahi = 0xff;
+    ciaa->tblo = ciaa->tbhi = ciab->tblo = ciab->tbhi = 0xff;
+    ciaa->cra = ciab->cra = CIACRA_LOAD | CIACRA_START;
+    ciaa->crb = ciab->crb = CIACRB_LOAD | CIACRB_START;
 
     wait_bos();
     cust->dmacon = DMA_SETCLR | DMA_COPEN | DMA_DSKEN;
