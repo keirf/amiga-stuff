@@ -1833,9 +1833,10 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
          *  Do not step heads or synchronise to track 0 except when the motor 
          *  is switched on, and preferably after waiting for RDY or 500ms. 
          *  CHNG and WPRO handling can occur with motor switched off. */
-        drive_select(drv, 1);
+        drive_select(drv, (drv != 0) || (motors & 1));
+
         /* We don't wait for RDY on this test. If it's needed, can enable
-         * motor and then re-select the drive (eg. F5 then F1). */
+         * motor and then re-select the drive (F5 then F1-F4). */
         seek_cyl0();
         if (cur_cyl == 0) {
             unsigned int nr_cyls;
@@ -1844,11 +1845,15 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
             if (cur_cyl == 0)
                 sprintf(s, "-- DF%u: %u cylinders --", drv, nr_cyls);
         }
-        drive_select(drv, !!(motors & (1u << drv)));
         if (cur_cyl < 0)
             sprintf(s, "-- DF%u: No Track 0 (Drive not present?) --", drv);
         print_line(r);
         r->y += 3;
+
+        /* Switch off the drive motor if it was only turned on for
+         * external-drive seek test. */
+        if ((drv != 0) && !(motors & (1u << drv)))
+            drive_select(drv, 0);
 
         sprintf(s, "$1 DF0$  $2 DF1$  $3 DF2$  $4 DF3$");
         print_line(r);
