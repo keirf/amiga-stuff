@@ -55,6 +55,11 @@
         moveq   #0,d0
         move.w  d0,0x180(a6)     /* color0 = black */
 
+        /* Clobber ExecBase. We are going to take over memory and Kickstart
+         * cannot rely on the Exec memory lists when it restarts. Make ExecBase
+         * an odd address as that is guaranteed to fail the restart checks. */
+        not.l   (4).w
+
         /* Floppy motors off */
         lea     (0xbfd100).l,a5
         ori.b   #0xf8,(a5)
