@@ -465,6 +465,9 @@ static uint8_t detect_cpu_model(void)
 /* Wait for blitter idle. */
 static void waitblit(void)
 {
+    /* Dummy first read works around delayed blitter-busy flag assertion 
+     * in early Agnus versions. */
+    (void)*(volatile uint8_t *)&cust->dmaconr;
     while (*(volatile uint8_t *)&cust->dmaconr & (DMA_BBUSY >> 8))
         continue;
 }
