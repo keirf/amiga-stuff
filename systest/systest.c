@@ -1625,10 +1625,15 @@ static void kbdcheck(void)
     keycode_buffer = 0;
 }
 
-/* Select @drv and set motor on or off. */
-static void drive_select_motor(unsigned int drv, int on)
+static void drive_deselect(void)
 {
     ciab->prb |= 0xf9; /* motor-off, deselect all */
+}
+
+/* Select @drv and set motor on or off. */
+static void drive_select(unsigned int drv, int on)
+{
+    drive_deselect(); /* motor-off, deselect all */
     if (on)
         ciab->prb &= ~CIABPRB_MTR; /* motor-on */
     ciab->prb &= ~(CIABPRB_SEL0 << drv); /* select drv */
@@ -1802,8 +1807,8 @@ static uint32_t drive_id(unsigned int drv)
 static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
 {
     char *s = (char *)r->s;
-    uint8_t pra, old_pra, key = 0;
-    unsigned int on, old_disk_index_count;
+    uint8_t motors = 0, pra, old_pra, key = 0;
+    unsigned int i, old_disk_index_count;
     uint32_t rdy_delay, mtr_time, key_time, mtr_timeout;
     int rdy_changed;
 
@@ -1812,8 +1817,22 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
 
     while (!exit && (key != K_ESC)) {
 
-        on = 0;
-        drive_select_motor(drv, 0);
+        /* Oddities of external drives when motor is off:
+         *  1. TRK0 signal may be switched off;
+         *  2. Drive may not physically step heads, in one or both directions.
+         * However:
+         *  1. CHNG signal correctly asserts on disk removal and deasserts on
+         *     disk insertion + step signal (even if the drive does not
+         *     physically step);
+         *  2. WPRO signal appears to be correctly produced at all times 
+         *     when a disk is in the drive. 
+         * In summary: 
+         *  Do not step heads or synchronise to track 0 except when the motor 
+         *  is switched on, and preferably after waiting for RDY or 500ms. 
+         *  CHNG and WPRO handling can occur with motor switched off. */
+        drive_select(drv, 1);
+        /* We don't wait for RDY on this test. If it's needed, can enable
+         * motor and then re-select the drive (eg. F5 then F1). */
         seek_cyl0();
         if (cur_cyl == 0) {
             unsigned int nr_cyls;
@@ -1822,6 +1841,7 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
             if (cur_cyl == 0)
                 sprintf(s, "-- DF%u: %u cylinders --", drv, nr_cyls);
         }
+        drive_select(drv, !!(motors & (1u << drv)));
         if (cur_cyl < 0)
             sprintf(s, "-- DF%u: No Track 0 (Drive not present?) --", drv);
         print_line(r);
@@ -1846,8 +1866,11 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
                 rdy_changed = !!((old_pra ^ pra) & CIAAPRA_RDY);
                 if (rdy_changed)
                     rdy_delay = get_time() - mtr_time;
-                sprintf(s, "MTR=%s CIAAPRA=0x%02x (%s %s %s %s)",
-                        on ? "On" : "Off",
+                sprintf(s, "Motors=(%c%c%c%c) CIAAPRA=0x%02x (%s %s %s %s)",
+                        motors&(1u<<0) ? '0' : ' ',
+                        motors&(1u<<1) ? '1' : ' ',
+                        motors&(1u<<2) ? '2' : ' ',
+                        motors&(1u<<3) ? '3' : ' ',
                         pra,
                         ~pra & CIAAPRA_CHNG ? "CHG" : "",
                         ~pra & CIAAPRA_WPRO ? "WPR" : "",
@@ -1862,7 +1885,8 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
                 ticktostr(disk_index_period, idxstr);
                 ticktostr(rdy_delay, rdystr);
                 sprintf(s, "%u Index Pulses (period %s); MTR%s->RDY%u %s",
-                        disk_index_count, idxstr, on?"On":"Off",
+                        disk_index_count, idxstr,
+                        !!(motors&(1u<<drv)) ? "On" : "Off",
                         !!(old_pra & CIAAPRA_RDY), rdystr);
                 r->y++;
                 print_line(r);
@@ -1870,20 +1894,28 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
                 old_disk_index_count = disk_index_count;
                 rdy_changed = 0;
             }
-            key = (on && ((get_time() - key_time) >= mtr_timeout))
-                ? 0x54 /* force motor off */ : keycode_buffer;
-            if (!key)
+            if (((get_time() - key_time) >= mtr_timeout) && motors) {
+                int was_on = !!(motors & (1u<<drv));
+                motors = 0;
+                for (i = 0; i < 4; i++)
+                    drive_select(i, 0);
+                drive_select(drv, 0);
+                if (was_on)
+                    mtr_time = get_time();
+                key = 1; /* force print */
+                continue;
+            }
+            if (!(key = keycode_buffer))
                 continue;
             keycode_buffer = 0;
             key_time = get_time();
             if ((key >= K_F1) && (key <= 0x53)) { /* F1-F4 */
-                drive_select_motor(drv, 0);
                 drv = key - K_F1;
                 r->y--;
                 break;
             } else if (key == 0x54) { /* F5 */
-                on = !on;
-                drive_select_motor(drv, on);
+                motors ^= 1u << drv;
+                drive_select(drv, !!(motors & (1u << drv)));
                 old_pra = ciaa->pra;
                 mtr_time = get_time();
                 rdy_delay = 0;
@@ -1899,7 +1931,10 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
     }
 
     /* Clean up. */
-    drive_select_motor(drv, 0);
+    for (i = 0; i < 4; i++)
+        drive_select(i, 0);
+    drive_deselect();
+
     return drv;
 }
 
@@ -1926,7 +1961,8 @@ static unsigned int drive_read_test(unsigned int drv, struct char_row *r)
     headers = allocmem(12 * sizeof(*headers));
     data = allocmem(12 * 512);
 
-    drive_select_motor(drv, 0);
+    drive_select(drv, 1);
+    drive_check_ready(r);
     seek_cyl0();
 
     if (cur_cyl < 0) {
@@ -1943,9 +1979,6 @@ static unsigned int drive_read_test(unsigned int drv, struct char_row *r)
             goto out;
         }
     }
-
-    drive_select_motor(drv, 1);
-    drive_check_ready(r);
 
     for (i = 0; i < 160; i++) {
         retries = 0;
@@ -1983,7 +2016,8 @@ static unsigned int drive_read_test(unsigned int drv, struct char_row *r)
     print_line(r);
 
 out:
-    drive_select_motor(drv, 0);
+    drive_select(drv, 0);
+    drive_deselect();
     alloc_p = alloc_s;
 
     while (!done)
@@ -2012,7 +2046,8 @@ static unsigned int drive_write_test(unsigned int drv, struct char_row *r)
     headers = allocmem(12 * sizeof(*headers));
     data = allocmem(12 * 512);
 
-    drive_select_motor(drv, 0);
+    drive_select(drv, 1);
+    drive_check_ready(r);
     seek_cyl0();
 
     if (cur_cyl < 0) {
@@ -2035,9 +2070,6 @@ static unsigned int drive_write_test(unsigned int drv, struct char_row *r)
         print_line(r);
         goto out;
     }
-
-    drive_select_motor(drv, 1);
-    drive_check_ready(r);
 
     for (i = 158; i < 160; i++) {
         retries = 0;
@@ -2091,7 +2123,8 @@ static unsigned int drive_write_test(unsigned int drv, struct char_row *r)
     print_line(r);
 
 out:
-    drive_select_motor(drv, 0);
+    drive_select(drv, 0);
+    drive_deselect();
     alloc_p = alloc_s;
 
     while (!done)
