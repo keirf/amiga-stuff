@@ -1825,7 +1825,7 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
     uint8_t motors = 0, pra, old_pra, key = 0;
     unsigned int i, old_disk_index_count;
     uint32_t rdy_delay, mtr_time, key_time, mtr_timeout;
-    int rdy_changed, force_motor_on;
+    int rdy_changed;
 
     /* Motor on for 30 seconds at a time when there is no user input. */
     mtr_timeout = 30 * div32(cpu_hz, 10);
@@ -1845,13 +1845,12 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
          *  Do not step heads or synchronise to track 0 except when the motor 
          *  is switched on, and preferably after waiting for RDY or 500ms. 
          *  CHNG and WPRO handling can occur with motor switched off. */
-        force_motor_on = ((drv != 0) && !(motors & (1u << drv)));
-        drive_select(drv, force_motor_on || !!(motors & (1u << drv)));
+        drive_select(drv, 1);
+
         /* We shouldn't strictly need to wait for RDY but it's sensible to
          * allow the turn-on current surge to subside before energising the
          * stepper motor. */
-        if (force_motor_on)
-            drive_wait_ready();
+        drive_wait_ready();
 
         seek_cyl0();
         if (cur_cyl == 0) {
@@ -1868,7 +1867,7 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
 
         /* Switch off the drive motor if it was only turned on for
          * external-drive seek test. */
-        if (force_motor_on)
+        if (!(motors & (1u << drv)))
             drive_select(drv, 0);
 
         sprintf(s, "$1 DF0$  $2 DF1$  $3 DF2$  $4 DF3$");
