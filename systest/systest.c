@@ -1586,8 +1586,9 @@ static void kbdcheck(void)
     while (!exit) {
         /* Wait for a key in the keycode ring and then consume it. */
         uint8_t key, setclr, bpls;
-        while (keycode_cons == keycode_prod)
-            barrier(); /* see updates from keyboard irq */
+        barrier(); /* see updates from keyboard irq */
+        if (keycode_cons == keycode_prod)
+            continue;
         key = keycode_ring[keycode_cons++ & (ARRAY_SIZE(keycode_ring)-1)];
 
         /* Out of list space. Clear the keycode-list area. */
