@@ -2158,6 +2158,118 @@ out:
     return drv;
 }
 
+static unsigned int drive_cal_test(unsigned int drv, struct char_row *r)
+{
+    char *s = (char *)r->s;
+    char map[12];
+    void *alloc_s = alloc_p;
+    void *mfmbuf, *data;
+    struct sec_header *headers;
+    unsigned int i, mfm_bytes = 13100, nr_secs;
+    int done = 0;
+    uint8_t key, good, progress = 0;
+    char progress_chars[] = "|/-\\";
+
+    r->x = 0;
+    sprintf(s, "-- DF%u: Continuous Head Calibration Test --", drv);
+    print_line(r);
+    r->y++;
+
+    mfmbuf = allocmem(mfm_bytes);
+    headers = allocmem(12 * sizeof(*headers));
+    data = allocmem(12 * 512);
+
+    drive_select(drv, 1);
+    drive_check_ready(r);
+    seek_cyl0();
+
+    if (cur_cyl < 0) {
+        sprintf(s, "No Track 0: Drive Not Present?");
+        print_line(r);
+        goto out;
+    }
+
+    if (~ciaa->pra & CIAAPRA_CHNG) {
+        seek_track(2);
+        if (~ciaa->pra & CIAAPRA_CHNG) {
+            sprintf(s, "DSKCHG: No Disk In Drive?");
+            print_line(r);
+            goto out;
+        }
+    }
+
+    /* Start the test proper. Print option keys and instructions. */
+    r->y--;
+    sprintf(s, "-> Use an AmigaDOS disk written by a well-calibrated drive.");
+    print_line(r);
+    r->y++;
+    sprintf(s, "-> Adjust drive until 11 cylinder-0 sectors found.");
+    print_line(r);
+    r->y++;
+    sprintf(s, "$1 Re-Seek Cylinder 0$");
+    print_line(r);
+    r->y++;
+
+    for (;;) {
+        key = keycode_buffer;
+        done = (exit || (key == K_ESC));
+        if (done)
+            goto out;
+        if (key) {
+            keycode_buffer = 0;
+            if (key == K_F1) {
+                /* Step away from and back to cylinder 0. Useful after 
+                 * stepper and cyl-0 sensor adjustments. */
+                sprintf(s, "Seeking...");
+                print_line(r);
+                wait_bos();
+                print_line(r);
+                seek_track(80);
+                seek_cyl0();
+                s[0] = '\0';
+                print_line(r);
+            }
+        }
+        /* Read and decode a full track of data. */
+        memset(mfmbuf, 0, mfm_bytes);
+        disk_read_track(mfmbuf, mfm_bytes);
+        disk_wait_dma();
+        nr_secs = mfm_decode_track(mfmbuf, headers, data, mfm_bytes);
+        /* Default sector map is "-----------" (all sectors missing). */
+        for (i = 0; i < 11; i++)
+            map[i] = '-';
+        map[i] = '\0';
+        /* Parse the sector headers, extract cyl# of each good sector. */
+        while (nr_secs--) {
+            struct sec_header *h = &headers[nr_secs];
+            if ((h->format = 0xff) && !h->data_csum && (h->sec < 11))
+                map[h->sec] = ((h->trk>>1) > 9) ? '+' : ('0' + (h->trk>>1));
+        }
+        /* Count the number of good (cyl 0) sectors found. */
+        good = 0;
+        for (i = 0; i < 11; i++) {
+            if (map[i] == '0')
+                good++;
+        }
+        /* Update status message. */
+        sprintf(s, "%c Sector Cyl.Nrs: %s (%u/11 okay)",
+                progress_chars[progress++&3], map, good);
+        wait_bos();
+        print_line(r);
+    }
+
+out:
+    drive_select(drv, 0);
+    drive_deselect();
+    alloc_p = alloc_s;
+
+    while (!done)
+        done = (exit || keycode_buffer == K_ESC);
+    keycode_buffer = 0;
+
+    return drv;
+}
+
 static void floppycheck(void)
 {
     char s[80];
@@ -2198,7 +2310,10 @@ static void floppycheck(void)
         r.y++;
         sprintf(s, "$7 Write Test$");
         print_line(&r);
-        r.y -= 4;
+        r.y++;
+        sprintf(s, "$8 Head Calibration Test$");
+        print_line(&r);
+        r.y -= 5;
 
         for (;;) {
             /* Grab a key */
@@ -2209,11 +2324,11 @@ static void floppycheck(void)
             exit |= (key == K_ESC); /* ESC = exit */
             if (exit)
                 break;
-            /* Check for keys F1-F7 only */
+            /* Check for keys F1-F8 only */
             key -= K_F1; /* Offsets from F1 */
-            if (key >= 7)
+            if (key >= 8)
                 continue;
-            /* F5-F7: handled outside this loop */
+            /* F5-F8: handled outside this loop */
             if (key > 3)
                 break;
             /* F1-F4: DF0-DF3 */
@@ -2237,6 +2352,9 @@ static void floppycheck(void)
             break;
         case 6: /* F7 */
             drv = drive_write_test(drv, &_r);
+            break;
+        case 7: /* F8 */
+            drv = drive_cal_test(drv, &_r);
             break;
         }
 
