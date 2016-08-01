@@ -2049,6 +2049,22 @@ out:
     keycode_buffer = 0;
 }
 
+static uint32_t wait_for_index(void)
+{
+    uint16_t ticks_per_ms = div32(cpu_hz+9999, 10000); /* round up */
+    uint32_t s = disk_index_time, e;
+    while ((e = disk_index_time) == s) {
+        if (div32(get_time()-s, ticks_per_ms) > 1000)
+            return 1000;
+    }
+    return div32(e-s, ticks_per_ms);
+}
+
+static char *index_wait_to_str(uint32_t ms)
+{
+    return ((ms < 180) ? "Early" : (ms > 220) ? "Late" : "OK");
+}
+
 static void drive_write_test(unsigned int drv, struct char_row *r)
 {
     char *s = (char *)r->s, retrystr[20];
@@ -2056,13 +2072,15 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
     void *mfmbuf;
     struct sec_header *headers;
     unsigned int i, j, mfm_bytes = 13100, nr_secs;
+    uint32_t erase_wait, write_wait;
     uint16_t valid_map;
-    int done = 0, retries;
+    int done = 0, retries, late_indexes = 0;
     uint8_t rnd, *data;
 
+    r->y = 0;
     sprintf(s, "-- DF%u: Write Test --", drv);
     print_line(r);
-    r->y++;
+    r->y += 2;
 
     mfmbuf = allocmem(mfm_bytes);
     headers = allocmem(12 * sizeof(*headers));
@@ -2071,6 +2089,7 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
     drive_select(drv, 1);
     drive_check_ready(r);
     seek_cyl0();
+    r->y++;
 
     if (cur_cyl < 0) {
         sprintf(s, "No Track 0: Drive Not Present?");
@@ -2094,6 +2113,7 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
     }
 
     for (i = 158; i < 160; i++) {
+
         retries = 0;
         do {
             retrystr[0] = '\0';
@@ -2113,36 +2133,67 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
             }
             seek_track(i);
             rnd = stamp32;
-            memset(mfmbuf, rnd, mfm_bytes);
+
             /* erase */
+            memset(mfmbuf, rnd, mfm_bytes);
+            wait_for_index();
             disk_write_track(mfmbuf, mfm_bytes);
             disk_wait_dma();
+
             /* write */
             mfm_encode_track(mfmbuf, i, mfm_bytes);
+            erase_wait = wait_for_index();
             disk_write_track(mfmbuf, mfm_bytes);
             disk_wait_dma();
+
             /* read */
             memset(mfmbuf, 0, mfm_bytes);
+            write_wait = wait_for_index();
             disk_read_track(mfmbuf, mfm_bytes);
             disk_wait_dma();
+
             /* verify */
             nr_secs = mfm_decode_track(mfmbuf, headers, data, mfm_bytes);
             valid_map = 0;
+
             /* Check sector headers */
             while (nr_secs--) {
                 struct sec_header *h = &headers[nr_secs];
                 if ((h->format = 0xff) && (h->trk == i) && !h->data_csum)
                     valid_map |= 1u<<h->sec;
             }
+
             /* Check our verification token */
             for (j = 0; j < 11*512; j++)
                 if (data[j] != rnd)
                     valid_map = 0;
+
         } while (valid_map != 0x7ff);
+
+        sprintf(s, "Track %u written:", i);
+        print_line(r);
+        r->y++;
+        sprintf(s, " - Erase To Index Pulse: %u ms (%s)", erase_wait,
+                index_wait_to_str(erase_wait));
+        print_line(r);
+        r->y++;
+        sprintf(s, " - Write To Index Pulse: %u ms (%s)", write_wait,
+                index_wait_to_str(write_wait));
+        print_line(r);
+        r->y++;
+        if ((erase_wait > 220) || (write_wait > 220))
+            late_indexes = 1;
     }
 
+    r->y++;
     sprintf(s, "Tracks 158 & 159 written okay");
     print_line(r);
+    if (late_indexes) {
+        r->x = 0;
+        r->y++;
+        sprintf(s, "(Late Index Pulses may be due to drive emulation)");
+        print_line(r);
+    }
 
 out:
     drive_select(drv, 0);
@@ -2350,7 +2401,10 @@ static void floppycheck(void)
             drive_read_test(drv, &_r);
             break;
         case 6: /* F7 */
+            clear_text_rows(0, r.y);
             drive_write_test(drv, &_r);
+            clear_text_rows(0, r.y);
+            draw_floppy_ids = 1;
             break;
         case 7: /* F8 */
             clear_text_rows(0, r.y);
