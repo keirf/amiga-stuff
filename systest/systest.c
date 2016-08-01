@@ -1967,7 +1967,7 @@ struct sec_header {
     uint32_t data_csum;
 };
 
-static unsigned int drive_read_test(unsigned int drv, struct char_row *r)
+static void drive_read_test(unsigned int drv, struct char_row *r)
 {
     char *s = (char *)r->s, retrystr[20];
     void *alloc_s = alloc_p;
@@ -2047,11 +2047,9 @@ out:
     while (!done)
         done = (exit || keycode_buffer == K_ESC);
     keycode_buffer = 0;
-
-    return drv;
 }
 
-static unsigned int drive_write_test(unsigned int drv, struct char_row *r)
+static void drive_write_test(unsigned int drv, struct char_row *r)
 {
     char *s = (char *)r->s, retrystr[20];
     void *alloc_s = alloc_p;
@@ -2154,11 +2152,9 @@ out:
     while (!done)
         done = (exit || keycode_buffer == K_ESC);
     keycode_buffer = 0;
-
-    return drv;
 }
 
-static unsigned int drive_cal_test(unsigned int drv, struct char_row *r)
+static void drive_cal_test(unsigned int drv, struct char_row *r)
 {
     char *s = (char *)r->s;
     char map[12];
@@ -2170,10 +2166,10 @@ static unsigned int drive_cal_test(unsigned int drv, struct char_row *r)
     uint8_t key, good, progress = 0;
     char progress_chars[] = "|/-\\";
 
-    r->x = 0;
+    r->x = r->y = 0;
     sprintf(s, "-- DF%u: Continuous Head Calibration Test --", drv);
     print_line(r);
-    r->y++;
+    r->y += 2;
 
     mfmbuf = allocmem(mfm_bytes);
     headers = allocmem(12 * sizeof(*headers));
@@ -2200,15 +2196,15 @@ static unsigned int drive_cal_test(unsigned int drv, struct char_row *r)
 
     /* Start the test proper. Print option keys and instructions. */
     r->y--;
+    sprintf(s, "$1 Re-Seek Cylinder 0$");
+    print_line(r);
+    r->y += 2;
     sprintf(s, "-> Use an AmigaDOS disk written by a well-calibrated drive.");
     print_line(r);
     r->y++;
     sprintf(s, "-> Adjust drive until 11 cylinder-0 sectors found.");
     print_line(r);
-    r->y++;
-    sprintf(s, "$1 Re-Seek Cylinder 0$");
-    print_line(r);
-    r->y++;
+    r->y += 2;
 
     for (;;) {
         key = keycode_buffer;
@@ -2221,12 +2217,12 @@ static unsigned int drive_cal_test(unsigned int drv, struct char_row *r)
                 /* Step away from and back to cylinder 0. Useful after 
                  * stepper and cyl-0 sensor adjustments. */
                 sprintf(s, "Seeking...");
-                print_line(r);
                 wait_bos();
                 print_line(r);
                 seek_track(80);
                 seek_cyl0();
                 s[0] = '\0';
+                wait_bos();
                 print_line(r);
             }
         }
@@ -2266,19 +2262,20 @@ out:
     while (!done)
         done = (exit || keycode_buffer == K_ESC);
     keycode_buffer = 0;
-
-    return drv;
 }
 
 static void floppycheck(void)
 {
     char s[80];
-    struct char_row r = { .x = 8, .y = 1, .s = s }, _r;
+    struct char_row r = { .s = s }, _r;
     uint8_t key = 0xff;
     unsigned int i, drv = 0;
 
     print_menu_nav_line();
 
+redraw_floppy_ids:
+    r.x = 8;
+    r.y = 1;
     sprintf(s, "-- Floppy IDs --");
     print_line(&r);
     r.y++;
@@ -2348,14 +2345,16 @@ static void floppycheck(void)
             drv = drive_signal_test(drv, &_r);
             break;
         case 5: /* F6 */
-            drv = drive_read_test(drv, &_r);
+            drive_read_test(drv, &_r);
             break;
         case 6: /* F7 */
-            drv = drive_write_test(drv, &_r);
+            drive_write_test(drv, &_r);
             break;
         case 7: /* F8 */
-            drv = drive_cal_test(drv, &_r);
-            break;
+            clear_text_rows(0, r.y);
+            drive_cal_test(drv, &_r);
+            clear_text_rows(0, r.y+6);
+            goto redraw_floppy_ids;
         }
 
         clear_text_rows(r.y, 6);
