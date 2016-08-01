@@ -2267,32 +2267,34 @@ out:
 static void floppycheck(void)
 {
     char s[80];
-    struct char_row r = { .s = s }, _r;
+    struct char_row r = { .x = 8, .s = s }, _r;
     uint8_t key = 0xff;
     unsigned int i, drv = 0;
+    int draw_floppy_ids = 1;
 
     print_menu_nav_line();
 
-redraw_floppy_ids:
-    r.x = 8;
-    r.y = 1;
-    sprintf(s, "-- Floppy IDs --");
-    print_line(&r);
-    r.y++;
-
-    for (i = 0; i < 4; i++) {
-        uint32_t id = drive_id(i);
-        sprintf(s, "DF%u: %08x (%s)", i, id,
-                (id == -!!i) ? "Present" :
-                (id !=  -!i) ? "???" :
-                (i == 0) ? "Gotek?" : "Not Present");
-        print_line(&r);
-        r.y++;
-    }
-    r.y++;
-
     while (!exit) {
 
+        if (draw_floppy_ids) {
+            r.y = 1;
+            sprintf(s, "-- Floppy IDs --");
+            print_line(&r);
+            r.y++;
+            for (i = 0; i < 4; i++) {
+                uint32_t id = drive_id(i);
+                sprintf(s, "DF%u: %08x (%s)", i, id,
+                        (id == -!!i) ? "Present" :
+                        (id !=  -!i) ? "???" :
+                        (i == 0) ? "Gotek?" : "Not Present");
+                print_line(&r);
+                r.y++;
+            }
+        }
+
+        draw_floppy_ids = 0;
+
+        r.y = 7;
         sprintf(s, "-- DF%u: Selected --", drv);
         print_line(&r);
         r.y++;
@@ -2353,8 +2355,9 @@ redraw_floppy_ids:
         case 7: /* F8 */
             clear_text_rows(0, r.y);
             drive_cal_test(drv, &_r);
-            clear_text_rows(0, r.y+6);
-            goto redraw_floppy_ids;
+            clear_text_rows(0, r.y);
+            draw_floppy_ids = 1;
+            break;
         }
 
         clear_text_rows(r.y, 6);
