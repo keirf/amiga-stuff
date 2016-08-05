@@ -13,8 +13,12 @@ All code is public domain (see the COPYING file).
 File descriptions follow. For detailed build and usage instructions, see
 file header comments and run-time help info:
 
-Makefile/Rules.mk
-  GNU Make cross-dev build rules and convenience makefile.
+base/
+  GNU build rules, initialisation code, utility code and headers.
+
+systest/
+  Amiga system tests, built as a Workbench/CLI executable and as a
+  bootable disk image.
 
 crc16_ccitt.S
   Table-driven CRC16-CCITT implementation.
