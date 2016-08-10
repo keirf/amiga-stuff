@@ -1,8 +1,11 @@
 # Amiga-Stuff: Native & Cross-Dev Code & Tools for Amigas
 
+
 ## SysTest Binaries
 
-The latest build of SysTest can always be found [here (Google Drive)](https://drive.google.com/open?id=0B6F45EdkSMp1ZGhXMWRvOXVDd3M).
+The latest build of SysTest can always be found [here (Google Drive)]
+(https://drive.google.com/open?id=0B6F45EdkSMp1ZGhXMWRvOXVDd3M).
+
 
 ## Summary
 
@@ -14,6 +17,7 @@ three main file types, distinguished by suffix:
             work outside a GCC/POSIX environment).
 
 All code is public domain (see the COPYING file).
+
 
 ## File Descriptions
 
