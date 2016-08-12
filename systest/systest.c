@@ -787,7 +787,7 @@ static void mainmenu(void)
         { memcheck,      "Memory" },
         { kbdcheck,      "Keyboard" },
         { floppycheck,   "Floppy Drive" },
-        { joymousecheck, "Mouse / Joystick Ports" },
+        { joymousecheck, "Mouse, Joystick, Gamepad" },
         { audiocheck,    "Audio" },
         { videocheck,    "Video" },
         { ciacheck,      "CIA" }
@@ -2418,99 +2418,311 @@ static void floppycheck(void)
     }
 }
 
-static void printport(char *b, char *d, unsigned int port)
-{
-    uint16_t joy = port ? cust->joy1dat : cust->joy0dat;
-    uint8_t buttons = cust->potinp >> (port ? 12 : 8);
+const static struct keycap mouse[] = {
+    {  90,  0, 31, 15, "L" },
+    { 152,  0, 31, 15, "R" },
+    { 121,  0, 31, 15, "M" },
+    {  90, 15, 93, 50, "" }
+};
 
-    b[0] = !(ciaa->pra & (1u << (port ? 7 : 6))) ? '1' : ' ';
-    b[1] = !(buttons & 1) ? '2' : ' ';
-    b[2] = !(buttons & 4) ? '3' : ' ';
-    b[3] = '\0';
+const static struct keycap joystick[] = {
+    { 138, 10, 27, 15, "U" },
+    { 138, 50, 27, 15, "D" },
+    {  96, 30, 27, 15, "L" },
+    { 180, 30, 27, 15, "R" },
+    {  67,  2, 37, 15, "B1" },
+    { 200,  2, 37, 15, "B2" },
+};
 
-    d[0] = (joy & 0x200) ? 'L' : ' ';
-    d[1] = (joy & 2) ? 'R' : ' ';
-    d[2] = ((joy & 0x100) ^ ((joy & 0x200) >> 1)) ? 'U' : ' ';
-    d[3] = ((joy & 1) ^ ((joy & 2) >> 1)) ? 'D' : ' ';
-    d[4] = '\0';
-}
+const static struct keycap gamepad[] = {
+    /* Directional switches */
+    {  76, 16, 23, 13, "U" },
+    {  76, 44, 23, 13, "D" },
+    {  49, 30, 23, 13, "L" },
+    { 103, 30, 23, 13, "R" },
+    /* Buttons */
+    { 233, 36, 23, 13, "B" },
+    { 200, 38, 23, 13, "R" },
+    { 227, 19, 23, 13, "Y" },
+    { 194, 21, 23, 13, "G" },
+    { 202,  0, 50, 11, ">>" },
+    {  55,  0, 50, 11, "<<" },
+    { 130, 55, 50, 11, "||>" },
+    /* Dummy buttons (ID bits) */
+    {  60, 70,  6,  3, "" }, /* should be FALSE */
+    {  66, 70,  6,  3, "" }, /* should be TRUE */
+    {  72, 70,  6,  3, "" }  /* should be TRUE */
+};
 
-static void updatecoords(uint16_t oldjoydat, uint16_t newjoydat, int *coords)
-{
-    coords[0] += (int8_t)(newjoydat - oldjoydat);
-    coords[1] += (int8_t)((newjoydat >> 8) - (oldjoydat >> 8));
-    coords[0] = min_t(int, max_t(int, coords[0], 0), 139);
-    coords[1] = min_t(int, max_t(int, coords[1], 0), 139);
-}
+/* Reverse-video effect for highlighting keypresses in the keymap. */
+const static uint16_t copper_joymouse[] = {
+    0x4407, 0xfffe,
+    0x0180, 0x0ddd,
+    0x4507, 0xfffe,
+    0x0180, 0x0402,
+    0x8507, 0xfffe,
+    /* reverse video */
+    0x0182, 0x0ddd, /* col01 = foreground */
+    0x0186, 0x0222, /* col03 = shadow */
+    0x0188, 0x0484, /* col04 = previously-pressed highlight */
+    0x018a, 0x0ddd, /* col05 = foreground */
+    0x018e, 0x0222, /* col07 = shadow */
+    0xdb07, 0xfffe,
+    /* normal video */
+    0x0182, 0x0222, /* col01 = shadow */
+    0x0186, 0x0ddd, /* col03 = foreground */
+    0x0188, 0x04c4, /* col04 = menu-option highlight */
+    0x018a, 0x0222, /* col05 = shadow */
+    0x018e, 0x0ddd, /* col07 = foreground */
+    0xf007, 0xfffe,
+    0x0180, 0x0ddd,
+    0xf107, 0xfffe,
+    0x0180, 0x0103,
+    0xffff, 0xfffe,
+};
 
 static void joymousecheck(void)
 {
-    char sub[2][30], s[80], button_s[2][4], dir_s[2][5], coord_s[2][8];
+    char s[80];
     struct char_row r = { .x = 8, .y = 1, .s = s };
-    int i, coords[2][2] = { { 0 } };
     uint16_t joydat[2], newjoydat[2];
+    uint8_t key, nr_box = 0;
+    unsigned int port, i, j;
+    const struct keycap *box = NULL;
+    const static char *names[] = { "Mouse", "Joystick", "Gamepad" };
+    enum { T_MOUSE, T_JOYSTICK, T_GAMEPAD };
+    struct {
+        uint8_t changed, type;
+        uint16_t start_x, start_y;
+        uint32_t state;
+        int mouse_x, mouse_y;
+    } ports[2], *p;
+
+    /* Poke the new copper list at a safe point. */
+    wait_bos();
+    cust->cop2lc.p = (uint16_t *)copper_joymouse;
 
     joydat[0] = cust->joy0dat;
     joydat[1] = cust->joy1dat;
 
-    /* Pull-ups on button 2 & 3 inputs. */
+    /* Pull-ups on button 2 & 3 inputs (pins 5 & 9 on both ports). */
     cust->potgo = 0xff00;
 
     print_menu_nav_line();
 
-    sprintf(s, "-- Joy / Mouse Test --");
+    sprintf(s, "-- Mouse/Joystick/Gamepad Test --");
     print_line(&r);
     r.x = 0;
-    r.y += 3;
+    r.y += 2;
 
-    /* Print the port-info text strings. Data areas are filled dynamically. */
-    for (i = 0; i < 2; i++)
-        sprintf(sub[i], "Port %d: (   ,   )", i+1);
-    sprintf(s, "%37s%s", sub[0], sub[1]);
+    sprintf(s, "$1 Port 1$ - Mouse                 $2 Port 2$ - Mouse");
     print_line(&r);
     r.y++;
-    sprintf(sub[0], "Button=(   ) Dir=(    )");
-    sprintf(s, "%37s%s", sub[0], sub[0]);
-    print_line(&r);
+
+    ports[0].changed = 1;
+    ports[0].type = T_MOUSE;
+    ports[0].start_x = 40;
+    ports[0].start_y = 65;
+    ports[1] = ports[0];
+    ports[1].start_x = 320;
 
     while (!exit) {
 
-        /* ESC also means exit. */
-        exit |= (keycode_buffer == K_ESC);
+        /* Key handler. */
+        if ((key = keycode_buffer) != 0) {
+            keycode_buffer = 0;
+            exit |= (key == K_ESC);
+            key -= K_F1;
+            if (key < 2) {
+                /* Controller type change for one of the two ports. */
+                p = &ports[key];
+                p->changed = 1;
+                /* Cycle through the types. */
+                if (++p->type > T_GAMEPAD)
+                    p->type = 0;
+                /* Update the label text. */
+                sprintf(s, "%10s", names[p->type]);
+                print_text_box(13 + (key ? 35 : 0), 3, s);
+            }
+        }
 
-        /* New port data strings. */
-        for (i = 0; i < 2; i++) {
-            printport(button_s[i], dir_s[i], i);
-            sprintf(coord_s[i], "%3u,%3u", coords[i][0], coords[i][1]);
+        /* Check for changes to controller types and redraw the controller
+         * graphics as necessary. */
+        for (port = 0; port < 2; port++) {
+
+            p = &ports[port];
+            if (!p->changed)
+                continue;
+
+            p->changed = 0;
+            p->state = 0;
+
+            /* Clear the old graphics. */
+            clear_rect(p->start_x, p->start_y, 310, 90, 7);
+
+            /* Get button locations for the new controller type. */
+            switch (p->type) {
+            case T_MOUSE:
+                box = mouse;
+                nr_box = ARRAY_SIZE(mouse);
+                break;
+            case T_JOYSTICK:
+                box = joystick;
+                nr_box = ARRAY_SIZE(joystick);
+                break;
+            case T_GAMEPAD:
+                box = gamepad;
+                nr_box = ARRAY_SIZE(gamepad);
+                hollow_rect(p->start_x + 30, p->start_y + 11, 248, 60, 1<<1);
+                break;
+            }
+
+            /* Draw the buttons one at a time. */
+            for (i = 0; i < nr_box; i++, box++) {
+                /* Button outline box. */
+                unsigned int x = p->start_x + box->x;
+                unsigned int y = p->start_y + box->y;
+                hollow_rect(x, y, box->w + 1, box->h + 1, 1<<1);
+                /* Centre the button label text in the button box. */
+                for (j = 0; box->name[j]; j++)
+                    continue;
+                x += (box->w+1) / 2;
+                x -= j * 4;
+                y += (box->h+1) / 2;
+                y -= 4;
+                for (j = 0; box->name[j]; j++) {
+                    drawkbch(x, y, box->name[j]);
+                    x += 8;
+                }
+            }
         }
 
         newjoydat[0] = cust->joy0dat;
         newjoydat[1] = cust->joy1dat;
 
-        /* Wait for end of display, then start screen updates. */
-        wait_bos();
-        /* Clear the old port data strings and print the new ones. */
-        for (i = 0; i < 2; i++) {
-            uint16_t x_off = i ? 37 : 0;
-            print_text_box(9 + x_off, 4, coord_s[i]);
-            print_text_box(8 + x_off, 5, button_s[i]);
-            print_text_box(18 + x_off, 5, dir_s[i]);
+        /* Draw mouse cursors. */
+        wait_bos(); /* avoids flicker */
+        for (port = 0; port < 2; port++) {
+            p = &ports[port];
+            if (p->type != T_MOUSE)
+                continue;
+            box = &mouse[3];
+            /* Clear the old cursor location. */
+            clear_rect(p->mouse_x + p->start_x + box->x + 1,
+                       p->mouse_y/2 + p->start_y + box->y + 1,
+                       4, 2, 1<<1);
+            /* Update mouse coordinates. */
+            p->mouse_x += (int8_t)(newjoydat[port] - joydat[port]);
+            p->mouse_y += (int8_t)((newjoydat[port]>>8) - (joydat[port]>>8));
+            p->mouse_x = min_t(int, max_t(int, p->mouse_x, 0), mouse[3].w-5);
+            p->mouse_y = min_t(int, max_t(int, p->mouse_y, 0), mouse[3].h*2-5);
+            /* Draw the new cursor location. */
+            fill_rect(p->mouse_x + p->start_x + box->x + 1,
+                      p->mouse_y/2 + p->start_y + box->y + 1,
+                      4, 2, 1<<1);
         }
-        /* Clear the old cursor boxes. */
-        clear_rect(coords[0][0] + 100, coords[0][1]/2 + 80, 4, 2, 1<<1);
-        clear_rect(coords[1][0] + 400, coords[1][1]/2 + 80, 4, 2, 1<<1);
-        updatecoords(joydat[0], newjoydat[0], coords[0]);
-        updatecoords(joydat[1], newjoydat[1], coords[1]);
-        /* Draw the new cursor boxes. */
-        fill_rect(coords[0][0] + 100, coords[0][1]/2 + 80, 4, 2, 1<<1);
-        fill_rect(coords[1][0] + 400, coords[1][1]/2 + 80, 4, 2, 1<<1);
 
-        joydat[0] = newjoydat[0];
-        joydat[1] = newjoydat[1];
+        /* Draw button states. */
+        for (port = 0; port < 2; port++) {
+
+            uint32_t xorstate;
+
+            p = &ports[port];
+
+            xorstate = p->state;
+            p->state = 0;
+            joydat[port] = newjoydat[port];
+
+            if (p->type == T_GAMEPAD) {
+                /* Pin 6 clocks the shift register (74LS165). Set as output,
+                 * LOW, before we enable the pad's shift-register mode. */
+                ciaa->ddra |= CIAAPRA_FIR0 << port;
+                ciaa->pra &= ~(CIAAPRA_FIR0 << port);
+                /* Port pin 5 enables the shift register. Set as output, LOW.
+                 * Port pin 9 is the shift-register output ('165 pin 9). Leave
+                 * it pulled high (output, HIGH) but read it as an input. */
+                cust->potgo = port ? 0xef00 : 0xfe00;
+                /* Probe 7 buttons (B0-B6), plus 3 ID bits (B7-B9).
+                 * B7 = '165 pin 11 (parallel input A) = FALSE (pulled high) 
+                 * B8+ = '165 pin 10 (serial input) = TRUE (pulled low) */
+                for (i = 0; i < 10; i++) {
+                    /* Delay for 8 CIA clocks (~10us). */
+                    for (j = 0; j < 8; j++)
+                        (void)ciaa->pra;
+                    /* Read the shift-register output (port pin 9). */
+                    if (!(cust->potinp & (port ? 0x4000 : 0x0400)))
+                        p->state |= 1u << i;
+                    /* Clock the shift register: port pin 6 pulsed HIGH. */
+                    ciaa->pra |= CIAAPRA_FIR0 << port;
+                    ciaa->pra &= ~(CIAAPRA_FIR0 << port);
+                }
+                /* Return the port to joystick/mouse mode. */
+                cust->potgo = 0xff00;
+                ciaa->ddra &= ~(CIAAPRA_FIR0 << port);
+            } else {
+                /* Joystick/Mouse Buttons. */
+                uint8_t buttons = cust->potinp >> (port ? 12 : 8);
+                /* Button 3 (MMB): Port pin 5 */
+                p->state |= !(buttons & 1);
+                p->state <<= 1;
+                /* Button 2 (Fire 2, RMB): Port pin 9 */
+                p->state |= !(buttons & 4);
+                p->state <<= 1;
+                /* Button 1 (Fire 1, LMB): Port pin 6 */
+                p->state |= !(ciaa->pra & (CIAAPRA_FIR0 << port));
+            }
+
+            if (p->type != T_MOUSE) {
+                /* Joystick/Gamepad Directional Switches. */
+                uint16_t joy = joydat[port];
+                p->state <<= 1;
+                p->state |= !!(joy & 2); /* Right */
+                p->state <<= 1;
+                p->state |= !!(joy & 0x200); /* Left */
+                p->state <<= 1;
+                p->state |= !!((joy & 1) ^ ((joy & 2) >> 1)); /* Down */
+                p->state <<= 1;
+                p->state |= !!((joy & 0x100) ^ ((joy & 0x200) >> 1)); /* Up */
+            }
+
+            xorstate ^= p->state;
+
+            switch (p->type) {
+            case T_MOUSE:
+                box = mouse;
+                nr_box = 3;
+                break;
+            case T_JOYSTICK:
+                box = joystick;
+                nr_box = ARRAY_SIZE(joystick);
+                break;
+            case T_GAMEPAD:
+                box = gamepad;
+                nr_box = ARRAY_SIZE(gamepad);
+                break;
+            }
+
+            /* Update the button boxes. */
+            for (i = 0; i < nr_box; i++, box++) {
+                uint8_t bpls, setclr;
+                /* Skip buttons that have not changed state. */
+                if (!(xorstate & (1u<<i)))
+                    continue;
+                /* Fill or clear depending on new button state. */
+                setclr = !!(p->state & (1u<<i));
+                bpls = setclr ? (1<<2)|(1<<0) : (1<<0); /* sticky bpl[2] */
+                draw_rect(p->start_x + box->x + 1,
+                          p->start_y + box->y + 1,
+                          box->w-1, box->h-1, bpls, setclr);
+            }
+        }
     }
 
     /* Clean up. */
     cust->potgo = 0x0000;
+    wait_bos();
+    cust->cop2lc.p = copper_2;
+    keycode_buffer = 0;
 }
 
 static void audiocheck(void)
@@ -2561,7 +2773,7 @@ static void audiocheck(void)
     sprintf(s, "$4 Channel 3/L$  -  OFF");
     print_line(&r);
     r.y++;
-    sprintf(s, "$5 Frequency$    -  500Hz Sine");
+    sprintf(s, "$5 Frequency  $  -  500Hz Sine");
     print_line(&r);
     r.y++;
     sprintf(s, "$6 L.P. Filter$  -  ON");
