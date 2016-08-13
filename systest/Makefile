@@ -1,7 +1,14 @@
 OBJS += ../base/cancellation.o
 OBJS += ../base/util.o
-OBJS += disk.o
+OBJS += audio.o
+OBJS += cia.o
+OBJS += floppy.o
+OBJS += joymouse.o
+OBJS += keyboard.o
+OBJS += memory.o
+OBJS += mfm.o
 OBJS += systest.o
+OBJS += video.o
 
 include ../base/Rules.mk
 

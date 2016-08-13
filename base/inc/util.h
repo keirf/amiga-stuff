@@ -82,6 +82,18 @@ int sprintf(char *str, const char *format, ...)
    (x) = _q;                                                        \
    _r;                                                              \
 })
+/* Division 32:16 -> 32q */
+uint32_t div32(uint32_t dividend, uint16_t divisor);
+
+/* Multiply 16:16 -> 32 */
+#define mul32(x, y) ({                          \
+    uint16_t _x = (x), _y = (y);                \
+    uint32_t _r;                                \
+    asm volatile (                              \
+        "mulu.w %1,%0"                          \
+        : "=&d" (_r) : "d" (_y), "0" (_x));     \
+    _r;                                         \
+})
 
 /* Text/data/BSS address ranges. */
 extern char _start[], _end[];

@@ -238,6 +238,12 @@ void sort(void *base, size_t nmemb, size_t size,
     }
 }
 
+uint32_t div32(uint32_t dividend, uint16_t divisor)
+{
+    do_div(dividend, divisor);
+    return dividend;
+}
+
 /*
  * Local variables:
  * mode: C
