@@ -238,9 +238,9 @@ void joymousecheck(void)
                 ciaa->ddra |= CIAAPRA_FIR0 << port;
                 ciaa->pra &= ~(CIAAPRA_FIR0 << port);
                 /* Port pin 5 enables the shift register. Set as output, LOW.
-                 * Port pin 9 is the shift-register output ('165 pin 9). Leave
-                 * it pulled high (output, HIGH) but read it as an input. */
-                cust->potgo = port ? 0xef00 : 0xfe00;
+                 * Port pin 9 is the shift-register output ('165 pin 9). Set
+                 * it as input. */
+                cust->potgo = port ? 0x2f00 : 0xf200;
                 /* Probe 7 buttons (B0-B6), plus 3 ID bits (B7-B9).
                  * B7 = '165 pin 11 (parallel input A) = FALSE (pulled high) 
                  * B8+ = '165 pin 10 (serial input) = TRUE (pulled low) */
