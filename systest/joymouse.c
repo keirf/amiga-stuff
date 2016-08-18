@@ -114,7 +114,7 @@ void joymousecheck(void)
     r.x = 0;
     r.y += 2;
 
-    sprintf(s, "$1 Port 1$ - Mouse                 $2 Port 2$ - Mouse");
+    sprintf(s, "%35s%s", "$1 Port 1$ -", "$2 Port 2$ -");
     print_line(&r);
     r.y++;
 
@@ -139,9 +139,6 @@ void joymousecheck(void)
                 /* Cycle through the types. */
                 if (++p->type > T_GAMEPAD)
                     p->type = 0;
-                /* Update the label text. */
-                sprintf(s, "%10s", names[p->type]);
-                print_text_box(13 + (key ? 35 : 0), 3, s);
             }
         }
 
@@ -155,6 +152,10 @@ void joymousecheck(void)
 
             p->changed = 0;
             p->state = 0;
+
+            /* Update the label text. */
+            sprintf(s, "%10s", names[p->type]);
+            print_text_box(13 + (port ? 35 : 0), 3, s);
 
             /* Clear the old graphics. */
             clear_rect(p->start_x, p->start_y, 310, 90, 7);
