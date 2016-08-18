@@ -31,6 +31,10 @@ file header comments and run-time help info.
   Amiga system tests, built as a Workbench/CLI executable and as a
   bootable disk image.
 
+- **kickconv**
+  Convert Kickstart ROM images: byte-swap, word-split, decrypt, fix checksums.
+  Especially useful for creating images for burning to EPROM.
+
 - **crc16_ccitt.S**
   Table-driven CRC16-CCITT implementation.
 
