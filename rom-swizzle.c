@@ -25,11 +25,25 @@ static uint16_t _swap(uint16_t x)
     return (x >> 8) | (x << 8);
 }
 
+static uint32_t checksum(void *dat, unsigned int len)
+{
+    uint32_t csum = 0, *p = dat;
+    unsigned int i;
+    for (i = 0; i < len/4; i++) {
+        uint32_t x = be32toh(p[i]);
+        if ((csum + x) < csum)
+            csum++;
+        csum += x;
+    }
+    return ~csum;
+}
+
 static void usage(int rc)
 {
     printf("Usage: rom-swizzle [options] in_file out_file\n");
     printf("Options:\n");
     printf("  -h, --help      Display this information\n");
+    printf("  -c, --csum      Fix bad ROM checksum\n");
     printf("  -k, --key=FILE  Key file for encrypted ROM\n");
     printf("  -s, --swap      Swap endianess (little vs big endian)\n");
     printf("  -S, --split     Split into two 16-bit ROM files\n");
@@ -38,14 +52,16 @@ static void usage(int rc)
 
 int main(int argc, char **argv)
 {
-    int ch, fd, swap = 0, split = 0;
+    int ch, fd, swap = 0, split = 0, fix_csum = 0;
     int insz, i, j, is_encrypted;
     uint8_t *buf, *outbuf[2], header[11];
     char *in, *out, *keyfile = NULL;
+    uint32_t csum;
 
-    const static char sopts[] = "hk:sS";
+    const static char sopts[] = "hck:sS";
     const static struct option lopts[] = {
         { "help", 0, NULL, 'h' },
+        { "csum", 0, NULL, 'c' },
         { "key", 1, NULL, 'k' },
         { "swap", 0, NULL, 's' },
         { "split", 0, NULL, 'S' },
@@ -56,6 +72,9 @@ int main(int argc, char **argv)
         switch (ch) {
         case 'h':
             usage(0);
+            break;
+        case 'c':
+            fix_csum = 1;
             break;
         case 'k':
             keyfile = optarg;
@@ -133,6 +152,19 @@ int main(int argc, char **argv)
             buf[i] ^= key[j];
         free(key);
     }
+
+    csum = checksum(buf, insz);
+    printf("ROM Checksum: %s", csum ? "BAD" : "OK");
+    if (csum) {
+        if (fix_csum) {
+            *(uint32_t *)&buf[insz-24] = 0;
+            *(uint32_t *)&buf[insz-24] = htobe32(checksum(buf, insz));
+            printf(" (Fixed up: now OK)");
+        } else {
+            printf(" (Use option -c/--csum to fix it up)");
+        }
+    }
+    putchar('\n');
 
     if (swap) {
         uint16_t *p = (uint16_t *)buf;
