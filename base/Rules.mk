@@ -26,6 +26,10 @@ AFLAGS += -Wa,-l -Wa,--bitwise-or -Wa,--base-size-default-16
 AFLAGS += -Wa,--disp-size-default-16 -Wa,--pcrel
 LDFLAGS += $(FLAGS) -Wl,--gc-sections -T../base/amiga.ld
 
+HOSTCC = gcc
+HOSTCFLAGS = -O2 -Wall -Werror
+HOSTCFLAGS += -MMD -MF .$(@F).d
+
 .DEFAULT_GOAL := all
 
 .PHONY: clean

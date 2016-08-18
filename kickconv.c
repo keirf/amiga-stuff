@@ -1,5 +1,5 @@
 /*
- * rom-swizzle.c
+ * kickconv.c
  * 
  * Byte-swap/split/dupe/decrypt Kickstart ROM files for EPROM programming.
  * 
@@ -40,7 +40,7 @@ static uint32_t checksum(void *dat, unsigned int len)
 
 static void usage(int rc)
 {
-    printf("Usage: rom-swizzle [options] in_file out_file\n");
+    printf("Usage: kickconv [options] in_file out_file\n");
     printf("Options:\n");
     printf("  -h, --help      Display this information\n");
     printf("  -c, --csum      Fix bad ROM checksum\n");
