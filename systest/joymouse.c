@@ -12,6 +12,11 @@
 
 #include "systest.h"
 
+/* Mirror copy of CIAA registers, for bypassing CD32 fWSI floppy expander, 
+ * which steals CIA cycles and breaks compatibility. */
+static volatile struct amiga_cia * const ciaa_mirror =
+    (struct amiga_cia *)0x0bfe003;
+
 struct button {
     uint16_t x, y, w, h; /* box is (x,y) to (x+w,y+h) inclusive */
     const char name[4];  /* name to print on button */
@@ -48,9 +53,9 @@ const static struct button gamepad[] = {
     {  55,  0, 50, 11, "<<" },
     { 130, 55, 50, 11, "||>" },
     /* Dummy buttons (ID bits) */
-    {  60, 70,  6,  3, "" }, /* should be FALSE */
-    {  66, 70,  6,  3, "" }, /* should be TRUE */
-    {  72, 70,  6,  3, "" }  /* should be TRUE */
+    {  265, 67,  4,  3, "" }, /* should be FALSE */
+    {  269, 67,  4,  3, "" }, /* should be TRUE */
+    {  273, 67,  4,  3, "" }  /* should be TRUE */
 };
 
 /* Reverse-video effect for highlighting keypresses in the keymap. */
@@ -66,7 +71,7 @@ const static uint16_t copper_joymouse[] = {
     0x0188, 0x0484, /* col04 = previously-pressed highlight */
     0x018a, 0x0ddd, /* col05 = foreground */
     0x018e, 0x0222, /* col07 = shadow */
-    0xdb07, 0xfffe,
+    0xd007, 0xfffe,
     /* normal video */
     0x0182, 0x0222, /* col01 = shadow */
     0x0186, 0x0ddd, /* col03 = foreground */
@@ -79,6 +84,43 @@ const static uint16_t copper_joymouse[] = {
     0x0180, 0x0103,
     0xffff, 0xfffe,
 };
+
+/* Read gamepad button state of specified port using specified ciaa address. */
+static uint32_t read_gamepad(uint8_t port, volatile struct amiga_cia *_ciaa)
+{
+    unsigned int i, j;
+    uint32_t state = 0;
+
+    /* Pin 6 clocks the shift register (74LS165). Set as output, LOW, before 
+     * we enable the pad's shift-register mode. */
+    _ciaa->ddra |= CIAAPRA_FIR0 << port;
+    _ciaa->pra &= ~(CIAAPRA_FIR0 << port);
+
+    /* Port pin 5 enables the shift register. Set as output, LOW. Port pin 9 
+     * is the shift-register output ('165 pin 9). Set it as input. */
+    cust->potgo = port ? 0x2f00 : 0xf200;
+
+    /* Probe 7 buttons (B0-B6), plus 3 ID bits (B7-B9).
+     * B7 = '165 pin 11 (parallel input A) = FALSE (pulled high)
+     * B8+ = '165 pin 10 (serial input) = TRUE (pulled low) */
+    for (i = 0; i < 10; i++) {
+        /* Delay for 8 CIA clocks (~10us). */
+        for (j = 0; j < 8; j++)
+            (void)_ciaa->pra;
+        /* Read the shift-register output (port pin 9). */
+        if (!(cust->potinp & (port ? 0x4000 : 0x0400)))
+            state |= 1u << i;
+        /* Clock the shift register: port pin 6 pulsed HIGH. */
+        _ciaa->pra |= CIAAPRA_FIR0 << port;
+        _ciaa->pra &= ~(CIAAPRA_FIR0 << port);
+    }
+
+    /* Return the port to joystick/mouse mode. */
+    cust->potgo = 0xff00;
+    _ciaa->ddra &= ~(CIAAPRA_FIR0 << port);
+
+    return state;
+}
 
 void joymousecheck(void)
 {
@@ -95,6 +137,7 @@ void joymousecheck(void)
         uint16_t start_x, start_y;
         uint32_t state;
         int mouse_x, mouse_y;
+        volatile struct amiga_cia *ciaa;
     } ports[2], *p;
 
     /* Poke the new copper list at a safe point. */
@@ -158,7 +201,7 @@ void joymousecheck(void)
             print_text_box(13 + (port ? 35 : 0), 3, s);
 
             /* Clear the old graphics. */
-            clear_rect(p->start_x, p->start_y, 310, 90, 7);
+            clear_rect(p->start_x, p->start_y, 310, 93, 7);
 
             /* Get button locations for the new controller type. */
             switch (p->type) {
@@ -171,6 +214,31 @@ void joymousecheck(void)
                 nr_box = ARRAY_SIZE(joystick);
                 break;
             case T_GAMEPAD:
+                /* Check for gamepad ID in bits 7+ of the shift register. 
+                 * We expect to see ..110 and if this is missing then either:
+                 * 1. There is no gamepad connected; or 
+                 * 2. The POT line responds too slowly due to capacitive 
+                 *    load (we don't currently detect and handle this); or 
+                 * 3. CIA emulation is preventing us from clocking the shift 
+                 *    register. This occurs with the CD32 fWSI floppy expansion
+                 *    which steals CIA access cycles and does not emulate
+                 *    FIRE0/FIRE1 in output mode. We can detect and work around
+                 *    this because fWSI fully decodes CIA addresses whereas
+                 *    Akiko responds at CIA mirror locations. */
+                p->ciaa = ciaa;
+                if ((read_gamepad(port, ciaa) >> 7) == 6) {
+                    sprintf(s, "Pad Detected");
+                    print_text_box(4 + (port ? 35 : 0), 12, s);
+                } else if ((read_gamepad(port, ciaa_mirror) >> 7) == 6) {
+                    p->ciaa = ciaa_mirror;
+                    sprintf(s, "Pad Detected @ CIA Mirror");
+                    print_text_box(port ? 35 : 0, 12, s);
+                    sprintf(s, "(CD32 + fWSI Floppy Exp?)");
+                    print_text_box(port ? 35 : 0, 13, s);
+                } else {
+                    sprintf(s, "Pad Not Detected");
+                    print_text_box(2 + (port ? 35 : 0), 12, s);
+                }
                 box = gamepad;
                 nr_box = ARRAY_SIZE(gamepad);
                 hollow_rect(p->start_x + 30, p->start_y + 11, 248, 60, 1<<1);
@@ -234,32 +302,12 @@ void joymousecheck(void)
             joydat[port] = newjoydat[port];
 
             if (p->type == T_GAMEPAD) {
-                /* Pin 6 clocks the shift register (74LS165). Set as output,
-                 * LOW, before we enable the pad's shift-register mode. */
-                ciaa->ddra |= CIAAPRA_FIR0 << port;
-                ciaa->pra &= ~(CIAAPRA_FIR0 << port);
-                /* Port pin 5 enables the shift register. Set as output, LOW.
-                 * Port pin 9 is the shift-register output ('165 pin 9). Set
-                 * it as input. */
-                cust->potgo = port ? 0x2f00 : 0xf200;
-                /* Probe 7 buttons (B0-B6), plus 3 ID bits (B7-B9).
-                 * B7 = '165 pin 11 (parallel input A) = FALSE (pulled high) 
-                 * B8+ = '165 pin 10 (serial input) = TRUE (pulled low) */
-                for (i = 0; i < 10; i++) {
-                    /* Delay for 8 CIA clocks (~10us). */
-                    for (j = 0; j < 8; j++)
-                        (void)ciaa->pra;
-                    /* Read the shift-register output (port pin 9). */
-                    if (!(cust->potinp & (port ? 0x4000 : 0x0400)))
-                        p->state |= 1u << i;
-                    /* Clock the shift register: port pin 6 pulsed HIGH. */
-                    ciaa->pra |= CIAAPRA_FIR0 << port;
-                    ciaa->pra &= ~(CIAAPRA_FIR0 << port);
-                }
-                /* Return the port to joystick/mouse mode. */
-                cust->potgo = 0xff00;
-                ciaa->ddra &= ~(CIAAPRA_FIR0 << port);
+
+                /* Gamepad Buttons. */
+                p->state = read_gamepad(port, p->ciaa);
+
             } else {
+
                 /* Joystick/Mouse Buttons. */
                 uint8_t buttons = cust->potinp >> (port ? 12 : 8);
                 /* Button 3 (MMB): Port pin 5 */
@@ -270,6 +318,7 @@ void joymousecheck(void)
                 p->state <<= 1;
                 /* Button 1 (Fire 1, LMB): Port pin 6 */
                 p->state |= !(ciaa->pra & (CIAAPRA_FIR0 << port));
+
             }
 
             if (p->type != T_MOUSE) {
