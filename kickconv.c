@@ -44,6 +44,8 @@ static void usage(int rc)
     printf("Options:\n");
     printf("  -h, --help      Display this information\n");
     printf("  -c, --csum      Fix bad ROM checksum\n");
+    printf("  -i, --cd32-swizz  CD32-ROM swizzle\n");
+    printf("  -I, --cd32-deswizz CD32-ROM de-swizzle\n");
     printf("  -k, --key=FILE  Key file for encrypted ROM\n");
     printf("  -s, --swap      Swap endianess (little vs big endian)\n");
     printf("  -S, --split     Split into two 16-bit ROM files\n");
@@ -57,11 +59,14 @@ int main(int argc, char **argv)
     uint8_t *buf, *outbuf[2], header[11];
     char *in, *out, *keyfile = NULL;
     uint32_t csum;
+    enum { CD32_SWIZZLE = 1, CD32_DESWIZZLE = 2 } cd32_transform = 0;
 
-    const static char sopts[] = "hck:sS";
+    const static char sopts[] = "hciIk:sS";
     const static struct option lopts[] = {
         { "help", 0, NULL, 'h' },
         { "csum", 0, NULL, 'c' },
+        { "cd32-swizz", 0, NULL, 'i' },
+        { "cd32-deswizz", 0, NULL, 'I' },
         { "key", 1, NULL, 'k' },
         { "swap", 0, NULL, 's' },
         { "split", 0, NULL, 'S' },
@@ -75,6 +80,12 @@ int main(int argc, char **argv)
             break;
         case 'c':
             fix_csum = 1;
+            break;
+        case 'i':
+            cd32_transform = CD32_SWIZZLE;
+            break;
+        case 'I':
+            cd32_transform = CD32_DESWIZZLE;
             break;
         case 'k':
             keyfile = optarg;
@@ -132,6 +143,9 @@ int main(int argc, char **argv)
         printf("; Split");
     if (keyfile)
         printf("; Decrypt(\"%s\")", keyfile);
+    if (cd32_transform)
+        printf("; CD32-%s", (cd32_transform == CD32_SWIZZLE)
+               ? "Swizzle" : "Deswizzle");
     printf("\n");
 
     if (keyfile) {
@@ -165,6 +179,19 @@ int main(int argc, char **argv)
         }
     }
     putchar('\n');
+
+    if (cd32_transform) {
+        uint16_t *in = (uint16_t *)buf, *out = malloc(insz);
+        if (cd32_transform == CD32_SWIZZLE) {
+            for (i = 0; i < insz/2; i++)
+                out[(i>>1)|((i&1)*(insz/4))] = in[i];
+        } else {
+            for (i = 0; i < insz/2; i++)
+                out[i] = in[(i>>1)|((i&1)*(insz/4))];
+        }
+        free(buf);
+        buf = (uint8_t *)out;
+    }
 
     if (swap) {
         uint16_t *p = (uint16_t *)buf;
