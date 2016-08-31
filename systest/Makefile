@@ -7,6 +7,7 @@ OBJS += joymouse.o
 OBJS += keyboard.o
 OBJS += memory.o
 OBJS += mfm.o
+OBJS += serpar.o
 OBJS += systest.o
 OBJS += video.o
 

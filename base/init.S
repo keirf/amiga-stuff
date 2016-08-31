@@ -92,8 +92,8 @@
          * to be enough memory beyond us to copy into. If we were high enough
          * in memory for this to be a problem we would not be overlapping
          * with the final destination in the first place. */
-        lea.l   _end(pc),a1
-        move.l  a1,d1           /* d1 = temp. location (current end loc.)*/
+        move.l  a0,d1
+        add.l   #_end-start,d1  /* d1 = temp. location (current end loc.) */
         jbsr    copy
         move.l  d1,a0           /* a0 = temp. location */
         jmp     1f-start(a0)

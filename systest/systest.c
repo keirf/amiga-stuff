@@ -8,6 +8,8 @@
  *  - Joystick / Mouse
  *  - Audio
  *  - Video
+ *  - CIA Timers
+ *  - Serial / Parallel
  * 
  * Written & released by Keir Fraser <keir.xen@gmail.com>
  * 
@@ -187,6 +189,7 @@ static void __assert_fail(void)
 #endif
 
 /* Device-specific IRQ handlers. */
+void ciaa_flag_IRQ(void);
 void disk_index_IRQ(void);
 uint8_t keyboard_IRQ(void);
 
@@ -198,6 +201,7 @@ void joymousecheck(void);
 void audiocheck(void);
 void videocheck(void);
 void ciacheck(void);
+void serparcheck(void);
 
 /* Menu options with associated key (c) and bounding box (x1,y),(x2,y). */
 static uint8_t nr_menu_options;
@@ -453,6 +457,17 @@ void wait_bos(void)
 {
     while (*(volatile uint8_t *)&cust->vhposr != 0xf0)
         continue;
+}
+
+void copperlist_set(const void *list)
+{
+    wait_bos();
+    cust->cop2lc.p = (void *)list;
+}
+
+void copperlist_default(void)
+{
+    copperlist_set(copper_2);
 }
 
 /* Draw rectangle (x,y),(x+w,y+h) into bitplanes specified by plane_mask. 
@@ -765,7 +780,8 @@ static void mainmenu(void)
         { joymousecheck, "Mouse, Joystick, Gamepad" },
         { audiocheck,    "Audio" },
         { videocheck,    "Video" },
-        { ciacheck,      "CIA" }
+        { ciacheck,      "CIA" },
+        { serparcheck,   "Serial, Parallel" }
     };
 
     uint8_t i;
@@ -812,8 +828,7 @@ static void mainmenu(void)
     (*mainmenu_option[i].fn)();
 
     /* Clean up. */
-    wait_bos();
-    cust->cop2lc.p = copper_2;
+    copperlist_default();
     keycode_buffer = 0;
 }
 
@@ -821,6 +836,9 @@ IRQ(CIAA_IRQ);
 static void c_CIAA_IRQ(void)
 {
     uint8_t key, icr = ciaa->icr;
+
+    if (icr & CIAICR_FLAG)
+        ciaa_flag_IRQ();
 
     if (icr & CIAICR_SERIAL) {
         /* Received a byte from the keyboard MPU. */

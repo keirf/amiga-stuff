@@ -125,9 +125,7 @@ void videocheck(void)
     *p++ = 0xffff;
     *p++ = 0xfffe;
 
-    /* Poke the new copper list at a safe point. */
-    wait_bos();
-    cust->cop2lc.p = cop;
+    copperlist_set(cop);
 
     print_menu_nav_line();
 

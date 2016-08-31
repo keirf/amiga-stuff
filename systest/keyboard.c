@@ -198,9 +198,7 @@ void kbdcheck(void)
     const struct keycap *cap;
     unsigned int i, l, x, y;
 
-    /* Poke the new copper list at a safe point. */
-    wait_bos();
-    cust->cop2lc.p = copper_kbd;
+    copperlist_set(copper_kbd);
 
     /* Draw the keymap. This resides in bitplane 1. We then draw filled boxes
      * in bitplane 0 to indicate keys which are currently pressed. The reverse

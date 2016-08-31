@@ -98,6 +98,10 @@ void clear_text_rows(uint16_t y_start, uint16_t y_nr);
 /* Wait for end of bitplane DMA. */
 void wait_bos(void);
 
+/* Copperlist set/reset */
+void copperlist_set(const void *list);
+void copperlist_default(void);
+
 
 /*******************
  * TIME

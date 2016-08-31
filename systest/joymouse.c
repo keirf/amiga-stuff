@@ -140,9 +140,7 @@ void joymousecheck(void)
         volatile struct amiga_cia *ciaa;
     } ports[2], *p;
 
-    /* Poke the new copper list at a safe point. */
-    wait_bos();
-    cust->cop2lc.p = (uint16_t *)copper_joymouse;
+    copperlist_set(copper_joymouse);
 
     joydat[0] = cust->joy0dat;
     joydat[1] = cust->joy1dat;
