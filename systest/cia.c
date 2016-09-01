@@ -26,7 +26,7 @@ static void cia_timer_test(void)
     uint16_t i, times[2][4];
     uint32_t exp, tot[4] = { 0 };
 
-    sprintf(s, "-- CIA Timer Test--");
+    sprintf(s, "-- CIA Timer Test --");
     print_line(&r);
     r.y += 3;
     r.x = 0;
@@ -72,7 +72,7 @@ static void cia_timer_test(void)
 static void cia_port_test(void)
 {
     const static char *info[4][9] = {
-        { "CIAA Port A (Gameport, Floppy, LED):",
+        { "CIAA Port A (Gameport, Floppy, LED)",
           "$1 CIAA.PA7$ /FIR1",
           "$2 CIAA.PA6$ /FIR0",
           "$3 CIAA.PA5$ /RDY ",
@@ -81,16 +81,16 @@ static void cia_port_test(void)
           "$6 CIAA.PA2$ /CHNG",
           "$7 CIAA.PA1$ /LED ",
           "$8 CIAA.PA0$ /OVL " },
-        { "CIAA Port B (Parallel Port Data):",
-          "$1 CIAA.PB7$ D7",
-          "$2 CIAA.PB6$ D6",
-          "$3 CIAA.PB5$ D5",
-          "$4 CIAA.PB4$ D4",
-          "$5 CIAA.PB3$ D3",
-          "$6 CIAA.PB2$ D2",
-          "$7 CIAA.PB1$ D1",
-          "$8 CIAA.PB0$ D0" },
-        { "CIAB Port A (Serial/Parallel Control):",
+        { "CIAA Port B (Parallel Port Data)",
+          "$1 CIAA.PB7$  D7",
+          "$2 CIAA.PB6$  D6",
+          "$3 CIAA.PB5$  D5",
+          "$4 CIAA.PB4$  D4",
+          "$5 CIAA.PB3$  D3",
+          "$6 CIAA.PB2$  D2",
+          "$7 CIAA.PB1$  D1",
+          "$8 CIAA.PB0$  D0" },
+        { "CIAB Port A (Serial/Parallel Control)",
           "$1 CIAB.PA7$ /DTR",
           "$2 CIAB.PA6$ /RTS",
           "$3 CIAB.PA5$ /CD ",
@@ -99,7 +99,7 @@ static void cia_port_test(void)
           "$6 CIAB.PA2$ SEL",
           "$7 CIAB.PA1$ POUT",
           "$8 CIAB.PA0$ BUSY" },
-        { "CIAB Port B (Floppy Control):",
+        { "CIAB Port B (Floppy Control)",
           "$1 CIAB.PB7$ /MTR",
           "$2 CIAB.PB6$ /SEL3",
           "$3 CIAB.PB5$ /SEL2",
@@ -141,7 +141,7 @@ static void cia_port_test(void)
                 : (port->out & (1u<<j)) ? P_OUT1 : P_OUT0;
     }
 
-    sprintf(s, "-- CIA Port Test--");
+    sprintf(s, "-- CIA Port Test --");
     print_line(&r);
 
     r.x = 0;
@@ -169,6 +169,11 @@ static void cia_port_test(void)
     clear_text_rows(3, 7);
 
     r.x = 4;
+    r.y = 2;
+    sprintf(s, "     -Pin-   -Name-  -Mode-  -Val-");
+    print_line(&r);
+
+    r.x = 4;
     r.y = 12;
     sprintf(s, "$9 Prev Port$    $0 Next Port$");
     print_line(&r);
@@ -180,17 +185,17 @@ static void cia_port_test(void)
         port = &ports[port_nr];
 
         r.x = 4;
-        r.y = 2;
+        r.y = 1;
         for (i = 0; i < 9; i++) {
             r.s = info[port_nr][i];
             print_line(&r);
-            r.y++;
+            r.y = i ? r.y+1 : 3;
         }
 
         in = prev_in = *port->prp;
         for (i = 0; i < 8; i++) {
-            print_text_box(24, 10-i, mode[port->mode[i]]);
-            print_text_box(33, 10-i, !(in & (1u<<i)) ? "0" : "1");
+            print_text_box(25, 10-i, mode[port->mode[i]]);
+            print_text_box(35, 10-i, !(in & (1u<<i)) ? "0" : "1");
         }
 
         while (!do_exit) {
@@ -212,7 +217,7 @@ static void cia_port_test(void)
                 for (i = 0; i < 8; i++) {
                     if (!(prev_in & (1u<<i)))
                         continue;
-                    print_text_box(33, 10-i, !(in & (1u<<i)) ? "0" : "1");
+                    print_text_box(35, 10-i, !(in & (1u<<i)) ? "0" : "1");
                 }
                 prev_in = in;
             }
@@ -221,7 +226,7 @@ static void cia_port_test(void)
                 i = K_F8 - key;
                 port->mode[i]++;
                 port->mode[i] &= 3;
-                print_text_box(24, 10-i, mode[port->mode[i]]);
+                print_text_box(25, 10-i, mode[port->mode[i]]);
                 switch (port->mode[i]) {
                 case P_IN:
                     port->alt_mask &= ~(1u<<i);
