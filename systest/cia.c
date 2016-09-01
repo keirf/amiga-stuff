@@ -317,7 +317,7 @@ void ciacheck(void)
         if (do_exit)
             break;
  
-        clear_text_rows(0, 12);
+        clear_text_rows(0, 13);
         switch (key) {
         case 0:
             cia_timer_test();
@@ -326,7 +326,7 @@ void ciacheck(void)
             cia_port_test();
             break;
         }
-        clear_text_rows(0, 12);
+        clear_text_rows(0, 13);
         keycode_buffer = 0;
     }
 }
