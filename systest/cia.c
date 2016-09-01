@@ -168,9 +168,9 @@ static void cia_port_test(void)
 
     clear_text_rows(3, 7);
 
-    r.x = 4;
+    r.x = 9;
     r.y = 2;
-    sprintf(s, "     -Pin-   -Name-  -Mode-  -Val-");
+    sprintf(s, "-Pin-   -Name-  -Mode-  -Val-");
     print_line(&r);
 
     r.x = 4;
@@ -180,10 +180,13 @@ static void cia_port_test(void)
 
     prev_vblank_count = vblank_count;
 
+    /* Main loop. */
     while (!do_exit && (key != K_ESC)) {
 
+        /* Port changed. */
         port = &ports[port_nr];
 
+        /* Print the menu / table for the new port. */
         r.x = 4;
         r.y = 1;
         for (i = 0; i < 9; i++) {
@@ -192,17 +195,25 @@ static void cia_port_test(void)
             r.y = i ? r.y+1 : 3;
         }
 
+        /* Refresh all pin modes and values for the new port. */
         in = prev_in = *port->prp;
         for (i = 0; i < 8; i++) {
             print_text_box(25, 10-i, mode[port->mode[i]]);
             print_text_box(35, 10-i, !(in & (1u<<i)) ? "0" : "1");
         }
 
-        while (!do_exit) {
+        /* Processing loop: Continues until exit or port change. */
+        while (!do_exit && (key != K_ESC)) {
+
+            /* Wait for key, meanwhile regularly update pins and screen. */
             while (!do_exit && !(key = keycode_buffer)) {
+
+                /* We update outputs and sample inputs only once per vbl. */
                 if (vblank_count == prev_vblank_count)
                     continue;
                 prev_vblank_count = vblank_count;
+
+                /* Toggle alternating outputs. */
                 alt ^= 1;
                 for (i = 0; i < 4; i++) {
                     port = &ports[i];
@@ -211,6 +222,11 @@ static void cia_port_test(void)
                         : port->out & ~port->alt_mask;
                     *port->prp = port->out;
                 }
+
+                /* Give *lots* of time for the pins to settle. */
+                delay_ms(1);
+
+                /* Sample the pin values and update the screen. */
                 port = &ports[port_nr];
                 in = *port->prp;
                 prev_in ^= in;
@@ -221,40 +237,44 @@ static void cia_port_test(void)
                 }
                 prev_in = in;
             }
+
+            /* Key pressed: Process it. */
             keycode_buffer = 0;
             if ((key >= K_F1) && (key <= K_F8)) {
+                /* F1-F8: Change mode of corresponding port pin. */
                 i = K_F8 - key;
                 port->mode[i]++;
                 port->mode[i] &= 3;
                 print_text_box(25, 10-i, mode[port->mode[i]]);
                 switch (port->mode[i]) {
-                case P_IN:
+                case P_IN: /* Input mode */
                     port->alt_mask &= ~(1u<<i);
                     *port->ddrp = port->ddr &= ~(1u<<i);
                     break;
-                case P_OUT0:
+                case P_OUT0: /* Output 0 */
                     *port->prp = port->out &= ~(1u<<i);
                     *port->ddrp = port->ddr |= 1u<<i;
                     break;
-                case P_OUT1:
+                case P_OUT1: /* Output 1 */
                     *port->prp = port->out |= 1u<<i;
                     break;
-                case P_OUT_A:
+                case P_OUT_A: /* Alternating/toggling output */
                     port->alt_mask |= 1u<<i;
                     break;
                 }
             } else if (key == K_F9) {
+                /* F9: Previous port */
                 port_nr = (port_nr - 1) & 3;
                 break;
             } else if (key == K_F10) {
+                /* F10: Next port */
                 port_nr = (port_nr + 1) & 3;
-                break;
-            } else if (key == K_ESC) {
                 break;
             }
         }
     }
 
+    /* Clean up. Put ports back as they were. */
     for (i = 0; i < 4; i++) {
         port = &ports[i];
         *port->prp = port->orig_pr;
