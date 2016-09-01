@@ -690,6 +690,9 @@ void print_line(const struct char_row *r)
             if ((_m.c >= '1') && (_m.c <= '9')) {
                 sprintf(s, "F%c:", _m.c);
                 _m.c = _m.c - '1' + K_F1;
+            } else if (_m.c == '0') {
+                sprintf(s, "F10:");
+                _m.c = K_F10;
             } else if (_m.c == 'E') {
                 sprintf(s, "ESC:");
                 _m.c = K_ESC;
