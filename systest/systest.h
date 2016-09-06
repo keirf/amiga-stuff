@@ -159,4 +159,9 @@ extern uint16_t nr_mem_regions;
 
 void call_cancellable_test(int (*fn)(void *), void *arg);
 
+
+/*******************
+ * EXCEPTIONS
+ */
+
 void init_crash_handler(void);
