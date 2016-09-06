@@ -112,6 +112,7 @@ EXC(nr##C) EXC(nr##D) EXC(nr##E) EXC(nr##F)
 asm (
 "common:                            \n"
 "    movem.l %d0-%d7/%a0-%a6,-(%sp) \n"
+"    ori.w   #0x700,%sr             \n"
 "    move.l  %usp,%a0               \n"
 "    move.l  %a0,-(%sp)             \n"
 "    move.l  %sp,%a0                \n"
