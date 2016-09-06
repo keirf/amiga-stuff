@@ -200,7 +200,7 @@ int main(int argc, char **argv)
     }
 
     if (split) {
-        char outname[256];
+        char outname[256], *s = strrchr(out, '.');
         uint16_t *a, *b, *p;
         a = (uint16_t *)(outbuf[0] = malloc(insz));
         b = (uint16_t *)(outbuf[1] = malloc(insz));
@@ -212,7 +212,14 @@ int main(int argc, char **argv)
             }
         }
 
-        snprintf(outname, sizeof(outname), "%s_a", out);
+        /* HI: U6A (A1200), U175 (A4000), U181 (A3000). */
+        if (s) {
+            strncpy(outname, out, s-out);
+            strcpy(outname+(s-out), "_hi");
+            strcat(outname, out+(s-out));
+        } else {
+            snprintf(outname, sizeof(outname), "%s_hi", out);
+        }
         fd = open(outname, O_WRONLY|O_CREAT|O_TRUNC, 0644);
         if (fd == -1)
             err(1, "%s", outname);
@@ -220,7 +227,13 @@ int main(int argc, char **argv)
             err(1, NULL);
         close(fd);
 
-        snprintf(outname, sizeof(outname), "%s_b", out);
+        /* LO: U6B (A1200), U176 (A4000), U180 (A3000). */
+        if (s) {
+            strcpy(outname+(s-out), "_lo");
+            strcat(outname, out+(s-out));
+        } else {
+            snprintf(outname, sizeof(outname), "%s_lo", out);
+        }
         fd = open(outname, O_WRONLY|O_CREAT|O_TRUNC, 0644);
         if (fd == -1)
             err(1, "%s", outname);
