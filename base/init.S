@@ -15,8 +15,10 @@
         /* Walk Exec memory list to find all memory regions. */
         move.l  4,a6
         move.l  0x142(a6),a0 /* ExecBase->MemList.lh_Head */
-        lea.l   mem_region(pc),a1
-        lea.l   nr_mem_regions(pc),a2
+        lea.l   start(pc),a1
+        move.l  a1,a2
+        add.l   #mem_region-start,a1
+        add.l   #nr_mem_regions-start,a2
         move.w  (a2),d0      /* d0.w = max # regions */
 .mem:   /* First check mh_Attributes specifies some valid flags: at least one
          * of MEMF_PUBLIC, MEMF_CHIP, or MEMF_FAST. This fixes memory detection
