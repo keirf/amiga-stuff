@@ -55,7 +55,9 @@ static void print(uint16_t x, uint16_t y, const char *s)
 static void crash(struct frame *f) attribute_used;
 static void crash(struct frame *f)
 {
-    unsigned int x, y;
+    uint32_t sp, ssp;
+    uint16_t *_sp;
+    unsigned int i, x, y;
     char s[80];
 
     /* Stop all old activity and install a simple copper with a single clear 
@@ -65,6 +67,10 @@ static void crash(struct frame *f)
     cust->cop2lc.p = copper;
     memset(bpl[0], 0, bplsz);
     cust->dmacon = DMA_SETCLR | DMA_DMAEN | DMA_COPEN | DMA_BPLEN;
+
+    /* Calculate stack pointers. */
+    ssp = (uint32_t)(f+1);
+    sp = (f->sr & 0x2000) ? ssp : f->usp;
 
     /* Print the exception stack frame. */
     x = 4;
@@ -85,12 +91,28 @@ static void crash(struct frame *f)
             f->a[0], f->a[1], f->a[2], f->a[3]);
     print(x, y, s);
     y++;
-    sprintf(s, "a4: %08x  a5: %08x  a6: %08x",//  sp: %08x",
-            f->a[4], f->a[5], f->a[6], (uint32_t)f);
+    sprintf(s, "a4: %08x  a5: %08x  a6: %08x  a7: %08x",
+            f->a[4], f->a[5], f->a[6], sp);
     print(x, y, s);
     y++;
-    sprintf(s, "sr: %04x  ssp: %08x  usp: %08x", f->sr, (uint32_t)f, f->usp);
+    sprintf(s, "sr: %04x  ssp: %08x  usp: %08x", f->sr, ssp, f->usp);
     print(x, y, s);
+
+    /* Print the crashed stack. */
+    x -= 2;
+    y += 2;
+    sprintf(s, "Stack Trace:");
+    print(x, y, s);
+    x += 2;
+    _sp = (uint16_t *)(sp&~1);
+    for (i = 0; i < 6; i++) {
+        y++;
+        sprintf(s, "%08p:  %04x %04x %04x %04x  %04x %04x %04x %04x", _sp,
+                _sp[0], _sp[1], _sp[2], _sp[3],
+                _sp[4], _sp[5], _sp[6], _sp[7]);
+        print(x, y, s);
+        _sp += 8;
+    }
 
     /* We're done, forever. */
     for (;;) ;
