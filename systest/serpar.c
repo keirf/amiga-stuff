@@ -177,9 +177,8 @@ static void test_loop_handle_vblank(void)
 
     /* Update the "I'm doing something" indicator. */
     if (!(progress++ & 7)) {
-        char s[2];
+        char s[3] = "  ";
         s[0] = progress_chars[(progress>>3)&3];
-        s[1] = '\0';
         print_text_box(42, 6, s);
     }
 
