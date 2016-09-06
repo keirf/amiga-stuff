@@ -174,20 +174,6 @@ static uint16_t copper_2[] = {
     0xffff, 0xfffe,
 };
 
-#define assert(_p) do { if (!(_p)) __assert_fail(); } while (0)
-
-#if 1
-static void __assert_fail(void)
-{
-    cust->dmacon = cust->intena = 0x7fff;
-    cust->color[0] = 0xf00;
-    for (;;) ;
-}
-#else
-/* Set a memory watchpoint in your debugger to catch this. */
-#define __assert_fail() (*(volatile int *)0x80000 = 0)
-#endif
-
 /* Device-specific IRQ handlers. */
 void ciaa_flag_IRQ(void);
 void disk_index_IRQ(void);

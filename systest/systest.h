@@ -161,7 +161,10 @@ void call_cancellable_test(int (*fn)(void *), void *arg);
 
 
 /*******************
- * EXCEPTIONS
+ * DEBUG
  */
 
 void init_crash_handler(void);
+
+#define assert(_p) do { if (!(_p)) __assert_fail(); } while (0)
+#define __assert_fail() asm volatile ( "illegal" )
