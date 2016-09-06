@@ -1,5 +1,6 @@
 OBJS += ../base/cancellation.o
 OBJS += ../base/util.o
+OBJS += crash.o
 OBJS += audio.o
 OBJS += cia.o
 OBJS += floppy.o

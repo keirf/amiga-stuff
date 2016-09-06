@@ -105,10 +105,7 @@ static void draw_db25(const uint8_t *groups)
         x -= j * 4;
         y += (pin->h+1) / 2;
         y -= 4;
-        for (j = 0; pin->name[j]; j++) {
-            draw_box_label(x, y, pin->name[j]);
-            x += 8;
-        }
+        print_label(x, y, 1, pin->name);
     }
 
     /* Draw connections within groups of pins. */

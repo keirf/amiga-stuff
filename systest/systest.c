@@ -624,18 +624,25 @@ static void *unpack_font(void *start)
     return q;
 }
 
-/* Draws a plain 8x8 character straight into bitplane 1. */
-void draw_box_label(unsigned int x, unsigned int y, uint8_t c)
+/* Prints a string of plain 8x8 characters straight to bitplane @b. */
+void print_label(unsigned int x, unsigned int y, uint8_t b, const char *s)
 {
-    uint16_t bpl_off = y * (xres/8) + (x/8);
-    uint8_t d, *p = &packfont[8*(c-0x20)];
+    uint16_t bpl_off;
+    uint8_t d, *p;
     unsigned int i;
-    for (i = 0; i < 8; i++) {
-        d = *p++;
-        bpl[1][bpl_off] |= d >> (x&7);
-        if (x & 7)
-            bpl[1][bpl_off+1] |= d << (8-(x&7));
-        bpl_off += xres/8;
+    uint8_t c;
+
+    while ((c = *s++) != '\0') {
+        bpl_off = y * (xres/8) + (x/8);
+        p = &packfont[8*(c-0x20)];
+        for (i = 0; i < 8; i++) {
+            d = *p++;
+            bpl[b][bpl_off] |= d >> (x&7);
+            if (x & 7)
+                bpl[b][bpl_off+1] |= d << (8-(x&7));
+            bpl_off += xres/8;
+        }
+        x += 8;
     }
 }
 
@@ -980,6 +987,9 @@ void cstart(void)
     uint16_t i, j;
     char *p;
 
+    /* Clear BSS. */
+    memset(_sbss, 0, _ebss-_sbss);
+
     /* Set keyboard serial line to input mode. */
     ciaa->cra &= ~CIACRA_SPMODE;
 
@@ -993,9 +1003,6 @@ void cstart(void)
 
     /* Enable blitter DMA. */
     cust->dmacon = DMA_SETCLR | DMA_BLTEN;
-
-    /* Clear BSS. */
-    memset(_sbss, 0, _ebss-_sbss);
 
     /* Bitplanes and unpacked font allocated as directed by linker. */
     p = _end;
@@ -1024,7 +1031,8 @@ void cstart(void)
         copper[i+j*4+3] = (uint32_t)dummy_sprite;
     }
 
-    /* Clear bitplanes. */
+    init_crash_handler();
+
     clear_whole_screen();
 
     clear_colors();

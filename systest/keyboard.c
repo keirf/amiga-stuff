@@ -222,10 +222,7 @@ void kbdcheck(void)
         x -= l * 4;
         y += (cap->h+1) / 2;
         y -= 4;
-        for (l = 0; cap->name[l]; l++) {
-            draw_box_label(x, y, cap->name[l]);
-            x += 8;
-        }
+        print_label(x, y, 1, cap->name);
     }
 
     /* Raw keycodes are displayed in a list at the bottom of the screen. */

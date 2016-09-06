@@ -76,8 +76,8 @@ void print_text_box(unsigned int x, unsigned int y, const char *s);
 void print_line(const struct char_row *r);
 void print_menu_nav_line(void);
 
-/* Draw a character in a highlight box. */
-void draw_box_label(unsigned int x, unsigned int y, uint8_t c);
+/* Print a string of plain 8x8 characters straight to bitplane @b. */
+void print_label(unsigned int x, unsigned int y, uint8_t b, const char *s);
 
 /* Fill and clear rectangles. Draw hollow/outline rectangles. */
 void draw_rect(
@@ -158,3 +158,5 @@ extern uint16_t nr_mem_regions;
  */
 
 void call_cancellable_test(int (*fn)(void *), void *arg);
+
+void init_crash_handler(void);

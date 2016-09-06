@@ -256,10 +256,7 @@ void joymousecheck(void)
                 x -= j * 4;
                 y += (box->h+1) / 2;
                 y -= 4;
-                for (j = 0; box->name[j]; j++) {
-                    draw_box_label(x, y, box->name[j]);
-                    x += 8;
-                }
+                print_label(x, y, 1, box->name);
             }
         }
 
