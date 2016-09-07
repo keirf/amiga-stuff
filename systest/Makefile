@@ -21,7 +21,7 @@ include ../base/Rules.mk
 .PHONY: all
 all: systest.zip
 
-systest.zip: systest.adf systest.exe SysTest.info
+systest.zip: systest.adf systest.exe SysTest.info README.md
 	cp systest.exe SysTest
 	chmod 0755 SysTest
 	mkdir -p debug ; cp *.elf debug
