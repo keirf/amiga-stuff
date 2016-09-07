@@ -24,9 +24,10 @@ all: systest.zip
 systest.zip: systest.adf systest.exe SysTest.info
 	cp systest.exe SysTest
 	chmod 0755 SysTest
+	mkdir -p debug ; cp *.elf debug
 	$(RM) $@
-	zip -q $@ $(subst systest.exe,SysTest,$^)
-	$(RM) SysTest
+	zip -q $@ $(subst systest.exe,SysTest,$^) debug/*
+	$(RM) -r SysTest debug
 
 systest_exe.elf: OBJS := dos_entry.o $(OBJS)
 systest_exe.elf: dos_entry.o
