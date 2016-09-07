@@ -72,9 +72,13 @@ static void crash(struct frame *f)
     ssp = (uint32_t)(f+1);
     sp = (f->sr & 0x2000) ? ssp : f->usp;
 
-    /* Print the exception stack frame. */
     x = 4;
-    y = 2;
+    y = 0;
+    sprintf(s, "SysTest build: %s %s", build_date, build_time);
+    print(x, y, s);
+
+    /* Print the exception stack frame. */
+    y += 2;
     sprintf(s, "Exception #%02x at PC %08x:", f->exc_nr, f->pc);
     print(x, y, s);
     x += 2;

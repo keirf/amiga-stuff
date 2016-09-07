@@ -1,5 +1,6 @@
 OBJS += ../base/cancellation.o
 OBJS += ../base/util.o
+OBJS += build.o
 OBJS += crash.o
 OBJS += audio.o
 OBJS += cia.o
@@ -13,6 +14,9 @@ OBJS += systest.o
 OBJS += video.o
 
 include ../base/Rules.mk
+
+# build.o must be refreshed on every build
+.PHONY: build.c
 
 .PHONY: all
 all: systest.zip

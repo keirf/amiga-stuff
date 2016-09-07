@@ -804,7 +804,7 @@ static void mainmenu(void)
     sprintf(s, "https://github.com/keirf/Amiga-Stuff");
     print_line(&r);
     r.y++;
-    sprintf(s, "build: %s %s", __DATE__, __TIME__);
+    sprintf(s, "build: %s %s", build_date, build_time);
     print_line(&r);
     r.y++;
 
