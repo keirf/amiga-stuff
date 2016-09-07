@@ -58,7 +58,7 @@ static void crash(struct frame *f)
     uint32_t sp, ssp;
     uint16_t *_sp;
     unsigned int i, x, y;
-    char s[80];
+    char s[80], src[40];
 
     /* Stop all old activity and install a simple copper with a single clear 
      * bitplane. */
@@ -68,18 +68,36 @@ static void crash(struct frame *f)
     memset(bpl[0], 0, bplsz);
     cust->dmacon = DMA_SETCLR | DMA_DMAEN | DMA_COPEN | DMA_BPLEN;
 
-    /* Calculate stack pointers. */
-    ssp = (uint32_t)(f+1);
-    sp = (f->sr & 0x2000) ? ssp : f->usp;
-
+    /* Print a banner. */
     x = 4;
     y = 0;
     sprintf(s, "SysTest build: %s %s", build_date, build_time);
     print(x, y, s);
 
+    /* Calculate stack pointers. */
+    ssp = (uint32_t)(f+1);
+    sp = (f->sr & 0x2000) ? ssp : f->usp;
+
+    /* An assertion failure tells us which line of source code failed. */
+    if (/* illegal opcode vector */
+        (f->exc_nr == 4)
+        /* sensible program counter */
+        && (f->pc > (uint32_t)_start)
+        && (f->pc < (uint32_t)_end)
+        && !(f->pc & 1)
+        /* illegal ; move.w #<file>,%d0 ; move.w #<line>,%d0 */
+        && (*(uint32_t *)f->pc == 0x4afc303c)) {
+        sprintf(src, " (%s:%u)",
+                (char *)(uint32_t)((uint16_t *)f->pc)[2],
+                ((uint16_t *)f->pc)[4]);
+    } else {
+        /* No source-code information to print. */
+        src[0] = '\0';
+    }
+
     /* Print the exception stack frame. */
     y += 2;
-    sprintf(s, "Exception #%02x at PC %08x:", f->exc_nr, f->pc);
+    sprintf(s, "Exception #%02x at PC %08x%s:", f->exc_nr, f->pc, src);
     print(x, y, s);
     x += 2;
     y++;
