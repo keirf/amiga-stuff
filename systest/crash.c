@@ -18,13 +18,28 @@ static uint16_t copper[] = {
     0xffff, 0xfffe,
 };
 
-void exceptions(void);
+/* Common entry point for unexpected exceptions. */
+void common(void);
+asm (
+"common:                            \n"
+"    ori.w   #0x700,%sr             \n"
+"    movem.l %d0-%d7/%a0-%a6,-(%sp) \n"
+"    move.l  %usp,%a0               \n"
+"    move.l  %a0,-(%sp)             \n"
+"    move.l  %sp,%a0                \n"
+"    move.l  %a0,-(%sp)             \n"
+"    jbsr    crash                  \n"
+);
+
+/* Per-vector entry points, 2 words per vector: BSR.w <target>.
+ * The first 3 words are a common JMP target: JMP <common>.l */
+static uint16_t vectors[2*256];
 
 /* Crash exception frame. */
 struct frame {
     uint32_t usp;
     uint32_t d[8], a[7];
-    uint16_t exc_nr;
+    uint32_t vector_pc;
     uint16_t sr;
     uint32_t pc;
 };
@@ -32,14 +47,23 @@ struct frame {
 void init_crash_handler(void)
 {
     unsigned int i;
-    char *e, **pe;
+    uint16_t *v, **pv;
 
-    /* Poke all exception vectors, skipping reset PC/SP. */
-    pe = (char **)NULL + 2;
-    e = (char *)exceptions + 2*8;
+    /* Build common absolute JMP instruction shared by all vectors. */
+    v = vectors;
+    *v++ = 0x4ef9; /* JMP (common).L */
+    *(uint32_t *)v = (uint32_t)common;
+    v += 3;
+
+    /* Poke all exception vectors, skipping reset PC/SP. The single unique 
+     * per-vector instruction is a BSR.W which is an efficient way to stack
+     * a value allowing us to identify the vector number. */
+    pv = (uint16_t **)NULL + 2;
     for (i = 2; i < 256; i++) {
-        *pe++ = e;
-        e += 8;
+        *pv++ = v; /* Set the exception vector */
+        *v++ = 0x6100; /* BSR.W <jmp> */
+        *v = (uint16_t)((uint32_t)vectors - (uint32_t)v);
+        v++;
     }
 }
 
@@ -56,7 +80,7 @@ static void crash(struct frame *f) attribute_used;
 static void crash(struct frame *f)
 {
     uint32_t sp, ssp;
-    uint16_t *_sp;
+    uint16_t *_sp, exc_nr;
     unsigned int i, x, y;
     char s[80], src[40];
 
@@ -78,9 +102,12 @@ static void crash(struct frame *f)
     ssp = (uint32_t)(f+1);
     sp = (f->sr & 0x2000) ? ssp : f->usp;
 
+    /* Calculate exception vector number from vector PC. */
+    exc_nr = ((f->vector_pc - (uint32_t)vectors) >> 2) - 1;
+
     /* An assertion failure tells us which line of source code failed. */
     if (/* illegal opcode vector */
-        (f->exc_nr == 4)
+        (exc_nr == 4)
         /* sensible program counter */
         && (f->pc > (uint32_t)_start)
         && (f->pc < (uint32_t)_end)
@@ -97,7 +124,7 @@ static void crash(struct frame *f)
 
     /* Print the exception stack frame. */
     y += 2;
-    sprintf(s, "Exception #%02x at PC %08x%s:", f->exc_nr, f->pc, src);
+    sprintf(s, "Exception #%02x at PC %08x%s:", exc_nr, f->pc, src);
     print(x, y, s);
     x += 2;
     y++;
@@ -139,30 +166,3 @@ static void crash(struct frame *f)
     /* We're done, forever. */
     for (;;) ;
 }
-
-/* A single unique exception entry point. Pushes its vector onto the stack. */
-#define EXC(nr)                                 \
-"    move.w  #0x"#nr",-(%sp)        \n"         \
-"    bra.w   common                 \n"         \
-
-/* 16 unique exception entry points. */
-#define E(nr)                                   \
-EXC(nr##0) EXC(nr##1) EXC(nr##2) EXC(nr##3)     \
-EXC(nr##4) EXC(nr##5) EXC(nr##6) EXC(nr##7)     \
-EXC(nr##8) EXC(nr##9) EXC(nr##A) EXC(nr##B)     \
-EXC(nr##C) EXC(nr##D) EXC(nr##E) EXC(nr##F)
-
-/* Build the 256 unique entry points and their common branch target. */
-asm (
-"common:                            \n"
-"    movem.l %d0-%d7/%a0-%a6,-(%sp) \n"
-"    ori.w   #0x700,%sr             \n"
-"    move.l  %usp,%a0               \n"
-"    move.l  %a0,-(%sp)             \n"
-"    move.l  %sp,%a0                \n"
-"    move.l  %a0,-(%sp)             \n"
-"    jbsr    crash                  \n"
-"exceptions:                        \n"
-E(0) E(1) E(2) E(3) E(4) E(5) E(6) E(7)
-E(8) E(9) E(A) E(B) E(C) E(D) E(E) E(F)
-);
