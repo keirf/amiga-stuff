@@ -28,7 +28,6 @@ SECTIONS
 
   .bss : {
     . = ALIGN(4);
-    *(.bss.early_init)
     _sbss = .;
     *(.bss)
     *(.bss*)

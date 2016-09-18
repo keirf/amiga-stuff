@@ -54,8 +54,7 @@ asm (                                                                      \
 )
 
 /* Initialised by init.S */
-struct mem_region mem_region[16]
-    __attribute__((__section__(".bss.early_init")));
+struct mem_region mem_region[16] __attribute__((__section__(".data")));
 uint16_t nr_mem_regions = 16;
 static int mem_region_cmp(const void *p, const void *q)
 {
