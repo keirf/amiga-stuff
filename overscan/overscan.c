@@ -22,7 +22,7 @@ void name(void);                                \
 asm (                                           \
 #name":                             \n"         \
 "    movem.l %d0-%d1/%a0-%a1,-(%sp) \n"         \
-"    bsr c_"#name"                  \n"         \
+"    jbsr c_"#name"                 \n"         \
 "    movem.l (%sp)+,%d0-%d1/%a0-%a1 \n"         \
 "    rte                            \n"         \
 )

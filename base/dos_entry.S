@@ -62,7 +62,7 @@ start:
         jsr     GFX_WaitTOF(a6)
         move.l  a6,-(sp)
         
-        bsr     .begin
+        jbsr    .begin
         move.l  d0,d7
 
         /* d7 = return code */

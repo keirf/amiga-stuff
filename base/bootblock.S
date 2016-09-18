@@ -53,8 +53,7 @@ start:
 
         /* Clean up our stack and jump at what we just loaded */
 .done:  movem.l (sp)+,a0-a2
-        add.l   #.begin-start,a0
-        jmp     (a0)
+        jmp     .begin-start(a0)
 
 .begin:
 #include "init.S"
