@@ -123,30 +123,18 @@ static uint16_t copper[] = {
     0x0100, 0xb200, /* bplcon0 */
     0x0102, 0x0000, /* bplcon1 */
     0x0104, 0x0024, /* bplcon2 */
-    0x0108, 0x0000, /* bpl1mod */
-    0x010a, 0x0000, /* bpl2mod */
-    0x00e0, 0x0000, /* bpl1pth */
-    0x00e2, 0x0000, /* bpl1ptl */
-    0x00e4, 0x0000, /* bpl2pth */
-    0x00e6, 0x0000, /* bpl2ptl */
-    0x00e8, 0x0000, /* bpl3pth */
-    0x00ea, 0x0000, /* bpl3ptl */
-    0x0120, 0x0000, /* spr0pth */
-    0x0122, 0x0000, /* spr0ptl */
-    0x0124, 0x0000, /* spr1pth */
-    0x0126, 0x0000, /* spr1ptl */
-    0x0128, 0x0000, /* spr2pth */
-    0x012a, 0x0000, /* spr2ptl */
-    0x012c, 0x0000, /* spr3pth */
-    0x012e, 0x0000, /* spr3ptl */
-    0x0130, 0x0000, /* spr4pth */
-    0x0132, 0x0000, /* spr4ptl */
-    0x0134, 0x0000, /* spr5pth */
-    0x0136, 0x0000, /* spr5ptl */
-    0x0138, 0x0000, /* spr6pth */
-    0x013a, 0x0000, /* spr6ptl */
-    0x013c, 0x0000, /* spr7pth */
-    0x013e, 0x0000, /* spr7ptl */
+    0x0108, 0x0000, 0x010a, 0x0000, /* bplxmod */
+    0x00e0, 0x0000, 0x00e2, 0x0000, /* bpl1ptx */
+    0x00e4, 0x0000, 0x00e6, 0x0000, /* bpl2ptx */
+    0x00e8, 0x0000, 0x00ea, 0x0000, /* bpl3ptx */
+    0x0120, 0x0000, 0x0122, 0x0000, /* spr0ptx */
+    0x0124, 0x0000, 0x0126, 0x0000, /* spr1ptx */
+    0x0128, 0x0000, 0x012a, 0x0000, /* spr2ptx */
+    0x012c, 0x0000, 0x012e, 0x0000, /* spr3ptx */
+    0x0130, 0x0000, 0x0132, 0x0000, /* spr4ptx */
+    0x0134, 0x0000, 0x0136, 0x0000, /* spr5ptx */
+    0x0138, 0x0000, 0x013a, 0x0000, /* spr6ptx */
+    0x013c, 0x0000, 0x013e, 0x0000, /* spr7ptx */
     0x01a2, 0x0000, /* col17 */
     0x01a4, 0x0eec, /* col18 */
     0x01a6, 0x0e44, /* col19 */
@@ -999,7 +987,7 @@ void cstart(void)
     alloc_start = p;
 
     /* Poke bitplane addresses into the copper. */
-    for (i = 0; copper[i] != 0x00e0/*bpl1pth*/; i++)
+    for (i = 0; copper[i] != 0x00e0/*bpl1pth*/; i += 2)
         continue;
     for (j = 0; j < planes; j++) {
         copper[i+j*4+1] = (uint32_t)bpl[j] >> 16;
@@ -1007,7 +995,7 @@ void cstart(void)
     }
     
     /* Poke sprite addresses into the copper. */
-    for (i = 0; copper[i] != 0x0120/*spr0pth*/; i++)
+    for (i = 0; copper[i] != 0x0120/*spr0pth*/; i += 2)
         continue;
     copper[i+1] = (uint32_t)pointer_sprite >> 16;
     copper[i+3] = (uint32_t)pointer_sprite;
