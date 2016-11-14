@@ -607,7 +607,7 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     struct sec_header *headers;
     unsigned int i, mfm_bytes = 13100, nr_secs;
     int done = 0;
-    uint8_t key, good, progress = 0;
+    uint8_t key, good, progress = 0, head;
     char progress_chars[] = "|/-\\";
 
     r->x = r->y = 0;
@@ -646,9 +646,12 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     sprintf(s, "-> Use an AmigaDOS disk written by a well-calibrated drive.");
     print_line(r);
     r->y++;
-    sprintf(s, "-> Adjust drive until 11 cylinder-0 sectors found.");
+    sprintf(s, "-> Adjust drive until 11 cyl-0 sectors found on both sides.");
     print_line(r);
     r->y += 2;
+
+    seek_track(0);
+    head = 0;
 
     for (;;) {
         key = keycode_buffer;
@@ -662,15 +665,19 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
                  * stepper and cyl-0 sensor adjustments. */
                 sprintf(s, "Seeking...");
                 wait_bos();
-                print_line(r);
+                clear_text_rows(r->y+1, 1); /* clear side-1 text */
+                print_line(r); /* overwrites side-0 text */
                 seek_track(80);
                 seek_cyl0();
-                s[0] = '\0';
+                head = 0;
                 wait_bos();
-                print_line(r);
+                clear_text_rows(r->y, 1); /* clear seek text */
             }
         }
         /* Read and decode a full track of data. */
+        ciab->prb |= CIABPRB_SIDE;
+        if (head)
+            ciab->prb &= ~CIABPRB_SIDE;
         memset(mfmbuf, 0, mfm_bytes);
         disk_read_track(mfmbuf, mfm_bytes);
         disk_wait_dma();
@@ -692,10 +699,18 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
                 good++;
         }
         /* Update status message. */
-        sprintf(s, "%c Sector Cyl.Nrs: %s (%u/11 okay)",
-                progress_chars[progress++&3], map, good);
+        if (head)
+            r->y++;
+        sprintf(s, "%c Side %u (%ser) Cyl.Nrs: %s (%u/11 okay)",
+                progress_chars[(progress+(head?2:0))&3],
+                head, head ? "Upp" : "Low", map, good);
         wait_bos();
         print_line(r);
+        if (head) {
+            r->y--;
+            progress++;
+        }
+        head ^= 1;
     }
 
 out:
