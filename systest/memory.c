@@ -58,12 +58,20 @@ static uint16_t check_pattern(
     return (uint16_t)val;
 }
 
-
 struct test_memory_args {
-    unsigned int round;
-    struct char_row r;
+    /* Testing is split into rounds and subrounds. Each subround covers all 
+     * memory before proceeding to the next. Even subrounds fill memory; 
+     * odd subrounds check the preceding fill. */
+    unsigned int round, subround;
+    /* Memory range being tested within the current subround. */
     uint32_t start, end;
+    /* LFSR seed for pseudo-random fill. This gets saved at the start of fill 
+     * so that the same sequence can be reproduced and checked. */
+    uint16_t seed, _seed;
+    /* For printing status updates. */
+    struct char_row r;
 };
+
 static int test_memory_range(void *_args)
 {
     struct test_memory_args *args = _args;
@@ -73,71 +81,82 @@ static int test_memory_range(void *_args)
     volatile uint16_t *end = (volatile uint16_t *)(args->end & ~15);
     char *s = (char *)r->s;
     uint16_t a = 0, i, j, x;
-    static uint16_t seed = 0x1234;
 
-    sprintf(s, "Testing 0x%p-0x%p", (char *)start, (char *)end-1);
-    print_line(r);
     r->y++;
-
-    /* 1. Random numbers. */
-    sprintf(s, "Round %u.%u: Random Fill",
-            args->round+1, 1);
+    sprintf(s, "%sing 0x%p-0x%p", !(args->subround & 1) ? "Fill" : "Check",
+            (char *)start, (char *)end-1);
+    wait_bos();
     print_line(r);
-    x = seed;
-    for (p = start; p != end;) {
-        *p++ = x = lfsr(x);
-        *p++ = x = lfsr(x);
-        *p++ = x = lfsr(x);
-        *p++ = x = lfsr(x);
+
+    switch (args->subround) {
+
+    case 0:
+        /* Random numbers. */
+        x = args->seed;
+        for (p = start; p != end;) {
+            *p++ = x = lfsr(x);
+            *p++ = x = lfsr(x);
+            *p++ = x = lfsr(x);
+            *p++ = x = lfsr(x);
+        }
+        args->seed = x;
+        break;
+    case 1:
+        x = args->seed;
+        for (p = start; p != end;) {
+            a |= *p++ ^ (x = lfsr(x));
+            a |= *p++ ^ (x = lfsr(x));
+            a |= *p++ ^ (x = lfsr(x));
+            a |= *p++ ^ (x = lfsr(x));
+        }
+        args->seed = x;
+        break;
+
+    case 2:
+        /* Start with all 0s. Write 1s to even words. */
+        fill_32(0, start, end);
+        fill_alt_16(~0, start, end);
+        break;
+    case 3:
+        a |= check_pattern(0xffff0000, start, end);
+        break;
+
+    case 4:
+        /* Start with all 0s. Write 1s to odd words. */
+        fill_32(0, start, end);
+        fill_alt_16(~0, start+1, end);
+        break;
+    case 5:
+        a |= check_pattern(0x0000ffff, start, end);
+        break;
+
+    case 6:
+        /* Start with all 1s. Write 0s to even words. */
+        fill_32(~0, start, end);
+        fill_alt_16(0, start, end);
+        break;
+    case 7:
+        a |= check_pattern(0x0000ffff, start, end);
+        break;
+
+    case 8:
+        /* Start with all 1s. Write 0s to odd words. */
+        fill_32(~0, start, end);
+        fill_alt_16(0, start+1, end);
+        break;
+    case 9:
+        a |= check_pattern(0xffff0000, start, end);
+        break;
     }
-    x = seed;
-    for (p = start; p != end;) {
-        a |= *p++ ^ (x = lfsr(x));
-        a |= *p++ ^ (x = lfsr(x));
-        a |= *p++ ^ (x = lfsr(x));
-        a |= *p++ ^ (x = lfsr(x));
-    }
-    seed = x;
-
-    /* Start with all 0s. Write 1s to even words. */
-    sprintf(s, "Round %u.%u: Checkboard #1",
-            args->round+1, 2);
-    print_line(r);
-    fill_32(0, start, end);
-    fill_alt_16(~0, start, end);
-    a |= check_pattern(0xffff0000, start, end);
-
-    /* Start with all 0s. Write 1s to odd words. */
-    sprintf(s, "Round %u.%u: Checkboard #2",
-            args->round+1, 3);
-    print_line(r);
-    fill_32(0, start, end);
-    fill_alt_16(~0, start+1, end);
-    a |= check_pattern(0x0000ffff, start, end);
-
-    /* Start with all 1s. Write 0s to even words. */
-    sprintf(s, "Round %u.%u: Checkboard #3",
-            args->round+1, 4);
-    print_line(r);
-    fill_32(~0, start, end);
-    fill_alt_16(0, start, end);
-    a |= check_pattern(0x0000ffff, start, end);
-
-    /* Start with all 1s. Write 0s to odd words. */
-    sprintf(s, "Round %u.%u: Checkboard #4",
-            args->round+1, 5);
-    print_line(r);
-    fill_32(~0, start, end);
-    fill_alt_16(0, start+1, end);
-    a |= check_pattern(0xffff0000, start, end);
 
     /* Errors found: then print diagnostic and wait to exit. */
     if (a != 0) {
         for (i = j = 0; i < 16; i++)
             if ((a >> i) & 1)
                 j++;
-        sprintf(s, "Round %u: Errors found in %u bit position%c",
-                args->round+1, j, (j > 1) ? 's' : ' ');
+        r->y += 2;
+        sprintf(s, "Errors found in %u bit position%c",
+                j, (j > 1) ? 's' : ' ');
         print_line(r);
         r->y++;
         sprintf(s, "16-bit word: FEDCBA9876543210");
@@ -161,6 +180,50 @@ static int test_memory_range(void *_args)
     return 0;
 }
 
+static void print_memory_test_type(struct test_memory_args *args)
+{
+    struct char_row *r = &args->r;
+    char *s = (char *)r->s;
+
+    switch (args->subround) {
+    case 0:
+        sprintf(s, "Round %u.%u: Random Fill",
+                args->round+1, 1);
+        /* Save the seed we use for this fill. */
+        args->_seed = args->seed;
+        break;
+    case 1:
+        /* Restore seed we used for fill. */
+        args->seed = args->_seed;
+        break;
+    case 2: case 4: case 6: case 8:
+        sprintf(s, "Round %u.%u: Checkboard #%u",
+                args->round+1, args->subround/2+1, args->subround/2);
+        break;
+    }
+
+    if (!(args->subround & 1)) {
+        wait_bos();
+        print_line(r);
+    }
+}
+
+static void init_memory_test(struct test_memory_args *args)
+{
+    args->round = args->subround = 0;
+    args->seed = 0x1234;
+    print_memory_test_type(args);
+}
+
+static void memory_test_next_subround(struct test_memory_args *args)
+{
+    if (args->subround++ == 9) {
+        args->round++;
+        args->subround = 0;
+    }
+    print_memory_test_type(args);
+}
+
 static void test_memory_slots(uint32_t slots, struct char_row *r)
 {
     struct test_memory_args tm_args;
@@ -179,7 +242,8 @@ static void test_memory_slots(uint32_t slots, struct char_row *r)
         goto out;
     }
 
-    tm_args.round = 0;
+    tm_args.r = *r;
+    init_memory_test(&tm_args);
     while (!do_exit && (keycode_buffer != K_ESC)) {
 
         if (nr == 0) {
@@ -203,7 +267,8 @@ static void test_memory_slots(uint32_t slots, struct char_row *r)
         do {
             if (++nr == 32) {
                 nr = 0;
-                tm_args.round++;
+                tm_args.r = *r;
+                memory_test_next_subround(&tm_args);
             }
         } while (!(slots & (1u << nr)));
     }
@@ -356,10 +421,10 @@ static void memcheck_direct_scan(void)
                 break;
         }
 
-        clear_text_rows(r.y, 4);
+        clear_text_rows(r.y, 6);
         _r = r;
         test_memory_slots((key == K_F1) ? ram_slots : 1u << 24, &_r);
-        clear_text_rows(r.y, 4);
+        clear_text_rows(r.y, 6);
     }
 
 out:
@@ -444,9 +509,10 @@ static void kickstart_memory_test(struct char_row *r)
     unsigned int i;
     uint32_t a, b;
 
-    for (tm_args.round = 0; 
-         !do_exit && (keycode_buffer != K_ESC);
-         tm_args.round++) {
+    tm_args.r = *r;
+    init_memory_test(&tm_args);
+
+    while (!do_exit && (keycode_buffer != K_ESC)) {
 
         /* Bottom 256kB: Test unused heap. */
         tm_args.start = (uint32_t)allocmem(0);
@@ -473,6 +539,9 @@ static void kickstart_memory_test(struct char_row *r)
                 tm_args.start = tm_args.end;
             }
         }
+
+        tm_args.r = *r;
+        memory_test_next_subround(&tm_args);
     }
 
     keycode_buffer = 0;
@@ -543,10 +612,10 @@ void memcheck(void)
         switch (key) {
         case K_F1:
             r.y = 5;
-            clear_text_rows(r.y, 4);
+            clear_text_rows(r.y, 6);
             kickstart_memory_test(&r);
             r.y = 5;
-            clear_text_rows(r.y, 4);
+            clear_text_rows(r.y, 6);
             if (!do_exit)
                 goto menu_items;
             break;
