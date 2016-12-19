@@ -69,8 +69,8 @@ static int test_memory_range(void *_args)
     struct test_memory_args *args = _args;
     struct char_row *r = &args->r;
     volatile uint16_t *p;
-    volatile uint16_t *start = (volatile uint16_t *)args->start;
-    volatile uint16_t *end = (volatile uint16_t *)args->end;
+    volatile uint16_t *start = (volatile uint16_t *)((args->start+15) & ~15);
+    volatile uint16_t *end = (volatile uint16_t *)(args->end & ~15);
     char *s = (char *)r->s;
     uint16_t a = 0, i, j, x;
     static uint16_t seed = 0x1234;
@@ -181,6 +181,17 @@ static void test_memory_slots(uint32_t slots, struct char_row *r)
 
     tm_args.round = 0;
     while (!do_exit && (keycode_buffer != K_ESC)) {
+
+        if (nr == 0) {
+            /* 1st 256kB: Test unused heap. 
+             * 2nd 256kB: Test all. */
+            tm_args.start = (uint32_t)allocmem(0);
+            tm_args.end = (uint32_t)HEAP_END;
+            tm_args.r = *r;
+            call_cancellable_test(test_memory_range, &tm_args);
+            if (do_exit)
+                break;
+        }
 
         tm_args.start = (nr == 0) ? 1 << 18 : nr << 19;
         tm_args.end = (nr + 1) << 19;
@@ -323,7 +334,7 @@ static void memcheck_direct_scan(void)
     r.y++;
 
     while (!do_exit) {
-        sprintf(s, "$1 Test All Memory (excludes first 256kB Chip)$");
+        sprintf(s, "$1 Test All Memory$");
         print_line(&r);
         r.y++;
         if (dodgy_slow_ram) {
@@ -430,13 +441,20 @@ out:
 static void kickstart_memory_test(struct char_row *r)
 {
     struct test_memory_args tm_args;
-    unsigned int i, nr_done;
+    unsigned int i;
     uint32_t a, b;
 
-    tm_args.round = 0;
-    while (!do_exit && (keycode_buffer != K_ESC)) {
-        nr_done = 0;
-        for (i = 0; i < nr_mem_regions; i++) {
+    for (tm_args.round = 0; 
+         !do_exit && (keycode_buffer != K_ESC);
+         tm_args.round++) {
+
+        /* Bottom 256kB: Test unused heap. */
+        tm_args.start = (uint32_t)allocmem(0);
+        tm_args.end = (uint32_t)HEAP_END;
+        tm_args.r = *r;
+        call_cancellable_test(test_memory_range, &tm_args);
+
+        for (i = 0; !do_exit && (i < nr_mem_regions); i++) {
             /* Calculate inclusive range [a,b] with limits expanded to 64kB
              * alignment (Kickstart sometimes steals RAM from the limits). */
             a = max_t(uint32_t, 0x40000, mem_region[i].lower & ~0xffff);
@@ -453,22 +471,10 @@ static void kickstart_memory_test(struct char_row *r)
                 tm_args.r = *r;
                 call_cancellable_test(test_memory_range, &tm_args);
                 tm_args.start = tm_args.end;
-                nr_done++;
             }
         }
-        /* If we did't do any work report this as an error and wait to exit. */
-        if (!nr_done) {
-            sprintf((char *)r->s, "ERROR: No memory (above 256kB) to test!");
-            print_line(r);
-            while (!do_exit && (keycode_buffer != K_ESC))
-                continue;
-            goto out;
-        }
-        /* Otherwise onto the next round... */
-        tm_args.round++;
     }
 
-out:
     keycode_buffer = 0;
 }
 
@@ -515,7 +521,7 @@ void memcheck(void)
         r.y += 2;
 
     menu_items:
-        sprintf(s, "$1 Test All Memory (excludes first 256kB Chip)$");
+        sprintf(s, "$1 Test All Memory$");
         print_line(&r);
         r.y++;
         sprintf(s, "$2 List Memory Regions$");

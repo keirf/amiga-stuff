@@ -220,7 +220,6 @@ void call_cancellable_test(int (*fn)(void *), void *arg)
 }
 
 /* Allocate chip memory. Automatically freed when sub-test exits. */
-extern char HEAP_END[];
 void *allocmem(unsigned int sz)
 {
     void *p = alloc_p;

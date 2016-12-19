@@ -101,6 +101,8 @@ extern char _stext[], _etext[];
 extern char _sdat[], _edat[], _ldat[];
 extern char _sbss[], _ebss[];
 
+extern char HEAP_END[];
+
 /*
  * Local variables:
  * mode: C
