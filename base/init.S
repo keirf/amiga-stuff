@@ -10,6 +10,8 @@
  */
 
 #define EXEC_Supervisor -0x1e
+#define EXEC_CacheClearU -0x27c
+#define EXEC_CacheControl -0x288
 
 #ifdef DETECT_MEMORY
         /* Walk Exec memory list to find all memory regions. */
@@ -41,6 +43,14 @@
         jne     .mem
 2:      sub.w   d0,(a2)      /* update nr_mem_regions with actual # */
 #endif
+
+        /* Disable caches if possible, including flush. */
+        cmp.w   #37,0x14(a6)    /* exec.lib_version >= 37 */
+        jmi     .no_cache_disable
+        moveq   #0,d0
+        moveq   #-1,d1
+        jsr     EXEC_CacheControl(a6)
+.no_cache_disable:
 
         /* a4 = current VBR */
         sub.l   a4,a4
