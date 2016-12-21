@@ -431,6 +431,68 @@ out:
     clear_whole_screen();
 }
 
+static void kickstart_test_one_region(struct char_row *r, unsigned int i)
+{
+    struct test_memory_args tm_args;
+    char *s = (char *)r->s;
+    uint32_t a, b;
+
+    /* Calculate inclusive range [a,b] with limits expanded to 64kB alignment 
+     * (Kickstart sometimes steals RAM from the limits). */
+    a = mem_region[i].lower & ~0xffff;
+    b = ((mem_region[i].upper + 0xffff) & ~0xffff) - 1;
+
+    clear_whole_screen();
+    print_menu_nav_line();
+
+    r->x = 4;
+    r->y = 0;
+    sprintf(s, "-- Single-Region Memory Test --");
+    print_line(r);
+
+    r->x = 2;
+    r->y = 2;
+    sprintf(s, "%08x - %08x  %s  %3u.%u MB",
+            a, b, mem_region[i].attr & 2 ? "Chip" :
+            (a >= 0x00c00000) && (a < 0x00d00000) ? "Slow" : "Fast",
+            (b-a+1) >> 20, ((b-a+1)>>19)&1 ? 5 : 0);
+    print_line(r);
+
+    r->y = 4;
+
+    tm_args.r = *r;
+    init_memory_test(&tm_args);
+
+    while (!do_exit && (keycode_buffer != K_ESC)) {
+
+        /* Bottom 256kB: Test unused heap. */
+        tm_args.start = max_t(uint32_t, (uint32_t)allocmem(0), a);
+        tm_args.end = min_t(uint32_t, (uint32_t)HEAP_END-1, b) + 1;
+        tm_args.r = *r;
+        if (tm_args.start < tm_args.end)
+            call_cancellable_test(test_memory_range, &tm_args);
+
+        tm_args.start = max_t(uint32_t, 0x40000, a);
+        while (!do_exit && (keycode_buffer != K_ESC)
+               && tm_args.start && (tm_args.start < b)) {
+            /* Calculate inclusive end limit for this chunk. Chunk size is
+             * 512kB or remainder of region, whichever is smaller. */
+            tm_args.end = ((tm_args.start + 0x80000) & ~0x7ffff) - 1;
+            tm_args.end = min_t(uint32_t, tm_args.end, b);
+            /* test_memory_range() expects the end bound to be +1. */
+            tm_args.end++;
+            tm_args.r = *r;
+            call_cancellable_test(test_memory_range, &tm_args);
+            tm_args.start = tm_args.end;
+        }
+
+        tm_args.r = *r;
+        memory_test_next_subround(&tm_args);
+    }
+
+    keycode_buffer = 0;
+}
+
 static void kickstart_memory_list(void)
 {
     char s[80];
@@ -439,16 +501,18 @@ static void kickstart_memory_list(void)
     uint32_t a, b;
     uint8_t key;
 
+restart:
     clear_whole_screen();
     print_menu_nav_line();
 
     r.x = 4;
+    r.y = 0;
     sprintf(s, "-- Kickstart Memory List --");
     print_line(&r);
 
     r.x = 0;
     r.y = 2;
-    sprintf(s, " #: LOWER    - UPPER     TYPE   SIZE");
+    sprintf(s, "    NR  LOWER    - UPPER     TYPE   SIZE");
     print_line(&r);
 
     for (;;) {
@@ -458,9 +522,9 @@ static void kickstart_memory_list(void)
         r.y = 3;
         for (i = base; (i < nr_mem_regions) && (i < base+8); i++) {
             a = mem_region[i].lower & ~0xffff;
-            b = (mem_region[i].upper + 0xffff) & ~ 0xffff;
-            sprintf(s, "%2u: %08x - %08x  %s  %3u.%u MB",
-                    i, a, b,
+            b = (mem_region[i].upper + 0xffff) & ~0xffff;
+            sprintf(s, "$%u %2u  %08x - %08x  %s  %3u.%u MB$",
+                    i-base+1, i, a, b,
                     mem_region[i].attr & 2 ? "Chip" :
                     (a >= 0x00c00000) && (a < 0x00d00000) ? "Slow" : "Fast",
                     (b-a) >> 20, ((b-a)>>19)&1 ? 5 : 0);
@@ -470,7 +534,7 @@ static void kickstart_memory_list(void)
 
         r.x = 4;
         r.y = 12;
-        sprintf(s, "Page %u/%u  $1 Prev$  $2 Next$",
+        sprintf(s, "Page %u/%u  $9 Prev$  $0 Next$",
                 (base+8)>>3, (nr_mem_regions+7)>>3);
         print_line(&r);
 
@@ -483,13 +547,16 @@ static void kickstart_memory_list(void)
                 goto out;
 
             switch (key) {
-            case K_F1:
+            case K_F1 ... K_F8:
+                kickstart_test_one_region(&r, base + key - K_F1);
+                goto restart;
+            case K_F9:
                 if (base != 0) {
                     base -= 8;
                     goto print_page;
                 }
                 break;
-            case K_F2:
+            case K_F10:
                 if (base+8 < nr_mem_regions) {
                     base += 8;
                     goto print_page;
@@ -593,7 +660,7 @@ void memcheck(void)
         sprintf(s, "$1 Test All Memory$");
         print_line(&r);
         r.y++;
-        sprintf(s, "$2 List Memory Regions$");
+        sprintf(s, "$2 List & Test Memory Regions$");
         print_line(&r);
         r.y++;
         sprintf(s, "$3 Direct Memory Scan (Ignores Kickstart)$");
