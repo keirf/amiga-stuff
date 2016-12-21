@@ -27,7 +27,12 @@
         and.b   #0x7,d1      /* MEMF_PUBLIC|MEMF_CHIP|MEMF_FAST */
         jeq     1f           /* Skip this chunk if none of the above */
         move.w  14(a0),(a1)+ /* mh_Attributes */
-        move.l  20(a0),(a1)+ /* mh_Lower */
+        /* A second sanity check: is mh_Lower < mh_Upper? */
+        move.l  20(a0),d1
+        cmp.l   24(a0),d1    /* mh_Lower < mh_Upper?... */
+        jcc     1f           /* ...skip if not */
+        /* Copy this region into our own region list. */
+        move.l  d1,(a1)+     /* mh_Lower */
         move.l  24(a0),(a1)+ /* mh_Upper */
         subq.w  #1,d0        /* #regions-- */
         jeq     2f           /* done if we can fit no more regions */
