@@ -82,6 +82,9 @@ static int test_memory_range(void *_args)
     char *s = (char *)r->s;
     uint16_t a = 0, i, j, x;
 
+    if (start >= end)
+        return 0;
+
     r->y++;
     sprintf(s, "%sing 0x%p-0x%p", !(args->subround & 1) ? "Fill" : "Check",
             (char *)start, (char *)end-1);
@@ -431,11 +434,92 @@ out:
     clear_whole_screen();
 }
 
+static uint32_t edit_address(
+    uint32_t a, uint16_t x, uint16_t y, struct char_row *r)
+{
+    uint32_t _a = a;
+    uint16_t pos, i;
+    uint8_t key;
+    char *s = (char *)r->s;
+    const static uint8_t keys[] = { /* main keyboard */
+        /* '0'-'9' */
+        0x0a, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+        /* 'A'-'F' */
+        0x20, 0x35, 0x33, 0x22, 0x12, 0x23
+    };
+    const static uint8_t pad_keys[] = { /* numeric keypad */
+        0x0f, 0x1d, 0x1e, 0x1f, 0x2d, 0x2e, 0x2f, 0x3d, 0x3e, 0x3f
+    };
+
+    sprintf(s, "0-9,A-F: Edit hex numeral");
+    print_line(r);
+    r->y++;
+    sprintf(s, "L,R Arrow: Move cursor");
+    print_line(r);
+    r->y++;
+    sprintf(s, "ESC: Cancel  RET: Confirm");
+    print_line(r);
+
+    pos = 0;
+
+    for (;;) {
+
+        /* Print current value. */
+        sprintf(s, "%08x", _a);
+        wait_bos();
+        print_text_box(x, y, s);
+
+        /* Update highlight. */
+        text_highlight(x, y, 8, 0);
+        text_highlight(x+pos, y, 1, 1);
+
+        while (!(key = keycode_buffer) && !do_exit)
+            continue;
+        keycode_buffer = 0;
+
+        if (do_exit)
+            break;
+
+        if (key == 0x4f) { /* left arrow */
+            /* Cursor left. */
+            if (pos > 0)
+                pos--;
+        } else if (key == 0x4e) { /* right arrow */
+            /* Cursor right. */
+            if (pos < 7)
+                pos++;
+        } else if (key == 0x44) { /* return */
+            /* Exit with new value. */
+            break;
+        } else if (key == K_ESC) {
+            /* Exit with original value. */
+            _a = a;
+            break;
+        } else {
+            /* Modify a hex numeral. */
+            for (i = 0; i < ARRAY_SIZE(keys); i++) {
+                if ((key == keys[i]) || ((i < ARRAY_SIZE(pad_keys))
+                                         && (key == pad_keys[i]))) {
+                    _a &= ~(0xf << ((7-pos)*4));
+                    _a |= i << ((7-pos)*4);
+                    if (pos < 7)
+                        pos++;
+                    break;
+                }
+            }
+        }
+    }
+
+    text_highlight(x, y, 8, 0);
+    return _a;
+}
+
 static void kickstart_test_one_region(struct char_row *r, unsigned int i)
 {
     struct test_memory_args tm_args;
     char *s = (char *)r->s;
     uint32_t a, b;
+    uint8_t key;
 
     /* Calculate inclusive range [a,b] with limits expanded to 64kB alignment 
      * (Kickstart sometimes steals RAM from the limits). */
@@ -450,15 +534,45 @@ static void kickstart_test_one_region(struct char_row *r, unsigned int i)
     sprintf(s, "-- Single-Region Memory Test --");
     print_line(r);
 
-    r->x = 2;
-    r->y = 2;
-    sprintf(s, "%08x - %08x  %s  %3u.%u MB",
-            a, b, mem_region[i].attr & 2 ? "Chip" :
-            (a >= 0x00c00000) && (a < 0x00d00000) ? "Slow" : "Fast",
-            (b-a+1) >> 20, ((b-a+1)>>19)&1 ? 5 : 0);
-    print_line(r);
+    do {
+        r->x = 2;
+        r->y = 2;
+        sprintf(s, "%08x - %08x  %s  %3u.%u MB",
+                a, b, mem_region[i].attr & 2 ? "Chip" :
+                (a >= 0x00c00000) && (a < 0x00d00000) ? "Slow" : "Fast",
+                (b-a+1) >> 20, ((b-a+1)>>19)&1 ? 5 : 0);
+        print_line(r);
+
+        r->x = 4;
+        r->y = 4;
+        sprintf(s, "$1 Test Memory Range$");
+        print_line(r);
+        r->y++;
+        sprintf(s, "$2 Edit Start Address$");
+        print_line(r);
+        r->y++;
+        sprintf(s, "$3 Edit End Address$");
+        print_line(r);
+        r->y = 4;
+
+        do {
+            while (!(key = keycode_buffer) && !do_exit)
+                continue;
+            keycode_buffer = 0;
+            if (do_exit || (key == K_ESC))
+                goto out;
+        } while ((key < K_F1) || (key > K_F3));
+
+        if (key == K_F2) {
+            a = edit_address(a, 2, 2, r);
+        } else if (key == K_F3) {
+            b = edit_address(b, 13, 2, r);
+        }
+
+    } while (key != K_F1);
 
     r->y = 4;
+    clear_text_rows(4, 3);
 
     tm_args.r = *r;
     init_memory_test(&tm_args);
@@ -490,6 +604,7 @@ static void kickstart_test_one_region(struct char_row *r, unsigned int i)
         memory_test_next_subround(&tm_args);
     }
 
+out:
     keycode_buffer = 0;
 }
 

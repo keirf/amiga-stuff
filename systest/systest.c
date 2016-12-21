@@ -490,6 +490,16 @@ void hollow_rect(
         clear_rect(x+1, y+1, w-2, h-2, plane_mask);
 }
 
+void text_highlight(uint16_t x, uint16_t y, uint16_t nr, int fill)
+{
+    uint16_t fx, fy;
+
+    fx = xstart + x * 8;
+    fy = ystart + y * yperline - 1;
+
+    draw_rect(fx, fy, nr*8+1, yperline+1, 1<<2, fill);
+}
+
 static void clear_screen_rows(uint16_t y_start, uint16_t y_nr)
 {
     uint16_t i;

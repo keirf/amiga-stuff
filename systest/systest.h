@@ -75,6 +75,7 @@ struct char_row {
 void print_text_box(unsigned int x, unsigned int y, const char *s);
 void print_line(const struct char_row *r);
 void print_menu_nav_line(void);
+void text_highlight(uint16_t x, uint16_t y, uint16_t nr, int fill);
 
 /* Print a string of plain 8x8 characters straight to bitplane @b. */
 void print_label(unsigned int x, unsigned int y, uint8_t b, const char *s);
