@@ -3,6 +3,7 @@ OBJS += ../base/util.o
 OBJS += build.o
 OBJS += crash.o
 OBJS += audio.o
+OBJS += battclock.o
 OBJS += cia.o
 OBJS += floppy.o
 OBJS += joymouse.o

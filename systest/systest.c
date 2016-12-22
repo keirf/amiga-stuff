@@ -769,7 +769,7 @@ static void mainmenu(void)
         { joymousecheck, "Mouse, Joystick, Gamepad" },
         { audiocheck,    "Audio" },
         { videocheck,    "Video" },
-        { ciacheck,      "CIA" },
+        { ciacheck,      "CIA, Batt.Clock" },
         { serparcheck,   "Serial, Parallel" }
     };
 

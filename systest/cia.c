@@ -11,6 +11,8 @@
 
 #include "systest.h"
 
+void battclock_test(void);
+
 static void get_cia_times(uint16_t *times)
 {
     times[0] = get_ciatime(ciaa, ta);
@@ -291,16 +293,19 @@ void ciacheck(void)
     print_menu_nav_line();
 
     while (!do_exit) {
-        r.x = 12;
+        r.x = 7;
         r.y = 0;
-        sprintf(s, "-- CIA Test Menu --");
+        sprintf(s, "-- CIA, Batt.Clock Test Menu --");
         print_line(&r);
 
-        r.y += 4;
-        sprintf(s, "$1 Precision Timers$");
+        r.y += 3;
+        sprintf(s, "$1 CIA Precision Timers$");
         print_line(&r);
         r.y++;
-        sprintf(s, "$2 Peripheral Ports$");
+        sprintf(s, "$2 CIA Peripheral Ports$");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "$3 Battery-Backed Clock$");
         print_line(&r);
         r.y++;
 
@@ -312,7 +317,7 @@ void ciacheck(void)
             if (do_exit)
                 break;
             key -= K_F1;
-        } while (!do_exit && (key >= 2));
+        } while (!do_exit && (key >= 3));
 
         if (do_exit)
             break;
@@ -324,6 +329,9 @@ void ciacheck(void)
             break;
         case 1:
             cia_port_test();
+            break;
+        case 2:
+            battclock_test();
             break;
         }
         clear_text_rows(0, 13);
