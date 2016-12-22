@@ -639,7 +639,7 @@ restart:
             a = mem_region[i].lower & ~0xffff;
             b = (mem_region[i].upper + 0xffff) & ~0xffff;
             sprintf(s, "$%u %2u  %08x - %08x  %s  %3u.%u MB$",
-                    i-base+1, i, a, b,
+                    i-base+1, i, a, b-1,
                     mem_region[i].attr & 2 ? "Chip" :
                     (a >= 0x00c00000) && (a < 0x00d00000) ? "Slow" : "Fast",
                     (b-a) >> 20, ((b-a)>>19)&1 ? 5 : 0);
