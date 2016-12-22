@@ -291,6 +291,7 @@ void ciacheck(void)
     char s[80];
     struct char_row r = { .s = s };
     uint8_t key = 0;
+    uint16_t lisaid, aliceid;
 
     print_menu_nav_line();
 
@@ -316,12 +317,21 @@ void ciacheck(void)
         sprintf(s, "-- Chipset IDs --");
         print_line(&r);
         r.y++;
-        sprintf(s, "Denise/Lisa: %04x", cust->deniseid);
+        lisaid = cust->deniseid;
+        sprintf(s, "Denise/Lisa: %04x", lisaid);
         print_line(&r);
         r.y++;
-        sprintf(s, "Agnus/Alice: %04x", (cust->vposr >> 8) & 0x7f);
+        aliceid = (cust->vposr >> 8) & 0x7f;
+        sprintf(s, "Agnus/Alice: %04x", aliceid);
         print_line(&r);
         r.y++;
+        if (/* Detect AGA Alice IDs: 0x22, 0x23, 0x32, 0x33. */
+            ((aliceid & 0x6e) == 0x22)
+            /* In which case LisaID bits 3,8,9 should be zero. */
+            && !!(lisaid & 0x304)) {
+            sprintf(s, "WARNING: AGA Alice with bad Lisa ID");
+            print_line(&r);
+        }
 
         do {
             while (!do_exit && !(key = keycode_buffer))
