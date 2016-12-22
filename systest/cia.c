@@ -162,10 +162,12 @@ static void cia_port_test(void)
     sprintf(s, "$2 Continue, With Care$");
     print_line(&r);
 
-    while (!do_exit && (key != K_ESC) & (key != K_F2)) {
+    while (key != K_F2) {
         key = keycode_buffer;
         if (key)
             keycode_buffer = 0;
+        if (do_exit || (key == K_ESC))
+            return;
     }
 
     clear_text_rows(3, 7);
@@ -293,12 +295,13 @@ void ciacheck(void)
     print_menu_nav_line();
 
     while (!do_exit) {
-        r.x = 7;
+        r.x = 3;
         r.y = 0;
-        sprintf(s, "-- CIA, Batt.Clock Test Menu --");
+        sprintf(s, "-- CIA, Chipset, Batt.Clock Test Menu --");
         print_line(&r);
 
-        r.y += 3;
+        r.x = 7;
+        r.y = 3;
         sprintf(s, "$1 CIA Precision Timers$");
         print_line(&r);
         r.y++;
@@ -306,6 +309,17 @@ void ciacheck(void)
         print_line(&r);
         r.y++;
         sprintf(s, "$3 Battery-Backed Clock$");
+        print_line(&r);
+
+        /* Chipset IDs. */
+        r.y += 2;
+        sprintf(s, "-- Chipset IDs --");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "Denise/Lisa: %04x", cust->deniseid);
+        print_line(&r);
+        r.y++;
+        sprintf(s, "Agnus/Alice: %04x", (cust->vposr >> 8) & 0x7f);
         print_line(&r);
         r.y++;
 

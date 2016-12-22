@@ -67,7 +67,8 @@ struct amiga_custom {
     uint16_t bltcdat;
     uint16_t bltbdat;
     uint16_t bltadat;
-    uint16_t _2[4];
+    uint16_t _2[3];
+    uint16_t deniseid;
     uint16_t dsksync;
     cust_ptr_t cop1lc;
     cust_ptr_t cop2lc;
