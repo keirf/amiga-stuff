@@ -673,8 +673,12 @@ restart:
 
             switch (key) {
             case K_F1 ... K_F8:
-                kickstart_test_one_region(&r, base + key - K_F1);
-                goto restart;
+                a = base + key - K_F1;
+                if (a < nr_mem_regions) {
+                    kickstart_test_one_region(&r, a);
+                    goto restart;
+                }
+                break;
             case K_F9:
                 if (base != 0) {
                     base -= 8;
