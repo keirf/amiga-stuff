@@ -305,6 +305,11 @@ static void memcheck_direct_scan(void)
     for (i = 20; i < 24; i++)
         aliased_slots |= (1u << i);
 
+    /* AGA systems never have expansion memory at 0xD00000. Indeed A4000 
+     * asserts a Bus Error on accesses in that region. */
+    if (chipset_type == CHIPSET_aga)
+        aliased_slots |= 1u << 27;
+
     /* 0xC00000-0xD7FFFF: If slow memory is absent then custom registers alias
      * here. We detect this by writing to what would be INTENA and checking 
      * for changes to what would be INTENAR. If we see no change then we are 
@@ -312,6 +317,8 @@ static void memcheck_direct_scan(void)
      * Gary. */
     for (i = 24; i < 27; i++) {
         uint16_t intenar = cust->intenar;
+        if (aliased_slots & (1u << i))
+            continue;
         p = (volatile uint16_t *)0 + (i << 18);
         p[0x9a/2] = 0x7fff; /* clear all bits in INTENA */
         j = cust->intenar;
@@ -319,7 +326,10 @@ static void memcheck_direct_scan(void)
         p[0x9a/2] = 0xbfff; /* set all bits in INTENA except master enable */
         b = p[0x1c/2];
         if (a != b) {
-            aliased_slots |= (1u << i);
+            /* Slow memory starts at C00000 always. If we see custom-register 
+             * aliasing then we're done. */
+            for (; i < 27; i++)
+                aliased_slots |= (1u << i);
             cust->intena = 0x7fff;
             cust->intena = 0x8000 | intenar;
         }

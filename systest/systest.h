@@ -31,6 +31,18 @@ static volatile struct amiga_cia * const ciab =
 
 
 /*******************
+ * SYSTEM CONFIGURATION
+ */
+
+#define CHIPSET_ocs 0
+#define CHIPSET_ecs 1
+#define CHIPSET_aga 2
+#define CHIPSET_unknown 3
+extern uint8_t chipset_type;
+extern uint8_t cpu_model; /* 680[x]0 */
+
+
+/*******************
  * KEYBOARD
  */
 

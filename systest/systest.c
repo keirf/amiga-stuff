@@ -89,13 +89,9 @@ const static uint16_t dummy_sprite[] = {
 #define yperline 10
 
 /* Chipset and CPU. */
-#define CHIPSET_ocs 0
-#define CHIPSET_ecs 1
-#define CHIPSET_aga 2
-#define CHIPSET_unknown 3
 static const char *chipset_name[] = { "OCS", "ECS", "AGA", "???" };
-static uint8_t chipset_type;
-static uint8_t cpu_model; /* 680[x]0 */
+uint8_t chipset_type;
+uint8_t cpu_model; /* 680[x]0 */
 
 /* PAL/NTSC and implied CPU frequency. */
 static uint8_t is_pal;
