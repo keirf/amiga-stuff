@@ -253,8 +253,8 @@ static void bc_get_time(enum bc_type bc_type, uint32_t base, char *s)
     /* Workbench ignores the day-of-week register and does not set it. 
      * So calculate the day-of-week ourselves. */
     days_since_1900 = (uint32_t)(yr - 1900) * 365; /* years */
-    if (yr > 1904)
-        days_since_1900 += (yr - 1901) >> 2; /* leap years */
+    if (yr >= 1904)
+        days_since_1900 += (yr - 1901 + (mon >= 2)) >> 2; /* leap years */
     for (t = 0; t < mon; t++)
         days_since_1900 += days_in_month[t]; /* months */
     days_since_1900 += day - 1; /* day of month */
