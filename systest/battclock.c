@@ -121,8 +121,62 @@ static enum bc_type detect_clock(uint32_t *base)
     return bc_type;
 }
 
+/* Look for out-of-range register values indicating that the configured 
+ * time/date is invalid and requires reset. This will often be the case 
+ * when running a clock with no backup battery. */
+static int bc_time_is_bogus(enum bc_type bc_type, uint32_t base)
+{
+    int good = 0;
+    uint8_t t;
+
+    switch (bc_type) {
+    case BC_RP5C01: {
+        volatile struct rp5c01 *rp5c01 = (struct rp5c01 *)base;
+        rp5c01->ctl_d = 0; /* stop timer */
+        good = ((rp5c01->sec1 & 0xf) <= 9)
+            && ((rp5c01->sec10 & 0xf) <= 5)
+            && ((rp5c01->min1 & 0xf) <= 9)
+            && ((rp5c01->min10 & 0xf) <= 5)
+            && ((rp5c01->hr1 & 0xf) <= 9)
+            && ((rp5c01->hr10 & 0xf) <= 3)
+            && ((rp5c01->day1 & 0xf) <= 9)
+            && ((rp5c01->day10 & 0xf) <= 3)
+            && ((rp5c01->yr1 & 0xf) <= 9);
+        rp5c01->ctl_d = 8; /* start timer */
+        break;
+    }
+    case BC_MSM6242: {
+        volatile struct msm6242 *msm6242 = (struct msm6242 *)base;
+        msm6242->ctl_d = 1; /* set HOLD */
+        t = 10;
+        while ((msm6242->ctl_d & 2) && --t) { /* wait 10ms for !BUSY */
+            msm6242->ctl_d = 0;
+            delay_ms(1);
+            msm6242->ctl_d = 1;
+        }
+        good = ((msm6242->sec1 & 0xf) <= 9)
+            && ((msm6242->sec10 & 0xf) <= 5)
+            && ((msm6242->min1 & 0xf) <= 9)
+            && ((msm6242->min10 & 0xf) <= 5)
+            && ((msm6242->hr1 & 0xf) <= 9)
+            && ((msm6242->hr10 & 0xf) <= 3)
+            && ((msm6242->day1 & 0xf) <= 9)
+            && ((msm6242->day10 & 0xf) <= 3)
+            && ((msm6242->yr1 & 0xf) <= 9);
+        msm6242->ctl_d = 0; /* clear HOLD */
+        break;
+    }
+    default:
+        break;
+    }
+    return !good;
+}
+
 static void bc_get_time(enum bc_type bc_type, uint32_t base, char *s)
 {
+    const static uint8_t days_in_month[] = {
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+    };
     const static char *mon_str[] = {
         "Jan", "Feb", "Mar", "Apr", "May", "Jun",
         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
@@ -131,6 +185,7 @@ static void bc_get_time(enum bc_type bc_type, uint32_t base, char *s)
         "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
     };
 
+    uint32_t days_since_1900;
     uint8_t sec, min, hr, day, day_week, mon, hr24, t;
     uint16_t yr;
     switch (bc_type) {
@@ -195,6 +250,17 @@ static void bc_get_time(enum bc_type bc_type, uint32_t base, char *s)
     yr %= 100;
     yr += (yr < 78) ? 2000 : 1900;
 
+    /* Workbench ignores the day-of-week register and does not set it. 
+     * So calculate the day-of-week ourselves. */
+    days_since_1900 = (uint32_t)(yr - 1900) * 365; /* years */
+    if (yr > 1904)
+        days_since_1900 += (yr - 1901) >> 2; /* leap years */
+    for (t = 0; t < mon; t++)
+        days_since_1900 += days_in_month[t]; /* months */
+    days_since_1900 += day - 1; /* day of month */
+    days_since_1900 += 1; /* 1 Jan 1900 was a Monday */
+    day_week = do_div(days_since_1900, 7);
+
     sprintf(s, "%s %s %u %02u:%02u:%02u %u",
             day_week_str[day_week], mon_str[mon],
             day, hr, min, sec, yr);
@@ -233,7 +299,8 @@ static void bc_reset(enum bc_type bc_type, uint32_t base)
         msm6242->sec10 = msm6242->sec1 = 0;
         msm6242->min10 = msm6242->min1 = 0;
         msm6242->hr10 = msm6242->hr1 = 0;
-        msm6242->yr10 = 1; msm6242->yr1 = 6;
+        /* NB. WB1.3 does not clamp yr10 in range 0-9 and borks if we do so. */
+        msm6242->yr10 = 11; msm6242->yr1 = 6; /* 2016-1900 = 116 */
         msm6242->mon10 = 0; msm6242->mon1 = 1;
         msm6242->day10 = 0; msm6242->day1 = 1;
         msm6242->day_of_week = 6; /* Friday */
@@ -249,7 +316,7 @@ void battclock_test(void)
 {
     char s[80];
     struct char_row r = { .s = s };
-    uint8_t key = 0;
+    uint8_t key = 0, is_bogus = 0;
     enum bc_type bc_type;
     uint32_t base;
 
@@ -284,12 +351,21 @@ void battclock_test(void)
             bc_get_time(bc_type, base, s);
             wait_bos();
             print_line(&r);
+            if (bc_time_is_bogus(bc_type, base) && !is_bogus) {
+                is_bogus = 1;
+                r.y++;
+                sprintf(s, "WARNING: Invalid date/time -- needs reset?");
+                print_line(&r);
+            }
             delay_ms(1);
         } while (!do_exit && !(key = keycode_buffer));
         keycode_buffer = 0;
         if (key == K_ESC)
             break;
-        if (key == K_F1)
+        if (key == K_F1) {
             bc_reset(bc_type, base);
+            is_bogus = 0;
+            clear_text_rows(6, 1);
+        }
     }
 }
