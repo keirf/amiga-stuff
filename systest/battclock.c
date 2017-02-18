@@ -172,6 +172,7 @@ static int bc_time_is_bogus(enum bc_type bc_type, uint32_t base)
         break;
     }
     default:
+        good = 1;
         break;
     }
     return !good;
