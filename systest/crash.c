@@ -85,8 +85,11 @@ static void crash(struct frame *f)
     char s[80], src[40];
 
     /* Stop all old activity and install a simple copper with a single clear 
-     * bitplane. */
+     * bitplane. Wait for vblank before disabling sprites to avoid garbage. */
     cust->intena = 0x7fff;
+    cust->intreq = INT_VBLANK;
+    while (!(cust->intreqr & INT_VBLANK))
+        continue;
     cust->dmacon = 0x7fff;
     cust->cop2lc.p = copper;
     memset(bpl[0], 0, bplsz);
