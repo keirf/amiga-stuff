@@ -11,40 +11,41 @@
 
 #include "systest.h"
 
-static inline __attribute__((always_inline)) uint16_t lfsr(uint16_t x)
+static inline __attribute__((always_inline)) uint32_t lfsr(uint32_t x)
 {
     asm volatile (
-        "lsr.w #1,%0; bcc.s 1f; eor.w #0xb400,%0; 1:"
+        "lsr.l #1,%0; bcc.s 1f; eor.l #0x80000062,%0; 1:"
         : "=d" (x) : "0" (x));
     return x;
 }
 
 /* Fill every 32-bit word from @start to @end. */
 static void fill_32(
-    uint32_t fill, volatile uint16_t *start, volatile uint16_t *end)
+    uint32_t fill, volatile uint32_t *start, volatile uint32_t *end)
 {
     uint32_t x, y;
     asm volatile (
         "1: move.l %2,(%3)+; move.l %2,(%3)+; "
         "move.l %2,(%3)+; move.l %2,(%3)+; dbf %4,1b"
         : "=a" (x), "=d" (y)
-        : "d" (fill), "0" (start), "1" ((end-start)/(2*4)-1));
+        : "d" (fill), "0" (start), "1" ((end-start)/4-1));
 }
 
-/* Fill every other 16-bit word fromt @start to @end. */
+/* Fill every other 16-bit word from @start to @end. */
 static void fill_alt_16(
-    uint16_t fill, volatile uint16_t *start, volatile uint16_t *end)
+    uint16_t fill, uint16_t shift,
+    volatile uint32_t *start, volatile uint32_t *end)
 {
-    uint32_t x, y;
+    uint32_t x = (uint32_t)start + shift, y;
     asm volatile (
         "1: move.w %2,(%3); move.w %2,4(%3); move.w %2,8(%3); "
         "move.w %2,12(%3); lea 16(%3),%3; dbf %4,1b"
         : "=a" (x), "=d" (y)
-        : "d" (fill), "0" (start), "1" ((end-start+1)/(2*4)-1));
+        : "d" (fill), "0" (x), "1" ((end-start)/4-1));
 }
 
 static uint16_t check_pattern(
-    uint32_t check, volatile uint16_t *start, volatile uint16_t *end)
+    uint32_t check, volatile uint32_t *start, volatile uint32_t *end)
 {
     uint32_t x, y, z, val;
     asm volatile (
@@ -54,7 +55,7 @@ static uint16_t check_pattern(
         "move.l (%5)+,%2; eor.l %4,%2; or.l %2,%3; "
         "dbf %6,1b; move.w %3,%2; swap %3; or.w %2,%3"
         : "=a" (x), "=d" (y), "=&d" (z), "=d" (val)
-        : "d" (check), "0" (start), "1" ((end-start+1)/(2*4)-1), "3" (0));
+        : "d" (check), "0" (start), "1" ((end-start)/4-1), "3" (0));
     return (uint16_t)val;
 }
 
@@ -67,7 +68,7 @@ struct test_memory_args {
     uint32_t start, end;
     /* LFSR seed for pseudo-random fill. This gets saved at the start of fill 
      * so that the same sequence can be reproduced and checked. */
-    uint16_t seed, _seed;
+    uint32_t seed, _seed;
     /* For printing status updates. */
     struct char_row r;
 };
@@ -76,11 +77,11 @@ static int test_memory_range(void *_args)
 {
     struct test_memory_args *args = _args;
     struct char_row *r = &args->r;
-    volatile uint16_t *p;
-    volatile uint16_t *start = (volatile uint16_t *)((args->start+15) & ~15);
-    volatile uint16_t *end = (volatile uint16_t *)(args->end & ~15);
+    volatile uint32_t *p;
+    volatile uint32_t *start = (volatile uint32_t *)((args->start+15) & ~15);
+    volatile uint32_t *end = (volatile uint32_t *)(args->end & ~15);
     char *s = (char *)r->s;
-    uint16_t a = 0, i, j, x;
+    uint32_t a = 0, x;
 
     if (start >= end)
         return 0;
@@ -118,7 +119,7 @@ static int test_memory_range(void *_args)
     case 2:
         /* Start with all 0s. Write 1s to even words. */
         fill_32(0, start, end);
-        fill_alt_16(~0, start, end);
+        fill_alt_16(~0, 0, start, end);
         break;
     case 3:
         a |= check_pattern(0xffff0000, start, end);
@@ -127,7 +128,7 @@ static int test_memory_range(void *_args)
     case 4:
         /* Start with all 0s. Write 1s to odd words. */
         fill_32(0, start, end);
-        fill_alt_16(~0, start+1, end);
+        fill_alt_16(~0, 2, start, end);
         break;
     case 5:
         a |= check_pattern(0x0000ffff, start, end);
@@ -136,7 +137,7 @@ static int test_memory_range(void *_args)
     case 6:
         /* Start with all 1s. Write 0s to even words. */
         fill_32(~0, start, end);
-        fill_alt_16(0, start, end);
+        fill_alt_16(0, 0, start, end);
         break;
     case 7:
         a |= check_pattern(0x0000ffff, start, end);
@@ -145,7 +146,7 @@ static int test_memory_range(void *_args)
     case 8:
         /* Start with all 1s. Write 0s to odd words. */
         fill_32(~0, start, end);
-        fill_alt_16(0, start+1, end);
+        fill_alt_16(0, 2, start, end);
         break;
     case 9:
         a |= check_pattern(0xffff0000, start, end);
@@ -154,18 +155,36 @@ static int test_memory_range(void *_args)
 
     /* Errors found: then print diagnostic and wait to exit. */
     if (a != 0) {
-        for (i = j = 0; i < 16; i++)
-            if ((a >> i) & 1)
-                j++;
         r->y += 2;
-        sprintf(s, "Errors found in %u bit position%c",
-                j, (j > 1) ? 's' : ' ');
+        sprintf(s, "ERRORS:     D31..D24  D23..D16  D15...D8  D7....D0");
         print_line(r);
         r->y++;
-        sprintf(s, "16-bit word: FEDCBA9876543210");
+        sprintf(s, "(X=error)   76543210  76543210  76543210  76543210");
         print_line(r);
         r->y++;
-        sprintf(s, " (X=error)   %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c",
+        sprintf(s, "32-bit bus  %c%c%c%c%c%c%c%c  %c%c%c%c%c%c%c%c  "
+                "%c%c%c%c%c%c%c%c  %c%c%c%c%c%c%c%c",
+                (a & (1u<<31)) ? 'X' : '-', (a & (1u<<30)) ? 'X' : '-',
+                (a & (1u<<29)) ? 'X' : '-', (a & (1u<<28)) ? 'X' : '-',
+                (a & (1u<<27)) ? 'X' : '-', (a & (1u<<26)) ? 'X' : '-',
+                (a & (1u<<25)) ? 'X' : '-', (a & (1u<<24)) ? 'X' : '-',
+                (a & (1u<<23)) ? 'X' : '-', (a & (1u<<22)) ? 'X' : '-',
+                (a & (1u<<21)) ? 'X' : '-', (a & (1u<<20)) ? 'X' : '-',
+                (a & (1u<<19)) ? 'X' : '-', (a & (1u<<18)) ? 'X' : '-',
+                (a & (1u<<17)) ? 'X' : '-', (a & (1u<<16)) ? 'X' : '-',
+                (a & (1u<<15)) ? 'X' : '-', (a & (1u<<14)) ? 'X' : '-',
+                (a & (1u<<13)) ? 'X' : '-', (a & (1u<<12)) ? 'X' : '-',
+                (a & (1u<<11)) ? 'X' : '-', (a & (1u<<10)) ? 'X' : '-',
+                (a & (1u<< 9)) ? 'X' : '-', (a & (1u<< 8)) ? 'X' : '-',
+                (a & (1u<< 7)) ? 'X' : '-', (a & (1u<< 6)) ? 'X' : '-',
+                (a & (1u<< 5)) ? 'X' : '-', (a & (1u<< 4)) ? 'X' : '-',
+                (a & (1u<< 3)) ? 'X' : '-', (a & (1u<< 2)) ? 'X' : '-',
+                (a & (1u<< 1)) ? 'X' : '-', (a & (1u<< 0)) ? 'X' : '-');
+        print_line(r);
+        r->y++;
+        a |= a >> 16; /* fold 16-bit halves together */
+        sprintf(s, "16-bit bus                      "
+                "%c%c%c%c%c%c%c%c  %c%c%c%c%c%c%c%c",
                 (a & (1u<<15)) ? 'X' : '-', (a & (1u<<14)) ? 'X' : '-',
                 (a & (1u<<13)) ? 'X' : '-', (a & (1u<<12)) ? 'X' : '-',
                 (a & (1u<<11)) ? 'X' : '-', (a & (1u<<10)) ? 'X' : '-',
@@ -214,7 +233,7 @@ static void print_memory_test_type(struct test_memory_args *args)
 static void init_memory_test(struct test_memory_args *args)
 {
     args->round = args->subround = 0;
-    args->seed = 0x1234;
+    args->seed = 0x12341234;
     print_memory_test_type(args);
 }
 
@@ -434,10 +453,10 @@ static void memcheck_direct_scan(void)
                 break;
         }
 
-        clear_text_rows(r.y, 6);
+        clear_text_rows(r.y, 8);
         _r = r;
         test_memory_slots((key == K_F1) ? ram_slots : 1u << 24, &_r);
-        clear_text_rows(r.y, 6);
+        clear_text_rows(r.y, 8);
     }
 
 out:
@@ -808,10 +827,10 @@ void memcheck(void)
         switch (key) {
         case K_F1:
             r.y = 5;
-            clear_text_rows(r.y, 6);
+            clear_text_rows(r.y, 8);
             kickstart_memory_test(&r);
             r.y = 5;
-            clear_text_rows(r.y, 6);
+            clear_text_rows(r.y, 8);
             if (!do_exit)
                 goto menu_items;
             break;
