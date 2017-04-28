@@ -18,6 +18,13 @@ static uint16_t copper[] = {
     0xffff, 0xfffe,
 };
 
+void double_crash(void);
+asm (
+"double_crash:                      \n"
+"    move.w #0x700,0xdff180         \n"
+"    jra    double_crash            \n"
+);
+
 /* Common entry point for unexpected exceptions. */
 void common(void);
 asm (
@@ -83,6 +90,13 @@ static void crash(struct frame *f)
     uint16_t *_sp, exc_nr;
     unsigned int i, x, y;
     char s[80], src[40];
+    void (**pv)(void);
+
+    /* Rewrite all exception vectors to avoid reentering this function should
+     * it crash. */
+    pv = (void (**)(void))NULL + 2;
+    for (i = 2; i < 256; i++)
+        *pv++ = double_crash;
 
     /* Stop all old activity and install a simple copper with a single clear 
      * bitplane. Wait for vblank before disabling sprites to avoid garbage. */
