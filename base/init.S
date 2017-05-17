@@ -129,7 +129,7 @@ copy:   lea.l   start(pc),a0    /* a0 = current location */
 main:   move.w  #0x2000,sr      /* allow CPU interrupts now that we are */
                                 /* definitely executing clear of the stack */
 
-        jra     cstart
+        jmp     (cstart).l
 
 getvbr: dc.l    0x4e7ac801      /* movec.l vbr,a4 */
         rte
