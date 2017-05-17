@@ -1,6 +1,6 @@
 # GNU Make cross-dev build rules
-# My own cross-dev setup is binutils-2.24 + gcc-4.9.2
-# Also tested with binutils-2.26 + gcc-5.3.0
+# Tested cross-dev setups (gcc/binutils) (*=recommended):
+#  4.9.2/2.24, 5.3.0/2.26, 7.1.0/2.28*
 # Target is m68k-unknown-elf
 
 TOOL_PREFIX = m68k-unknown-elf-
@@ -11,7 +11,12 @@ ifneq ($(VERBOSE),1)
 TOOL_PREFIX := @$(TOOL_PREFIX)
 endif
 
-FLAGS  = -Os -nostdlib -std=gnu99 -iquote ../base/inc
+# -Ofast produces code approx 50% larger than -Os.
+# The relative speed of -Ofast vs -Os has not been benchmarked.
+OPT_FLAGS = -Os
+#OPT_FLAGS = -Ofast
+
+FLAGS  = $(OPT_FLAGS) -nostdlib -std=gnu99 -iquote ../base/inc -fno-builtin
 FLAGS += -Wall -Werror -Wno-format -Wdeclaration-after-statement
 FLAGS += -Wstrict-prototypes -Wredundant-decls -Wnested-externs
 FLAGS += -fno-common -fno-exceptions -fno-strict-aliasing -fomit-frame-pointer
