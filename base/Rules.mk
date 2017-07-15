@@ -59,6 +59,10 @@ HOSTCFLAGS += -MMD -MF .$(@F).d
 	$(OBJCOPY) -O binary $< $@
 	@chmod a-x $@
 
+%bootblock.bin: %bootblock.o
+	$(OBJCOPY) -O binary $< $@
+	chmod a-x $@
+
 clean::
 	$(RM) *~ *.o *.elf *.bin $(DEPS)
 

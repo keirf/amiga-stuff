@@ -1,3 +1,4 @@
+OBJS += ../base/entry.o
 OBJS += ../base/cancellation.o
 OBJS += ../base/util.o
 OBJS += build.o
@@ -22,26 +23,21 @@ include ../base/Rules.mk
 .PHONY: all
 all: systest.zip
 
+../base/entry.o: AFLAGS += -DDETECT_MEMORY
+
 systest.zip: systest.adf systest.exe SysTest.info README.md
 	cp systest.exe SysTest
 	chmod 0755 SysTest
-	mkdir -p debug ; cp *.elf debug
+	mkdir -p debug ; cp systest.elf debug
 	$(RM) $@
 	zip -q $@ $(subst systest.exe,SysTest,$^) debug/*
 	$(RM) -r SysTest debug
 
-systest_exe.elf: OBJS := dos_entry.o $(OBJS)
-systest_exe.elf: dos_entry.o
-
-systest_adf.elf: OBJS := bootblock.o $(OBJS)
-systest_adf.elf: bootblock.o
-
-systest.exe: systest_exe.bin
+systest.exe: systest.bin
 	python ../base/mk_amiga_exe.py $< $@
 
-systest.adf: systest_adf.bin
-	dd if=/dev/zero of=$@ bs=512 count=1760 status=none
-	adfwrite $@ $< 0 1759 -r -c
+systest.adf: ../base/bootblock.bin systest.bin
+	python ../base/mk_adf.py $^ $@
 
 clean::
-	$(RM) *.adf *.exe *.zip ../base/*.o SysTest
+	$(RM) *.adf *.exe *.zip ../base/*.o ../base/*.bin SysTest

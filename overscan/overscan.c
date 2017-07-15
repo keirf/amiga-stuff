@@ -13,8 +13,6 @@ static volatile struct amiga_custom * const cust =
     (struct amiga_custom *)0xdff000;
 static volatile struct amiga_cia * const ciaa =
     (struct amiga_cia *)0x0bfe001;
-static volatile struct amiga_cia * const ciab =
-    (struct amiga_cia *)0x0bfdd00;
 
 #define IRQ(name)                               \
 static void c_##name(void) attribute_used;      \

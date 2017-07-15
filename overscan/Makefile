@@ -1,4 +1,4 @@
-OBJS += ../base/bootblock.o
+OBJS += ../base/entry.o
 OBJS += ../base/util.o
 OBJS += overscan.o
 
@@ -7,9 +7,8 @@ include ../base/Rules.mk
 .PHONY: all
 all: overscan.adf
 
-overscan.adf: overscan.bin
-	dd if=/dev/zero of=$@ bs=512 count=1760
-	adfwrite $@ $< 0 21 -r -c
+overscan.adf: ../base/bootblock.bin overscan.bin
+	python ../base/mk_adf.py $^ $@
 
 clean::
-	$(RM) *.adf ../base/*.o
+	$(RM) *.adf ../base/*.o ../base/*.bin

@@ -35,9 +35,19 @@
         .global start
 start:
         move.l  4,a6
+
+        /* Check if we were trackloaded (try to open DOS library). */
+        lea     .dos(pc),a1
+        moveq   #0,d0
+        move.l  d0,-(sp)          /* no wb startup msg yet */
+        jsr     EXEC_OpenLibrary(a6)
+        tst.l   d0
+        jeq     .nowb             /* No DOSBase? We were trackloaded. */
+        movel   d0,a1
+        jsr     EXEC_CloseLibrary(a6)
+
         /* Find our Process structure and determine how we were started. */
         sub.l   a1,a1
-        move.l  a1,-(sp)          /* no wb startup msg yet */
         jsr     EXEC_FindTask(a6)  /* FindTask(NULL) */
         move.l  d0,a4
         tst.l   pr_CLI(a4)        /* Running from CLI? */
@@ -94,6 +104,7 @@ start:
 .quit:  move.l  d7,d0
         rts
 
+.dos:   .asciz  "dos.library"
 .gfx:   .asciz  "graphics.library"
         .align  2
         
