@@ -607,7 +607,7 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     struct sec_header *headers;
     unsigned int i, mfm_bytes = 13100, nr_secs;
     int done = 0;
-    uint8_t key, good, progress = 0, head;
+    uint8_t key, good, progress = 0, head, cyl = 0;
     char progress_chars[] = "|/-\\";
 
     r->x = r->y = 0;
@@ -640,15 +640,21 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
 
     /* Start the test proper. Print option keys and instructions. */
     r->y--;
-    sprintf(s, "$1 Re-Seek Cylinder 0$");
+    sprintf(s, "$1 Re-Seek Current Cylinder$");
+    print_line(r);
+    r->y++;
+    sprintf(s, "$2 Cylinder: %u$", cyl);
     print_line(r);
     r->y += 2;
     sprintf(s, "-> Use an AmigaDOS disk written by a well-calibrated drive.");
     print_line(r);
     r->y++;
-    sprintf(s, "-> Adjust drive until 11 cyl-0 sectors found on both sides.");
+    sprintf(s, "-> Adjust drive until 11 valid sectors found on both sides.");
     print_line(r);
-    r->y += 2;
+    r->y += 5;
+    sprintf(s, "    (.:okay X:missing -:cyl-low +:cyl-high)");
+    print_line(r);
+    r->y -= 3;
 
     seek_track(0);
     head = 0;
@@ -660,6 +666,15 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
             goto out;
         if (key) {
             keycode_buffer = 0;
+            if (key == K_F2) {
+                cyl = (cyl == 0) ? 40 : (cyl == 40) ? 79 : 0;
+                r->y -= 5;
+                sprintf(s, "$2 Cylinder: %u$", cyl);
+                wait_bos();
+                print_line(r);
+                r->y += 5;
+                key = K_F1; /* re-seek */
+            }
             if (key == K_F1) {
                 /* Step away from and back to cylinder 0. Useful after 
                  * stepper and cyl-0 sensor adjustments. */
@@ -669,6 +684,7 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
                 print_line(r); /* overwrites side-0 text */
                 seek_track(80);
                 seek_cyl0();
+                seek_track(cyl*2);
                 head = 0;
                 wait_bos();
                 clear_text_rows(r->y, 1); /* clear seek text */
@@ -682,20 +698,21 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
         disk_read_track(mfmbuf, mfm_bytes);
         disk_wait_dma();
         nr_secs = mfm_decode_track(mfmbuf, headers, data, mfm_bytes);
-        /* Default sector map is "-----------" (all sectors missing). */
+        /* Default sector map is all X's (all sectors missing). */
         for (i = 0; i < 11; i++)
-            map[i] = '-';
+            map[i] = 'X';
         map[i] = '\0';
         /* Parse the sector headers, extract cyl# of each good sector. */
         while (nr_secs--) {
             struct sec_header *h = &headers[nr_secs];
-            if ((h->format = 0xff) && !h->data_csum && (h->sec < 11))
-                map[h->sec] = ((h->trk>>1) > 9) ? '+' : ('0' + (h->trk>>1));
+            if ((h->format == 0xff) && !h->data_csum && (h->sec < 11))
+                map[h->sec] = (((h->trk>>1) > cyl) ? '+' :
+                               ((h->trk>>1) < cyl) ? '-' : '.');
         }
-        /* Count the number of good (cyl 0) sectors found. */
+        /* Count the number of valid (for this cylinder) sectors found. */
         good = 0;
         for (i = 0; i < 11; i++) {
-            if (map[i] == '0')
+            if (map[i] == '.')
                 good++;
         }
         /* Update status message. */
