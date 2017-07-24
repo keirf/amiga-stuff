@@ -1,6 +1,6 @@
-OBJS += ../base/entry.o
-OBJS += ../base/cancellation.o
-OBJS += ../base/util.o
+OBJS += entry.o
+OBJS += cancellation.o
+OBJS += util.o
 OBJS += build.o
 OBJS += crash.o
 OBJS += audio.o
@@ -23,7 +23,7 @@ include ../base/Rules.mk
 .PHONY: all
 all: systest.zip
 
-../base/entry.o: AFLAGS += -DDETECT_MEMORY
+entry.o: AFLAGS += -DDETECT_MEMORY
 
 systest.zip: systest.adf systest.exe SysTest.info README.md
 	cp systest.exe SysTest
@@ -36,8 +36,8 @@ systest.zip: systest.adf systest.exe SysTest.info README.md
 systest.exe: systest.bin
 	python ../base/mk_amiga_exe.py $< $@
 
-systest.adf: ../base/bootblock.bin systest.bin
+systest.adf: bootblock.bin systest.bin
 	python ../base/mk_adf.py $^ $@
 
 clean::
-	$(RM) *.adf *.exe *.zip ../base/*.o ../base/*.bin SysTest
+	$(RM) *.adf *.exe *.zip SysTest

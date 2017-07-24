@@ -45,7 +45,15 @@ HOSTCFLAGS += -MMD -MF .$(@F).d
 	@echo CC $@
 	$(CC) $(CFLAGS) -c $< -o $@
 
+%.o: ../base/%.c Makefile
+	@echo CC $@
+	$(CC) $(CFLAGS) -c $< -o $@
+
 %.o: %.S Makefile
+	@echo AS $@
+	$(CC) $(AFLAGS) -c $< -o $@
+
+%.o: ../base/%.S Makefile
 	@echo AS $@
 	$(CC) $(AFLAGS) -c $< -o $@
 
@@ -59,7 +67,7 @@ HOSTCFLAGS += -MMD -MF .$(@F).d
 	$(OBJCOPY) -O binary $< $@
 	@chmod a-x $@
 
-%bootblock.bin: %bootblock.o
+bootblock.bin: bootblock.o
 	$(OBJCOPY) -O binary $< $@
 	chmod a-x $@
 
