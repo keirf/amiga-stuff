@@ -35,7 +35,8 @@ const static struct button joystick[] = {
     {  96, 30, 27, 15, "L" },
     { 180, 30, 27, 15, "R" },
     {  67,  2, 37, 15, "B1" },
-    { 200,  2, 37, 15, "B2" },
+    { 200,  2, 18, 15, "2" },
+    { 218,  2, 18, 15, "3" },
 };
 
 const static struct button gamepad[] = {
@@ -164,6 +165,7 @@ void joymousecheck(void)
     ports[0].start_x = 40;
     ports[0].start_y = 65;
     ports[1] = ports[0];
+    ports[1].type = T_JOYSTICK;
     ports[1].start_x = 320;
 
     while (!do_exit) {
