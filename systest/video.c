@@ -134,6 +134,6 @@ void videocheck(void)
     fill_rect(xres-10, 0, 10, yres, 3);
 
     /* All work is done by the copper. Just wait for exit. */
-    while (!do_exit)
-        do_exit |= (keycode_buffer == K_ESC);
+    while (!do_exit && (keycode_buffer != K_ESC))
+        continue;
 }

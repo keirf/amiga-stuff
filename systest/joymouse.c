@@ -173,7 +173,8 @@ void joymousecheck(void)
         /* Key handler. */
         if ((key = keycode_buffer) != 0) {
             keycode_buffer = 0;
-            do_exit |= (key == K_ESC);
+            if (key == K_ESC)
+                do_exit = 1;
             key -= K_F1;
             if (key < 2) {
                 /* Controller type change for one of the two ports. */

@@ -83,8 +83,7 @@ void audiocheck(void)
         keycode_buffer = 0;
 
         /* ESC also means exit */
-        do_exit |= (key == K_ESC);
-        if (do_exit)
+        if (do_exit || (key == K_ESC))
             break;
 
         key -= K_F1;

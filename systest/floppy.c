@@ -790,15 +790,14 @@ void floppycheck(void)
         print_line(&r);
         r.y -= 5;
 
-        for (;;) {
+        while (!do_exit) {
             /* Grab a key */
             while (!do_exit && !(key = keycode_buffer))
                 continue;
             keycode_buffer = 0;
             /* Handle exit conditions */
-            do_exit |= (key == K_ESC); /* ESC = exit */
-            if (do_exit)
-                break;
+            if (key == K_ESC)
+                do_exit = 1;
             /* Check for keys F1-F8 only */
             key -= K_F1; /* Offsets from F1 */
             if (key >= 8)

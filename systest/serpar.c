@@ -491,7 +491,8 @@ void serparcheck(void)
             while (!do_exit && !(key = keycode_buffer))
                 continue;
             keycode_buffer = 0;
-            do_exit |= (key == K_ESC);
+            if (key == K_ESC)
+                do_exit = 1;
             key -= K_F1;
         } while (!do_exit && (key >= 3));
 
