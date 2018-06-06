@@ -59,7 +59,7 @@ static void cia_timer_test(void)
     for (i = 0; i < 4; i++) {
         static const char *name[] = { "ATA", "ATB", "BTA", "BTB" };
         uint32_t diff = tot[i] > exp ? tot[i] - exp : exp - tot[i];
-        int in_tol = diff < (100*exp);
+        int in_tol = diff < div32(exp, 100);
         sprintf(s, "CIA%s %u -> %s", name[i], tot[i],
                 in_tol ? "OK (<1%, within tolerance)"
                 : "FAILED (>1%, out of tolerance)");
