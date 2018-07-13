@@ -20,8 +20,8 @@ def main(argv):
     in_dat = in_f.read()
     in_len = len(in_dat)
     assert (in_len & 3) == 0, "input is not longword padded"
-    out_f.write(struct.pack(">LLLLLL", HUNK_HEADER, 0, 1, 0, 0, in_len/4))
-    out_f.write(struct.pack(">LL", HUNK_CODE, in_len/4))
+    out_f.write(struct.pack(">LLLLLL", HUNK_HEADER, 0, 1, 0, 0, in_len//4))
+    out_f.write(struct.pack(">LL", HUNK_CODE, in_len//4))
     out_f.write(in_dat)
     out_f.write(struct.pack(">L", HUNK_END))
 
