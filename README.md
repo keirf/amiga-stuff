@@ -1,11 +1,28 @@
 # Amiga-Stuff: Native & Cross-Dev Code & Tools for Amigas
 
 
-## SysTest Binaries
+## SysTest
+
+### Binaries
 
 The latest build of SysTest can always be found [here (Google Drive)]
 (https://drive.google.com/open?id=0B6F45EdkSMp1ZGhXMWRvOXVDd3M).
 
+### Build From Source
+
+Requires a GCC cross-compiler toolchain targetting
+`m68k-unknown-elf`. I recommend binutils-2.28 and gcc-7.1.0, built
+with the following configuration lines on a Linux host or VM (note these are
+not exhaustive toolchain build instructions!):
+```
+# ../binutils-2.28/configure --prefix=/path/to/install --target=m68k-unknown-elf
+# ../gcc-7.1.0/configure --prefix=/path/to/install --target=m68k-unknown-elf --enable-languages=c --disable-libssp
+```
+
+Note that `/path/to/install` must be on your PATH both when building
+and using the cross compiler!
+
+To build SysTest: `cd systest && make`
 
 ## Summary
 
