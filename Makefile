@@ -1,13 +1,15 @@
 include base/Rules.mk
 
-SUBDIRS := base overscan systest inflate
+
+SUBDIRS := base host_tools overscan systest inflate
 
 .PHONY: all $(SUBDIRS)
-all:
+all: $(SUBDIRS)
 
 host_tools overscan systest:
 	$(MAKE) -C $@ all
 
-clean:: $(addsuffix clean,$(SUBDIRS))
-%clean: %
-	$(MAKE) -C $< clean
+clean::
+	@set -e; for subdir in $(SUBDIRS); do \
+		$(MAKE) -C $$subdir clean; \
+	done
