@@ -22,7 +22,8 @@ not exhaustive toolchain build instructions!):
 Note that `/path/to/install` must be on your PATH both when building
 and using the cross compiler!
 
-To build SysTest: `cd systest && make`
+To build SysTest: `make systest`. The ADF and distribution ZIP file are now
+in the systest/ folder.
 
 ## Summary
 
@@ -48,18 +49,18 @@ file header comments and run-time help info.
   Amiga system tests, built as a Workbench/CLI executable and as a
   bootable disk image.
 
-- **kickconv**
+- **host_tools/kickconv**
   Convert Kickstart ROM images: byte-swap, word-split, decrypt, fix checksums.
   Especially useful for creating images for burning to EPROM.
 
-- **crc16_ccitt.S**
+- **attic/crc16_ccitt.S**
   Table-driven CRC16-CCITT implementation.
 
-- **degzip_{gnu,portable}.c**
+- **inflate/degzip_{gnu,portable}.c**
   Analyse gzip files, extract and write out their raw Deflate streams
   (can then be processed by inflate, see below).
   Original version for GNU/Linux, and portable version fixed by phx / EAB.
 
-- **inflate.{S,asm}**
+- **inflate/inflate.{S,asm}**
   Small and efficient implementation of Inflate, as specified
   in RFC 1951 "DEFLATE Compressed Data Format Specification".

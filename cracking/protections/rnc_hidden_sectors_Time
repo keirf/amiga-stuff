@@ -1,0 +1,453 @@
+m68k/copylock time.dump 0 5e4 10000 time2.adf 
+Region list: 0-7ffff, 
+Region list: 2000-7ffff, 
+deadbeee 4e75 9ced cd02 rts
+D0: 00000000 D1: 00000000 D2: 00000000 D3: 00000000
+D4: 00000000 D5: 00000000 D6: 00000000 D7: 00000000
+A0: 0001001a A1: 00000000 A2: 00000000 A3: 00000000
+A4: 00000000 A5: 00000000 A6: 00000000 A7: 00002004
+PC: deadbeee SR: 0004 USP: 00002004 SSP: 00001000
+S=0 T=0 I=0 X=0 N=0 Z=1 V=0 C=0
+Stack trace from SP=00002004:
+ 00002004: 0000 0000 0000 0000 0000 0000 0000 0000 
+ 00002014: 0000 0000 0000 0000 0000 0000 0000 0000 
+ 00002024: 0000 0000 0000 0000 0000 0000 0000 0000 
+
+# -2(a6) = 8912
+# -4(a6) = 8911
+# -6(a6) = 8914
+# -8(a6) = 8915
+# -a(a6) = sync nr (0=8915,1=8914,2=8911,3=8912)
+# -e(a6) = mfmbuf (3d4)
+# -10(a6) = orig track #
+# -12(a6) = current track #
+# -14(a6) = protection track #
+# -16(a6) = drive #
+        
+-------------------------------
+00010000  41fa 0018       lea.l   1001a(pc),a0
+00010004  0c50 7716       cmpi.w  #7716,(a0)
+00010008  660e            bne.b   10018
+-------------------------------
+00010018  7000            moveq   #0,d0
+0001001a  6000 006e       bra.w   1008a
+-------------------------------
+0001008a  2f0e            move.l  a6,-(sp)
+0001008c  4dfa ff90       lea.l   1001e(pc),a6
+00010090  48d6 ffff       movem.l d0-d7/a0-sp,(a6)
+00010094  4dee 0040       lea.l   40(a6),a6
+00010098  2d5f fff8       move.l  (sp)+,-8(a6)
+0001009c  2239 0000 0010  move.l  10,d1
+000100a2  487a 000a       pea.l   100ae(pc)
+000100a6  23df 0000 0010  move.l  (sp)+,10
+000100ac  4afc            illegal
+000100ae  487a 001c       pea.l   100cc(pc)
+000100b2  23df 0000 0010  move.l  (sp)+,10
+000100b8  224f            movea.l sp,a1
+000100ba  4e7a 0002       movec.l cacr,d0
+-------------------------------
+000100cc  2e49            movea.l a1,sp
+000100ce  23c1 0000 0010  move.l  d1,10
+000100d4  4cf9 00ff 0000  movem.l 8,d0-d7
+000100da  0008 
+000100dc  48d6 00ff       movem.l d0-d7,(a6)
+000100e0  41fa 007e       lea.l   10160(pc),a0
+000100e4  23c8 0000 0010  move.l  a0,10
+000100ea  4afc            illegal
+000100ec  6000 000e       bra.w   100fc
+000100f0  6000 003a       bra.w   1012c
+000100f4  6000 0062       bra.w   10158
+000100f8  6000 000a       bra.w   10104
+000100fc  6000 000a       bra.w   10108
+00010100  6000 001a       bra.w   1011c
+00010104  6000 0022       bra.w   10128
+00010108  6000 0052       bra.w   1015c
+0001010c  6000 ffe2       bra.w   100f0
+00010110  6000 0006       bra.w   10118
+00010114  6000 000e       bra.w   10124
+00010118  6000 001a       bra.w   10134
+0001011c  6000 0036       bra.w   10154
+00010120  6000 002e       bra.w   10150
+00010124  6000 0012       bra.w   10138
+00010128  6000 ffe2       bra.w   1010c
+0001012c  6000 ffe2       bra.w   10110
+00010130  6000 0094       bra.w   101c6
+00010134  6000 0006       bra.w   1013c
+00010138  6000 ffbe       bra.w   100f8
+0001013c  6000 0006       bra.w   10144
+00010140  6000 ffb2       bra.w   100f4
+00010144  6000 ffba       bra.w   10100
+00010148  6000 ffca       bra.w   10114
+0001014c  6000 ffd2       bra.w   10120
+00010150  6000 ffee       bra.w   10140
+00010154  6000 fff6       bra.w   1014c
+00010158  6000 ffd6       bra.w   10130
+0001015c  6000 ffea       bra.w   10148
+00010160  48e7 80c0       movem.l d0/a0-a1,-(sp)
+00010164  41fa 0034       lea.l   1019a(pc),a0
+00010168  23c8 0000 0024  move.l  a0,24
+0001016e  41fa 0464       lea.l   105d4(pc),a0
+00010172  23c8 0000 0020  move.l  a0,20
+00010178  06af 0000 0002  addi.l  #2,e(sp)
+0001017e  000e 
+00010180  002f 0007 000c  ori.b   #7,c(sp)
+00010186  086f 0007 000c  bchg.b  #7,c(sp)
+0001018c  43fa fef0       lea.l   1007e(pc),a1
+00010190  671a            beq.b   101ac
+00010192  2051            movea.l (a1),a0
+00010194  20a9 0004       move.l  4(a1),(a0)
+00010198  6026            bra.b   101c0
+0001019a  027c f8ff       andi.w  #f8ff,sr
+0001019e  48e7 80c0       movem.l d0/a0-a1,-(sp)
+000101a2  43fa feda       lea.l   1007e(pc),a1
+000101a6  2051            movea.l (a1),a0
+000101a8  20a9 0004       move.l  4(a1),(a0)
+000101ac  206f 000e       movea.l e(sp),a0
+000101b0  2288            move.l  a0,(a1)
+000101b2  2350 0004       move.l  (a0),4(a1)
+000101b6  2028 fffc       move.l  -4(a0),d0
+000101ba  4680            not.l   d0
+000101bc  4840            swap    d0
+000101be  b190            eor.l   d0,(a0)
+000101c0  4cdf 0301       movem.l (sp)+,d0/a0-a1
+000101c4  4e73            rte
+000101c6  41fa 001e       lea.l   101e6(pc),a0
+000101ca  43f9 0000 0008  lea.l   8,a1
+000101d0  45fa feb8       lea.l   1008a(pc),a2
+000101d4  7007            moveq   #7,d0
+000101d6  7200            moveq   #0,d1
+000101d8  3218            move.w  (a0)+,d1
+000101da  d28a            add.l   a2,d1
+000101dc  22c1            move.l  d1,(a1)+
+000101de  51c8 fff6       dbf.w   d0,101d6
+000101e2  6000 0012       bra.w   101f6
+-------------------------------
+000101f6  203a fe26       move.l  1001e(pc),d0
+000101fa  4e56 ffea       link.w  a6,#-16
+000101fe  48e7 30c0       movem.l d2-d3/a0-a1,-(sp)
+00010202  6100 00e0       bsr.w   102e4
+00010206  7603            moveq   #3,d3         # try all 4 drives in sequence
+# for_each_drive...
+00010208  6100 0146       bsr.w   10350         # grab_drive
+0001020c  6600 0080       bne.w   1028e
+00010210  342e ffec       move.w  -14(a6),d2    
+00010214  6100 0244       bsr.w   1045a         # seek_trk(1)
+00010218  6100 01dc       bsr.w   103f6         # wait_dskrdy
+0001021c  426e fff6       clr.w   -a(a6)        # first sync
+# for_each_sync...
+00010220  7402            moveq   #2,d2
+# for_each_dma...
+00010222  6100 00b2       bsr.w   102d6         # clear_mfmbuf
+00010226  302e fff6       move.w  -a(a6),d0
+0001022a  d040            add.w   d0,d0
+0001022c  3236 00f8       move.w  -8(a6,d0.w*1),d1 # sync (8915)
+00010230  7028            moveq   #28,d0        # 0x28 (40) bytes
+00010232  206e fff2       movea.l -e(a6),a0
+00010236  6100 0144       bsr.w   1037c         # start_disk_dma
+0001023a  6100 017c       bsr.w   103b8         # wait_disk_dma
+0001023e  664e            bne.b   1028e         # fail?
+00010240  0c50 44a9       cmpi.w  #44a9,(a0)
+00010244  662e            bne.b   10274         # first word is 44a9...
+00010246  0268 5555 0012  andi.w  #5555,12(a0)
+0001024c  6626            bne.b   10274         # last word is encoded 00
+0001024e  41e8 0018       lea.l   18(a0),a0
+00010252  700c            moveq   #c,d0         # check 12 bytes at 0x18
+00010254  6100 00d8       bsr.w   1032e         # for flux reversals
+00010258  b07c 0054       cmp.w   #54,d0        # >= 84 in 96?
+0001025c  6c30            bge.b   1028e         # good, if so...
+0001025e  0c6e 0002 fff6  cmpi.w  #2,-a(a6)
+00010264  670e            beq.b   10274         # no more for sync 2=8911
+00010266  0c6e 0003 fff6  cmpi.w  #3,-a(a6)
+0001026c  6706            beq.b   10274         # no more for sync 3=8912
+0001026e  b07c 000c       cmp.w   #c,d0         # <= 12 in 96?
+00010272  6f1a            ble.b   1028e         # good, if so...
+00010274  51ca ffac       dbf.w   d2,10222
+# end for_each_dma
+00010278  066e 0001 fff6  addi.w  #1,-a(a6)
+0001027e  0c6e 0004 fff6  cmpi.w  #4,-a(a6)
+00010284  669a            bne.b   10220
+# end for_each_sync
+00010286  6100 00e0       bsr.w   10368         # release_drive
+0001028a  7000            moveq   #0,d0
+0001028c  602c            bra.b   102ba         # cleanup_and_exit
+#
+0001028e  6100 00d8       bsr.w   10368         # release_drive
+00010292  4680            not.l   d0
+00010294  6616            bne.b   102ac         # SUCCESS
+00010296  302e ffea       move.w  -16(a6),d0
+0001029a  5240            addq.w  #1,d0
+0001029c  0240 0003       andi.w  #3,d0
+000102a0  3d40 ffea       move.w  d0,-16(a6)    # next drive...
+000102a4  51cb ff62       dbf.w   d3,10208
+# end for_each_drive
+000102a8  7000            moveq   #0,d0         # d0=0=failure
+000102aa  600e            bra.b   102ba         # FAIL
+
+# SUCCESS:
+000102ac  206e fff2       movea.l -e(a6),a0     # a0 = mfmbuf
+000102b0  7204            moveq   #4,d1
+000102b2  7000            moveq   #0,d0
+000102b4  d098            add.l   (a0)+,d0      # sum 5 longs into d0
+000102b6  51c9 fffc       dbf.w   d1,102b4      # (0x00-0x14)
+# FAIL:
+000102ba  43f9 0000 03d4  lea.l   3d4,a1
+000102c0  41fa 029e       lea.l   10560(pc),a0
+000102c4  6100 005e       bsr.w   10324         # restore mfmbuf area
+000102c8  322e ffea       move.w  -16(a6),d1    # d1 = drive #
+000102cc  4cdf 030c       movem.l (sp)+,d2-d3/a0-a1
+000102d0  4e5e            unlk    a6
+000102d2  6000 02bc       bra.w   10590         # EXIT
+
+# clear_mfmbuf:
+000102d6  206e fff2       movea.l -e(a6),a0     # -e(a6) = mfmbuf
+000102da  720a            moveq   #a,d1
+000102dc  4298            clr.l   (a0)+
+000102de  51c9 fffc       dbf.w   d1,102dc
+000102e2  4e75            rts
+
+000102e4  0240 0003       andi.w  #3,d0
+000102e8  3d40 ffea       move.w  d0,-16(a6)
+000102ec  3d7c 0001 ffec  move.w  #1,-14(a6)    # track 1
+000102f2  41f9 0000 03d4  lea.l   3d4,a0
+000102f8  2d48 fff2       move.l  a0,-e(a6)     # dma to 3d4
+000102fc  3d7c 8915 fff8  move.w  #8915,-8(a6)
+00010302  3d7c 8914 fffa  move.w  #8914,-6(a6)
+00010308  3d7c 8911 fffc  move.w  #8911,-4(a6)
+0001030e  3d7c 8912 fffe  move.w  #8912,-2(a6)
+00010314  3d7c ffff ffee  move.w  #ffff,-12(a6) # scratch teh trk counter
+0001031a  41f9 0000 03d4  lea.l   3d4,a0
+00010320  43fa 023e       lea.l   10560(pc),a1  # save mfmbuf area
+00010324  720a            moveq   #a,d1
+00010326  22d8            move.l  (a0)+,(a1)+
+00010328  51c9 fffc       dbf.w   d1,10326
+0001032c  4e75            rts
+
+# count_flux_reversals(a0=pt,d0=#bytes):
+0001032e  48a7 7000       movem.w d1-d3,-(sp)
+00010332  3200            move.w  d0,d1
+00010334  5341            subq.w  #1,d1
+00010336  7000            moveq   #0,d0
+00010338  1618            move.b  (a0)+,d3
+0001033a  7407            moveq   #7,d2
+0001033c  e303            asl.b   #1,d3
+0001033e  6402            bcc.b   10342
+00010340  5240            addq.w  #1,d0
+00010342  51ca fff8       dbf.w   d2,1033c
+00010346  51c9 fff0       dbf.w   d1,10338
+0001034a  4c9f 000e       movem.w (sp)+,d1-d3
+0001034e  4e75            rts
+
+# grab_drive:
+00010350  6100 00ee       bsr.w   10440         # motor_on
+00010354  6100 0142       bsr.w   10498         # seek_trk0
+00010358  6608            bne.b   10362
+0001035a  3d41 fff0       move.w  d1,-10(a6)    # -10(a6) = orig track nr
+0001035e  7000            moveq   #0,d0
+00010360  4e75            rts
+00010362  3d40 fff0       move.w  d0,-10(a6)
+00010366  4e75            rts
+
+# release_drive:
+00010368  2f00            move.l  d0,-(sp)
+0001036a  342e fff0       move.w  -10(a6),d2
+0001036e  6b04            bmi.b   10374
+00010370  6100 00e8       bsr.w   1045a         # seek_trk(orig)
+00010374  6100 00a2       bsr.w   10418         # motor_off
+00010378  201f            move.l  (sp)+,d0
+0001037a  4e75            rts
+
+# start_disk_dma(a0=pt,d0=bytes,d1=sync):
+0001037c  43f9 00df f000  lea.l   dff000,a1
+00010382  337c 8010 0096  move.w  #8010,96(a1)
+00010388  337c 4000 0024  move.w  #4000,24(a1)
+0001038e  337c 6600 009e  move.w  #6600,9e(a1)
+00010394  337c 9500 009e  move.w  #9500,9e(a1)
+0001039a  3341 007e       move.w  d1,7e(a1)
+0001039e  2348 0020       move.l  a0,20(a1)
+000103a2  337c 0002 009c  move.w  #2,9c(a1)
+000103a8  e248            lsr.w   #1,d0
+000103aa  0040 8000       ori.w   #8000,d0
+000103ae  3340 0024       move.w  d0,24(a1)
+000103b2  3340 0024       move.w  d0,24(a1)
+000103b6  4e75            rts
+
+# wait_disk_dma:
+000103b8  43f9 00df f000  lea.l   dff000,a1
+000103be  203c 0000 0bb8  move.l  #bb8,d0
+000103c4  6100 0180       bsr.w   10546
+000103c8  0829 0001 001f  btst.b  #1,1f(a1)
+000103ce  6616            bne.b   103e6
+000103d0  6100 0166       bsr.w   10538         # check_ciaata
+000103d4  66f2            bne.b   103c8
+000103d6  337c 0002 009c  move.w  #2,9c(a1)
+000103dc  337c 4000 0024  move.w  #4000,24(a1)
+000103e2  70ff            moveq   #-1,d0
+000103e4  4e75            rts
+000103e6  337c 0002 009c  move.w  #2,9c(a1)
+000103ec  337c 4000 0024  move.w  #4000,24(a1)
+000103f2  7000            moveq   #0,d0
+000103f4  4e75            rts
+
+# wait_dskrdy:
+000103f6  203c 0000 0bb8  move.l  #bb8,d0
+000103fc  6100 0148       bsr.w   10546         # set_ciaata
+00010400  0839 0005 00bf  btst.b  #5,ciaapra    # dskrdy?
+00010406  e001 
+00010408  670a            beq.b   10414
+0001040a  6100 012c       bsr.w   10538         # check_ciaata
+0001040e  66f0            bne.b   10400
+-------------------------------
+00010414  7000            moveq   #0,d0
+00010416  4e75            rts
+
+# motor_off:
+00010418  72ff            moveq   #-1,d1
+0001041a  13c1 00bf d100  move.b  d1,ciabprb
+00010420  302e ffea       move.w  -16(a6),d0
+00010424  5680            addq.l  #3,d0
+00010426  0181            bclr.l  d0,d1
+00010428  13c1 00bf d100  move.b  d1,ciabprb
+0001042e  01c1            bset.l  d0,d1
+00010430  13c1 00bf d100  move.b  d1,ciabprb
+00010436  33fc 0400 00df  move.w  #400,adkcon
+0001043c  f09e 
+0001043e  4e75            rts
+
+# motor_on:
+00010440  72ff            moveq   #-1,d1
+00010442  13c1 00bf d100  move.b  d1,ciabprb
+00010448  0881 0007       bclr.l  #7,d1
+0001044c  61cc            bsr.b   1041a
+0001044e  203c 0000 001e  move.l  #1e,d0
+00010454  6100 00ce       bsr.w   10524
+00010458  4e75            rts
+
+# seek_trk(d2)
+0001045a  302e ffee       move.w  -12(a6),d0
+0001045e  6a06            bpl.b   10466
+-------------------------------
+00010466  3f02            move.w  d2,-(sp)
+00010468  e248            lsr.w   #1,d0
+0001046a  e24a            lsr.w   #1,d2
+0001046c  7201            moveq   #1,d1
+0001046e  9440            sub.w   d0,d2
+00010470  671a            beq.b   1048c
+00010472  6a04            bpl.b   10478
+-------------------------------
+00010478  7003            moveq   #3,d0
+0001047a  b43c 0001       cmp.b   #1,d2
+0001047e  6e02            bgt.b   10482
+00010480  5380            subq.l  #1,d0
+00010482  6100 004a       bsr.w   104ce         # step_heads
+00010486  7003            moveq   #3,d0
+00010488  5342            subq.w  #1,d2
+0001048a  66f6            bne.b   10482
+0001048c  3d5f ffee       move.w  (sp)+,-12(a6)
+00010490  6100 0062       bsr.w   104f4
+00010494  7000            moveq   #0,d0
+00010496  4e75            rts
+
+# seek_trk0() -> d1 = prev trk
+00010498  48e7 2000       movem.l d2,-(sp)
+0001049c  7455            moveq   #55,d2
+0001049e  0839 0004 00bf  btst.b  #4,ciaapra
+000104a4  e001 
+000104a6  6710            beq.b   104b8
+000104a8  7003            moveq   #3,d0
+000104aa  72ff            moveq   #-1,d1
+000104ac  6100 0020       bsr.w   104ce         # step_heads
+000104b0  51ca ffec       dbf.w   d2,1049e
+000104b4  70ff            moveq   #-1,d0
+000104b6  6010            bra.b   104c8
+000104b8  426e ffee       clr.w   -12(a6)
+000104bc  6100 0036       bsr.w   104f4         # select_drive
+000104c0  7255            moveq   #55,d1
+000104c2  9282            sub.l   d2,d1
+000104c4  e349            lsl.w   #1,d1         # d1 = prev track
+000104c6  7000            moveq   #0,d0         # d0 = status
+000104c8  4cdf 0004       movem.l (sp)+,d2
+000104cc  4e75            rts
+
+# step_heads:
+000104ce  2f00            move.l  d0,-(sp)
+000104d0  6100 002e       bsr.w   10500         # get_ciabprb
+000104d4  4a01            tst.b   d1
+000104d6  6b04            bmi.b   104dc
+000104d8  0880 0001       bclr.l  #1,d0
+000104dc  0880 0000       bclr.l  #0,d0
+000104e0  13c0 00bf d100  move.b  d0,ciabprb
+000104e6  08c0 0000       bset.l  #0,d0
+000104ea  13c0 00bf d100  move.b  d0,ciabprb
+000104f0  201f            move.l  (sp)+,d0
+000104f2  6030            bra.b   10524         # wait_ms
+
+# select_drive:
+000104f4  6100 000a       bsr.w   10500         # get_ciabprb
+000104f8  13c0 00bf d100  move.b  d0,ciabprb
+000104fe  4e75            rts
+
+# get_ciabprb:
+00010500  1039 00bf d100  move.b  ciabprb,d0
+00010506  0000 007f       ori.b   #7f,d0
+0001050a  3f01            move.w  d1,-(sp)
+0001050c  322e ffea       move.w  -16(a6),d1
+00010510  5601            addq.b  #3,d1
+00010512  0380            bclr.l  d1,d0
+00010514  321f            move.w  (sp)+,d1
+00010516  082e 0000 ffef  btst.b  #0,-11(a6)
+0001051c  6704            beq.b   10522
+0001051e  0880 0002       bclr.l  #2,d0
+00010522  4e75            rts
+
+# wait_ms(d0=ms):
+00010524  6100 0020       bsr.w   10546         # set_ciaata
+00010528  0839 0000 00bf  btst.b  #0,ciaacra
+0001052e  ee01 
+00010530  66f6            bne.b   10528
+00010532  5380            subq.l  #1,d0
+00010534  66ee            bne.b   10524
+00010536  4e75            rts
+
+# check_ciaata:
+00010538  0839 0000 00bf  btst.b  #0,ciaacra
+0001053e  ee01 
+00010540  661c            bne.b   1055e
+00010542  5380            subq.l  #1,d0
+00010544  6718            beq.b   1055e
+
+# set_ciaata:
+00010546  13fc 0008 00bf  move.b  #8,ciaacra
+0001054c  ee01 
+0001054e  13fc 00cc 00bf  move.b  #cc,ciaatalo
+00010554  e401 
+00010556  13fc 0002 00bf  move.b  #2,ciaatahi
+0001055c  e501 
+0001055e  4e75            rts
+-------------------------------
+
+# EXIT:
+00010590  41fa facc       lea.l   1005e(pc),a0
+00010594  2140 001c       move.l  d0,1c(a0)
+00010598  41fa fa84       lea.l   1001e(pc),a0
+0001059c  2080            move.l  d0,(a0)
+0001059e  2141 0004       move.l  d1,4(a0)
+000105a2  4cfa 00ff fab8  movem.l 1005e(pc),d0-d7
+000105a8  2039 0000 0004  move.l  4,d0
+000105ae  2200            move.l  d0,d1
+000105b0  41fa 0022       lea.l   105d4(pc),a0
+000105b4  2f48 0002       move.l  a0,2(sp)
+000105b8  4afc            illegal
+000105ba  203a faca       move.l  10086(pc),d0
+000105be  6b04            bmi.b   105c4
+-------------------------------
+000105c4  48f9 00ff 0000  movem.l d0-d7,8
+000105ca  0008 
+000105cc  4cfa 7fff fa4e  movem.l 1001e(pc),d0-d7/a0-a6
+000105d2  4e73            rte
+000105d4  b0bc 9ced cd02  cmp.l   #9cedcd02,d0
+000105da  6604            bne.b   105e0
+000105dc  7001            moveq   #1,d0
+000105de  4e75            rts
+000105e0  7000            moveq   #0,d0
+000105e2  4e75            rts
+-------------------------------

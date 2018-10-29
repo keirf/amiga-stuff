@@ -1,19 +1,13 @@
 include base/Rules.mk
 
-SUBDIRS := base overscan systest
+SUBDIRS := base overscan systest inflate
 
-.PHONY: all
+.PHONY: all $(SUBDIRS)
 all:
 
-hunk_loader: hunk_loader.c
-	$(HOSTCC) $(HOSTCFLAGS) $< -o $@
-
-kickconv: kickconv.c
-	$(HOSTCC) $(HOSTCFLAGS) $< -o $@
+host_tools overscan systest:
+	$(MAKE) -C $@ all
 
 clean:: $(addsuffix clean,$(SUBDIRS))
 %clean: %
 	$(MAKE) -C $< clean
-
-clean::
-	$(RM) degzip kickconv hunk_loader

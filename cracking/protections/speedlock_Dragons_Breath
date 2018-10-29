@@ -1,0 +1,327 @@
+# SPEEDLOCK, DRAGON'S BREATH
+# --------------------------
+
+# Polls DSKBYTR and times 512 bytes from disk starting at a fixed offset
+# from the disk index. Speedlock then checks for a sequence of long
+# bitcells (+10%) followed by short bitcells (-10%).
+# Here, the long/short sequences should each be ~120 bytes (960 bits), and the
+# long sequence should begin ~9756 bytes (78048 bits) after the disk index.
+
+m68k/copylock a.dump 260ea 3a6 260ea a.dsk 
+
+000260ea  48e7 3f3e       movem.l d2-d7/a2-a6,-(sp)
+000260ee  95ca            suba.l  a2,a2
+000260f0  41fa 0018       lea.l   2610a(pc),a0
+000260f4  43fa 0388       lea.l   2647e(pc),a1
+000260f8  47fa 0388       lea.l   26482(pc),a3
+000260fc  26aa 0080       move.l  80(a2),(a3)
+00026100  22aa 0024       move.l  24(a2),(a1)
+00026104  2548 0080       move.l  a0,80(a2)
+00026108  4e40            trap    #0
+0002610a  46fc 2700       move.w  #2700,sr
+0002610e  41fa 009a       lea.l   261aa(pc),a0
+00026112  4cfa 00ff 004e  movem.l 26164(pc),d0-d7
+00026118  4e69            move.l  usp,a1
+0002611a  4851            pea.l   (a1)
+0002611c  43fa 0022       lea.l   26140(pc),a1
+00026120  45fa 0026       lea.l   26148(pc),a2
+00026124  47fa 006c       lea.l   26192(pc),a3
+00026128  49fa 0072       lea.l   2619c(pc),a4
+0002612c  4bfa 0074       lea.l   261a2(pc),a5
+00026130  4dfa 0052       lea.l   26184(pc),a6
+00026134  3e3c 00b4       move.w  #b4,d7
+00026138  2010            move.l  (a0),d0
+0002613a  b380            eor.l   d1,d0
+0002613c  6114            bsr.b   26152
+0002613e  d481            add.l   d1,d2
+00026140  b580            eor.l   d2,d0
+00026142  4843            swap    d3
+00026144  3203            move.w  d3,d1
+00026146  9283            sub.l   d3,d1
+00026148  d682            add.l   d2,d3
+0002614a  43d3            lea.l   (a3),a1
+0002614c  6104            bsr.b   26152
+0002614e  b780            eor.l   d3,d0
+00026150  6032            bra.b   26184
+00026152  0241 0007       andi.w  #7,d1
+00026156  d431 1000       add.b   0(a1,d1.w*1),d2
+0002615a  d434 1000       add.b   0(a4,d1.w*1),d2
+0002615e  d436 1000       add.b   0(a6,d1.w*1),d2
+00026162  4e75            rts
+-------------------------------
+00026184  e9ba            rol.l   d4,d2
+00026186  3205            move.w  d5,d1
+00026188  43d5            lea.l   (a5),a1
+0002618a  4e66            move.l  a6,usp
+0002618c  4dd2            lea.l   (a2),a6
+0002618e  61c2            bsr.b   26152
+00026190  d882            add.l   d2,d4
+00026192  b980            eor.l   d4,d0
+00026194  4e6e            move.l  usp,a6
+00026196  4844            swap    d4
+00026198  e8bd            ror.l   d4,d5
+0002619a  d285            add.l   d5,d1
+0002619c  9681            sub.l   d1,d3
+0002619e  da83            add.l   d3,d5
+000261a0  9486            sub.l   d6,d2
+000261a2  4846            swap    d6
+000261a4  e9be            rol.l   d4,d6
+# Note[1]: First execution of the following write overites second word of the
+# following DBF.W instruction. The new DBF.W instruction is executed because
+# MOVE.L prefeteches the second word *after* writing its result.
+000261a6  20c0            move.l  d0,(a0)+      # Note[1]
+000261a8  51cf ff8e       dbf.w   d7,26138
+000261ac  225f            movea.l (sp)+,a1
+000261ae  4e61            move.l  a1,usp
+000261b0  41fa 0058       lea.l   2620a(pc),a0
+000261b4  43fa 0030       lea.l   261e6(pc),a1
+000261b8  45fa 001a       lea.l   261d4(pc),a2
+000261bc  223c 76fe d512  move.l  #76fed512,d1
+000261c2  243c ed89 16fe  move.l  #ed8916fe,d2
+000261c8  7800            moveq   #0,d4
+000261ca  3c3c 0032       move.w  #32,d6
+000261ce  3a06            move.w  d6,d5
+000261d0  3e3c 0139       move.w  #139,d7
+000261d4  3010            move.w  (a0),d0
+000261d6  b380            eor.l   d1,d0
+000261d8  d282            add.l   d2,d1
+000261da  b380            eor.l   d1,d0
+000261dc  1832 5000       move.b  0(a2,d5.w*1),d4
+000261e0  e79c            rol.l   #3,d4
+000261e2  b580            eor.l   d2,d0
+# Note[2]: The following ADD.L modifies the immediately following two
+# instructions. However, ADD.L prefetches two words in teh instruction stream
+# *before* writing its result. Hence the previous opcode values are executed.
+# Also note that a subsequent SUB.L reverts the opcodes back to their previous
+# value in main memory, ready for prefetch during the next loop iteration.
+000261e4  d591            add.l   d2,(a1)       # Note [2]
+000261e6  2602            move.l  d2,d3
+000261e8  b981            eor.l   d4,d1
+000261ea  4844            swap    d4
+000261ec  4841            swap    d1
+000261ee  5345            subq.w  #1,d5
+000261f0  6502            bcs.b   261f4
+000261f2  2a06            move.l  d6,d5
+000261f4  2644            movea.l d4,a3
+000261f6  2811            move.l  (a1),d4
+000261f8  b980            eor.l   d4,d0
+000261fa  280b            move.l  a3,d4
+000261fc  b380            eor.l   d1,d0
+000261fe  b382            eor.l   d1,d2
+00026200  4842            swap    d2
+00026202  9791            sub.l   d3,(a1)       # Note [2]
+00026204  30c0            move.w  d0,(a0)+
+00026206  d48b            add.l   a3,d2
+00026208  51cf ffca       dbf.w   d7,261d4
+0002620c  41fa 0222       lea.l   26430(pc),a0
+00026210  21c8 0024       move.l  a0,24         # trace -> 26430
+00026214  41fa 000e       lea.l   26224(pc),a0
+00026218  43fa 026c       lea.l   26486(pc),a1  # 26486 = decrypt buffer
+0002621c  22c8            move.l  a0,(a1)+      # save address of 1st insn
+0002621e  3290            move.w  (a0),(a1)     # save 1st word of 1st insn
+00026220  47fa fecc       lea.l   260ee(pc),a3
+00026224  46fc a700       move.w  #a700,sr      # enable trace mode
+00026228  4e71            nop
+0002622a  4e71            nop
+0002622c  6000 003e       bra.w   2626c
+-------------------------------
+0002626c  4bf9 76fe b41f  lea.l   76feb41f,a5
+00026272  dbfc 89c1 1fe1  adda.l  #89c11fe1,a5  # a5 = bfd400
+00026278  49ed fd00       lea.l   -300(a5),a4   # a4 = bfd100
+0002627c  4dec dead       lea.l   -2153(a4),a6  
+00026280  ddfc 0020 4053  adda.l  #204053,a6    # a6 = dff000
+00026286  3e2e 0002       move.w  2(a6),d7
+0002628a  3c2e 001e       move.w  1e(a6),d6
+0002628e  3a2e 001c       move.w  1c(a6),d5
+00026292  382e 0010       move.w  10(a6),d4
+00026296  41fa 008a       lea.l   26322(pc),a0
+0002629a  4890 00f0       movem.w d4-d7,(a0)
+0002629e  41fa 008a       lea.l   2632a(pc),a0
+000262a2  30bc 0005       move.w  #5,(a0)
+000262a6  363c 8000       move.w  #8000,d3
+000262aa  3d7c 7fff 009a  move.w  #7fff,9a(a6)  # clr intena
+000262b0  3d7c 7fff 009c  move.w  #7fff,9c(a6)  # clr intreq
+000262b6  3d7c 03ff 0096  move.w  #3ff,96(a6)   # clr dmacon
+000262bc  50d5            st.b    (a5)
+000262be  51ed 0100       sf.b    100(a5)       # ciabta = 0x00ff
+000262c2  1b7c 0011 0a00  move.b  #11,a00(a5)   # ciabcra: start timer a
+000262c8  50d4            st.b    (a4)          # ciabprb: deselect all
+000262ca  0214 007f       andi.b  #7f,(a4)      # /MTR
+000262ce  7800            moveq   #0,d4
+000262d0  1838 00bf       move.b  bf,d4         # (bf).b = drive#
+000262d4  5604            addq.b  #3,d4
+000262d6  0994            bclr.b  d4,(a4)       # /SELx
+000262d8  0014 0004       ori.b   #4,(a4)       # bottom head (side 0)
+000262dc  3d7c 6e00 009e  move.w  #6e00,9e(a6)  # adkcon:
+000262e2  3d7c 9100 009e  move.w  #9100,9e(a6)  # MFM timing, no wordsync
+000262e8  303c 9fff       move.w  #9fff,d0
+000262ec  51c8 fffe       dbf.w   d0,262ec      # delay loop, wait for motor
+
+# retry:
+000262f0  41fa 0038       lea.l   2632a(pc),a0  # 2632a = retry counter?
+000262f4  3210            move.w  (a0),d1
+000262f6  5341            subq.w  #1,d1
+000262f8  6700 00d8       beq.w   263d2         # bail if retried 4 times
+000262fc  3081            move.w  d1,(a0)
+000262fe  303c 2593       move.w  #2593,d0
+00026302  41fa 0028       lea.l   2632c(pc),a0
+00026306  3d43 0024       move.w  d3,24(a6)     # Zero length disk DMA
+0002630a  3d43 0024       move.w  d3,24(a6)     # (pointless when WORDSYNC=0?)
+0002630e  43d3            lea.l   (a3),a1       # a3 = timebuf
+00026310  21c8 0080       move.l  a0,80
+00026314  41ee 001a       lea.l   1a(a6),a0     # a0 = dff01a (dskbytr)
+00026318  323c 01ff       move.w  #1ff,d1
+0002631c  74ff            moveq   #-1,d2
+0002631e  4e40            trap    #0            # disk_poll
+00026320  6036            bra.b   26358
+-------------------------------
+
+# disk_poll:
+0002632c  4a2d 0900       tst.b   900(a5)
+00026330  082d 0004 0900  btst.b  #4,900(a5)    # wait for dskidx
+00026336  56ca fff8       dbne.w  d2,26330
+0002633a  6608            bne.b   26344
+-------------------------------
+00026344  4a50            tst.w   (a0)          # wait for byte in dskbytr
+00026346  6afc            bpl.b   26344
+00026348  51c8 fffa       dbf.w   d0,26344      # 0x2594 (9620) bytes...
+0002634c  4a50            tst.w   (a0)
+0002634e  6afc            bpl.b   2634c
+00026350  12d5            move.b  (a5),(a1)+    # save talo...
+00026352  51c9 fff8       dbf.w   d1,2634c      # ...for 512 mfm bytes
+00026356  4e73            rte
+
+# Turn times into deltas: d_k = t_{k-1} = t_k
+# Since each CIA timer tick is ~1.4us, each delta = d_k * 1.4us
+00026358  41d3            lea.l   (a3),a0       # a0 = timebuf
+0002635a  343c 01fe       move.w  #1fe,d2
+0002635e  1018            move.b  (a0)+,d0
+00026360  1210            move.b  (a0),d1
+00026362  9001            sub.b   d1,d0         # d_k = t_{k-1} - t_k
+00026364  10c0            move.b  d0,(a0)+
+00026366  1001            move.b  d1,d0
+00026368  51ca fff6       dbf.w   d2,26360
+# Calculate EWMA: av_k = (av_{k-1} + d_k + ... + d_{k+6}) / 2
+# Each av_k is approx 7 times larger than each t_k it is derived from.
+# [av_k = (7*d + av_{k-1})/2 = ... = 7 * (1/2 + 1/4 + 1/8 + ...) = 7]
+# Hence each av_k tick is ~0.2us
+0002636c  41d3            lea.l   (a3),a0       # a0 = timebuf
+0002636e  323c 01f7       move.w  #1f7,d1
+00026372  1018            move.b  (a0)+,d0      # sum 8 deltas
+00026374  d018            add.b   (a0)+,d0
+00026376  d018            add.b   (a0)+,d0
+00026378  d018            add.b   (a0)+,d0
+0002637a  d018            add.b   (a0)+,d0
+0002637c  d018            add.b   (a0)+,d0
+0002637e  d018            add.b   (a0)+,d0
+00026380  d018            add.b   (a0)+,d0
+00026382  41e8 fff9       lea.l   -7(a0),a0
+00026386  e608            lsr.b   #3,d0
+00026388  e508            lsl.b   #2,d0         # sum = (sum / 8) * 4
+0002638a  1080            move.b  d0,(a0)       # write back
+0002638c  51c9 ffe4       dbf.w   d1,26372
+# Find a change in the av_k values
+00026390  41eb 0018       lea.l   18(a3),a0     # a0 = &timebuf[24]
+00026394  43eb 0188       lea.l   188(a3),a1    # a1 = &timebuf[392]
+00026398  1018            move.b  (a0)+,d0
+0002639a  b018            cmp.b   (a0)+,d0      # av_k != av_24 ?
+0002639c  6604            bne.b   263a2         # Then branch...
+0002639e  b3c8            cmpa.l  a0,a1         # No, so try k++
+000263a0  66f8            bne.b   2639a
+# Check for timing differences. The loop here is weird, since the sampling
+# results are overwritten on each iteration, rather than accumulating.
+# This is probably a programming error.
+000263a2  41e8 ffd8       lea.l   -28(a0),a0    # a0 -= 40
+000263a6  7003            moveq   #3,d0         # Sample 4 times
+000263a8  7200            moveq   #0,d1
+000263aa  7400            moveq   #0,d2
+000263ac  7600            moveq   #0,d3
+000263ae  7a08            moveq   #8,d5
+000263b0  1428 0050       move.b  50(a0),d2 
+000263b4  9410            sub.b   (a0),d2       # d2 = av_{k+80} - av_k
+000263b6  b405            cmp.b   d5,d2
+000263b8  56c1            sne.b   d1            # d1 = (d2 != 8) ? 0xff : 0x00
+000263ba  1410            move.b  (a0),d2
+000263bc  9428 00a0       sub.b   a0(a0),d2     # d2 = av_k - av_{k+160}
+000263c0  5248            addq.w  #1,a0         # k++
+000263c2  b405            cmp.b   d5,d2
+000263c4  56c3            sne.b   d3            # d3 = (d2 != 8) ? 0xff : 0x00
+000263c6  51c8 ffe8       dbf.w   d0,263b0
+# We need the long/short sections to differ by +/- 8 av_k ticks respectively.
+# 8 av_k ticks ~= 8 * 0.2us = 1.6us
+# This is the time difference for reading a byte. Thus the bit difference
+# is 0.2us. The normal bitcell timing is 2us, so this corresponds to a precise
+# variation of +/- 10% timing.
+# Timing should be 120 long bytes (+10%), followed by 120 short bytes (-10%)
+# The timing change should start about 9756 bytes (78048 bits) after dskidx
+000263ca  d601            add.b   d1,d3         # either diff != 8?
+000263cc  56c0            sne.b   d0            # Then d0.b = 0xff...
+000263ce  6600 ff20       bne.w   262f0         # ...and retry on failure
+000263d2  4600            not.b   d0            # Failure: d0.w = 0x0000
+000263d4  4880            ext.w   d0            # Success: d0.w = 0xffff
+# Restore custom registers (dmacon, intena, et al)
+000263d6  363c 8000       move.w  #8000,d3
+000263da  4cba 00f0 ff44  movem.w 26322(pc),d4-d7
+000263e0  8843            or.w    d3,d4
+000263e2  3d44 009e       move.w  d4,9e(a6)
+000263e6  8a43            or.w    d3,d5
+000263e8  3d45 009a       move.w  d5,9a(a6)
+000263ec  4645            not.w   d5
+000263ee  3d45 009a       move.w  d5,9a(a6)
+000263f2  8c43            or.w    d3,d6
+000263f4  3d46 009c       move.w  d6,9c(a6)
+000263f8  4646            not.w   d6
+000263fa  3d46 009c       move.w  d6,9c(a6)
+000263fe  8e43            or.w    d3,d7
+00026400  3d47 0096       move.w  d7,96(a6)
+00026404  4647            not.w   d7
+00026406  3d47 0096       move.w  d7,96(a6)
+# d1-d7 = a0-a6 = 0
+0002640a  7200            moveq   #0,d1
+0002640c  7400            moveq   #0,d2
+0002640e  7600            moveq   #0,d3
+00026410  7800            moveq   #0,d4
+00026412  7a00            moveq   #0,d5
+00026414  7c00            moveq   #0,d6
+00026416  7e00            moveq   #0,d7
+00026418  91c8            suba.l  a0,a0
+0002641a  93c9            suba.l  a1,a1
+0002641c  95ca            suba.l  a2,a2
+0002641e  97cb            suba.l  a3,a3
+00026420  99cc            suba.l  a4,a4
+00026422  9bcd            suba.l  a5,a5
+00026424  9dce            suba.l  a6,a6
+00026426  4e72 2700       stop    #2700
+0002642a  4e71            nop
+0002642c  4e71            nop
+0002642e  6020            bra.b   26450         # restore_vectors
+
+# trace:
+00026430  48e7 00e0       movem.l a0-a2,-(sp)
+00026434  43fa 0050       lea.l   26486(pc),a1  # a1 = decrypt buffer
+00026438  2451            movea.l (a1),a2       # a2 = addr of prev insn
+0002643a  34a9 0004       move.w  4(a1),(a2)    # restore encrypted opcode
+0002643e  206f 000e       movea.l e(sp),a0      # a0 = addr of next insn
+00026442  2288            move.l  a0,(a1)       # save address of next insn...
+00026444  3350 0004       move.w  (a0),4(a1)    # ...and encrypted opcode
+00026448  4650            not.w   (a0)          # decrypt the opcode
+0002644a  4cdf 0700       movem.l (sp)+,a0-a2
+0002644e  4e73            rte
+
+# restore_vectors:
+00026450  41fa 003a       lea.l   2648c(pc),a0
+00026454  2f48 0002       move.l  a0,2(sp)
+00026458  21fa 0028 0080  move.l  26482(pc),80
+0002645e  41fa 001e       lea.l   2647e(pc),a0
+00026462  21d0 0024       move.l  (a0),24
+00026466  31c0 0026       move.w  d0,26
+0002646a  4298            clr.l   (a0)+
+0002646c  4298            clr.l   (a0)+
+0002646e  4298            clr.l   (a0)+
+00026470  4258            clr.w   (a0)+
+00026472  41fa fc7a       lea.l   260ee(pc),a0
+00026476  0000 0000       ori.b   #0,d0
+0002647a  91c8            suba.l  a0,a0
+0002647c  4e73            rte
+# d0.w = 0xffff (success) or 0x0000 (failure)
+0002648c  4cdf 7cfc       movem.l (sp)+,d2-d7/a2-a6

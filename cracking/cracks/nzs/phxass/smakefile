@@ -1,0 +1,9 @@
+all: nzs.o nzs_bootblock.o
+
+nzs.o: nzs.asm trainer.asm
+	phxass noexe nzs.asm
+
+nzs_bootblock.o: nzs_bootblock.asm
+	phxass noexe nzs_bootblock.asm
+clean:
+	delete \#?.o \#?.lnk \#?.info

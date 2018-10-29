@@ -1,0 +1,1283 @@
+BOOTBLOCK
+---------
+Simple code to load remaining sectors of track 0 and jump at them.
+Loads the sectors using trackdisk.device.
+
+REST OF TRACK 0 (COPYLOCK)
+--------------------------
+Straight into RNC Copylock. Disassembled below.
+Uses the disk's serial key to decrypt the original bootblock.
+Finishes with copy loops at 3e6 and 60000 (original start of Copylock code).
+So can breakpoint on those and run/emulate the Copylock routine.
+
+ORIGINAL BOOTBLOCK
+------------------
+Crappy loader routine which loads track 90 and jumps at it.
+(Software delay loops and no data checksumming)
+
+CONCLUSION
+----------
+We can replace the whole of track 0 with a bootblock which simply loads
+track 90 (using trackdisk or our own loader) and jumps at it!
+We can simply skip track 90's own relocation routine by loading the track
+to 75ffc and jumping at 76000. The disassembly in the track90 dissection
+assumes that's what we did so all the addresses are correct.
+
+./copylock /home/keir/Amiga/raw_dumps/newzealandstory/nzs.adf 400 1200 60000 
+000003e6 4e75 0000 0004 rts
+D0: 00000000 D1: 00000000 D2: 00000000 D3: 00000000
+D4: 00000000 D5: 00000000 D6: 00000000 D7: 00000000
+A0: 00060d00 A1: 00060000 A2: 00060424 A3: 00000000
+A4: 00000000 A5: 00000000 A6: 00000000 A7: 0007ffbe
+PC: 000003e6 SR: 2704 USP: 00002000 SSP: 0007ffbe
+S=1 T=0 I=7 X=0 N=0 Z=1 V=0 C=0
+Stack trace from SSP=0007ffbe:
+ 0007ffbe: 0000 0000 0000 0000 0000 0000 0000 0000 
+ 0007ffce: 0000 0000 0000 0000 0000 0000 0000 0000 
+ 0007ffde: 0000 0000 0000 0000 0000 0000 0000 0000 
+
+# Exception vectors
+00000000 *0000 0000       ori.b   #0,d0
+00000004 *0000 0000       ori.b   #0,d0
+00000008 *0006 0d7c       ori.b   #7c,d6
+0000000c *0006 0356       ori.b   #56,d6
+00000010 *0006 01bc       ori.b   #bc,d6
+00000014 *0006 0dbc       ori.b   #bc,d6
+00000018 *0006 0dfc       ori.b   #fc,d6
+0000001c *0006 0e7c       ori.b   #7c,d6
+00000020 *0006 03b0       ori.b   #b0,d6
+00000024 *0006 01f6       ori.b   #f6,d6
+00000028 *0000 0000       ori.b   #0,d0
+0000002c *0000 0000       ori.b   #0,d0
+      [237 more]
+-------------------------------
+
+# Copy loop for further loader
+000003e6  22d8            move.l  (a0)+,(a1)+
+000003e8 *b3ca            cmpa.l  a2,a1
+000003ea *6dfa            blt.b   03e6
+000003ec *4299            clr.l   (a1)+
+000003ee *b3c8            cmpa.l  a0,a1
+000003f0 *6dfa            blt.b   03ec
+000003f2 *48f9 00ff 0000  movem.l d0-d7,8
+000003f8  0008 
+000003fa *4cdf 7fff       movem.l (sp)+,d0-d7/a0-a6
+000003fe *4e73            rte
+00000400 *0000 0000       ori.b   #0,d0
+00000404 *0000 0000       ori.b   #0,d0
+      [1789 more]
+-------------------------------
+
+# Old user stack
+00001ffc *0006 00f8       ori.b   #f8,d6
+00002000 *0000 0000       ori.b   #0,d0
+00002004 *0000 0000       ori.b   #0,d0
+      [96254 more]
+-------------------------------
+
+# START OF COPYLOCK
+00060000  6000 00d0       bra.w   600d2
+
+# Data..
+00060004 *526f 6220       addq.w  #1,6220(sp)
+00060008 *4e6f            move.l  usp,sp
+0006000a *7274            moveq   #74,d1
+0006000c *6865            bvc.b   60073
+0006000e *6e20            bgt.b   60030
+00060010 *436f            ???
+00060012 *6d70            blt.b   60084
+00060014 *3f7e            move.w  ???
+00060016 *fdfb            ???
+00060018 *f7ef            ???
+0006001a *dfbe            add.l   d7,???
+0006001c *a4aa            ???
+0006001e *92a5            sub.l   -(a5),d1
+00060020 *1455            move.b  (a5),a2
+00060022 *1451            move.b  (a1),a2
+00060024 *152a a555       move.b  -5aab(a2),-(a2)
+00060028 *1554 5551       move.b  (a4),5551(a2)
+0006002c *5545            subq.w  #2,d5
+0006002e *5515            subq.b  #2,(a5)
+00060030 *5455            addq.w  #2,(a5)
+00060032 *5155            subq.w  #8,(a5)
+00060034 *4554            ???
+00060036 *0000 0000       ori.b   #0,d0
+0006003a *0000 0000       ori.b   #0,d0
+      [19 more]
+0006008a *003f 0000       move.b  #0,???
+0006008e *0000 0000       ori.b   #0,d0
+00060092 *2000            move.l  d0,d0
+00060094 *0007 fffa       ori.b   #fa,d7
+00060098 *0000 0000       ori.b   #0,d0
+0006009c *0000 0000       ori.b   #0,d0
+      [5 more]
+000600b4 *f974            ???
+000600b6 *db7d            add.w   d5,???
+000600b8 *ffff            ???
+000600ba *ffff            ???
+000600bc *0000 ffff       ori.b   #ff,d0
+000600c0 *ffff            ???
+000600c2 *ffff            ???
+000600c4 *0000 0001       ori.b   #1,d0
+000600c8 *0000 0006       ori.b   #6,d0
+000600cc *0cca            
+000600ce *b6e5            cmpa.w  -(a5),a3
+000600d0 *203a            move.l  62fe0(pc),d0
+-------------------------------
+
+000600d2  2f0e            move.l  a6,-(sp)         # push a6 on stack
+000600d4  4dfa ff76       lea.l   6004c(pc),a6     # a6 = regs area
+000600d8  48d6 ffff       movem.l d0-d7/a0-sp,(a6) # dump all regs to (a6)
+000600dc  4dee 0040       lea.l   40(a6),a6        # a6 = skip past regs area
+000600e0  2d5f fff8       move.l  (sp)+,-8(a6)     # save orig a6 in regs area
+000600e4  2cd7            move.l  (sp),(a6)+       # save orig return code
+000600e6  2239 0000 0010  move.l  10,d1            # d1 = illegal insn vec
+------- enter supervisor mode
+000600ec  487a 000a       pea.l   600f8(pc)
+000600f0  23df 0000 0010  move.l  (sp)+,10         # illegal vec = 600f8
+000600f6  4afc            illegal
+------- disable cache
+000600f8  487a 001c       pea.l   60116(pc)
+000600fc  23df 0000 0010  move.l  (sp)+,10         # illegal vec = 60116
+00060102  224f            move.l  sp,a1
+00060104  4e7a 0002       movec.l cacr,d0
+00060108 *41fa ffae       lea.l   600b8(pc),a0
+0006010c *2080            move.l  d0,(a0)
+0006010e *0880 0000       bclr.l  #0,d0
+00060112 *4e7b 0002       movec.l d0,cacr
+------- jump straight here if movec faults
+00060116  2e49            move.l  a1,sp            # restore ssp
+00060118  23c1 0000 0010  move.l  d1,10            # restore illegal vec
+0006011e  4e68            move.l  usp,a0
+00060120  2cc8            move.l  a0,(a6)+         # push usp (to 60090)
+00060122  2ccf            move.l  sp,(a6)+         # push ssp (to 60094)
+00060124  4cf9 00ff 0000  movem.l 8,d0-d7
+0006012a  0008 
+0006012c  48d6 00ff       movem.l d0-d7,(a6)       # vecs 2-9 -> (60098-b8)
+00060130  41fa 008a       lea.l   601bc(pc),a0
+00060134  23c8 0000 0010  move.l  a0,10            # illegal vec = 601bc
+------- encrypted code starts here
+0006013a  4afc            illegal                  # switch to trace mode
+0006013c  49fa ff94       lea.l   600d2(pc),a4
+00060140  7800            moveq   #0,d4
+00060142  7a00            moveq   #0,d5
+00060144  7c00            moveq   #0,d6
+00060146  7e00            moveq   #0,d7
+00060148  6000 000e       bra.w   60158
+0006014c  6000 003a       bra.w   60188
+00060150  6000 0062       bra.w   601b4
+00060154  6000 000a       bra.w   60160
+00060158  6000 000a       bra.w   60164
+0006015c  6000 001a       bra.w   60178
+00060160  6000 0022       bra.w   60184
+00060164  6000 0052       bra.w   601b8
+00060168  6000 ffe2       bra.w   6014c
+0006016c  6000 0006       bra.w   60174
+00060170  6000 000e       bra.w   60180
+00060174  6000 001a       bra.w   60190
+00060178  6000 0036       bra.w   601b0
+0006017c  6000 002e       bra.w   601ac
+00060180  6000 0012       bra.w   60194
+00060184  6000 ffe2       bra.w   60168
+00060188  6000 ffe2       bra.w   6016c
+0006018c  6000 009c       bra.w   6022a            # the way out -> 6022a
+00060190  6000 0006       bra.w   60198
+00060194  6000 ffbe       bra.w   60154
+00060198  6000 0006       bra.w   601a0
+0006019c  6000 ffb2       bra.w   60150
+000601a0  6000 ffba       bra.w   6015c
+000601a4  6000 ffca       bra.w   60170
+000601a8  6000 ffd2       bra.w   6017c
+000601ac  6000 ffee       bra.w   6019c
+000601b0  6000 fff6       bra.w   601a8
+000601b4  6000 ffd6       bra.w   6018c
+000601b8  6000 ffea       bra.w   601a4
+-----------------------------
+
+------- ILLEGAL:
+000601bc  48e7 80c0       movem.l d0/a0-a1,-(sp)
+# Now 0(sp)=d0, 4(sp)=a0, 8(sp)=a1, c(sp)=sr, e(sp)=pc
+000601c0  41fa 0034       lea.l   601f6(pc),a0
+000601c4  23c8 0000 0024  move.l  a0,24            # trace == 601f6
+000601ca  41fa 01e4       lea.l   603b0(pc),a0
+000601ce  23c8 0000 0020  move.l  a0,20            # priv vio == 603b0
+000601d4  06af 0000 0002  addi.l  #2,e(sp)         # skip illegal insn
+000601da  000e 
+000601dc  002f 0007 000c  ori.b   #7,c(sp)         # no ints
+000601e2  086f 0007 000c  bchg.b  #7,c(sp)         # toggle SR.T
+000601e8  43fa fee0       lea.l   600ca(pc),a1
+000601ec  671a            beq.b   60208            # branch if SR.T was zero
+-------
+000601ee  2051            move.l  (a1),a0          # SR.T was one, so....
+000601f0  20a9 0004       move.l  4(a1),(a0)       # restore prev insn
+000601f4  6026            bra.b   6021c            # goto bail
+------- TRACE:
+000601f6  027c f8ff       andi.w  #f8ff,sr         # enable ints now SR.T=0
+000601fa  48e7 80c0       movem.l d0/a0-a1,-(sp)
+000601fe  43fa feca       lea.l   600ca(pc),a1
+00060202  2051            move.l  (a1),a0          # a0 = traced insn pc
+00060204  20a9 0004       move.l  4(a1),(a0)       # restore traced insn
+------- common exit path:
+00060208  206f 000e       move.l  e(sp),a0         # a0 = next pc
+0006020c  2288            move.l  a0,(a1)          # (600ca) = next pc
+0006020e  2350 0004       move.l  (a0),4(a1)       # (600ce) = next insn
+00060212  2028 fffc       move.l  -4(a0),d0        # previous insn -> d0
+00060216  4680            not.l   d0
+00060218  4840            swap    d0
+0006021a  b190            eor.l   d0,(a0)          # nxt ^= swap(~prev)
+------- bail:
+0006021c  4cdf 0301       movem.l (sp)+,d0/a0-a1
+00060220  4e73            rte
+00060222 *0000 0000       ori.b   #0,d0
+00060226 *0000 0000       ori.b   #0,d0
+-------------------------------
+
+# Continuation of loader: multiple decryption loops over remaining code
+0006022a  0000 0000       ori.b   #0,d0
+0006022e  0a7c 2000       eori.w  #2000,sr        # SR.S=0, so we can mess with
+00060232  4ffa 0010       lea.l   60244(pc),sp    # the user stack!
+00060236  303c 0314       move.w  #314,d0
+0006023a  323c 274c       move.w  #274c,d1
+0006023e  935f            sub.w   d1,(sp)+        # sub 274c
+00060240  51c8 fffc       dbf.w   d0,6023e
+00060244  4ffa 0010       lea.l   60256(pc),sp
+00060248  303c 030b       move.w  #30b,d0
+0006024c  323c 9274       move.w  #9274,d1
+00060250  d35f            add.w   d1,(sp)+        # add 9724
+00060252  51c8 fffc       dbf.w   d0,60250
+00060256  4ffa 0018       lea.l   60270(pc),sp
+0006025a  303c 00be       move.w  #be,d0
+0006025e  4c9f 0f00       movem.w (sp)+,a0-a3
+00060262  c748            exg.l   a3,a0           # permute words 0,3 & 1,2
+00060264  c549            exg.l   a2,a1
+00060266  48a7 00f0       movem.w a0-a3,-(sp)
+0006026a  508f            addq.l  #8,sp
+0006026c  51c8 fff0       dbf.w   d0,6025e
+00060270  4ffa 0010       lea.l   60282(pc),sp
+00060274  303c 02f5       move.w  #2f5,d0
+00060278  323c 924e       move.w  #924e,d1
+0006027c  935f            sub.w   d1,(sp)+        # sub 924e
+0006027e  51c8 fffc       dbf.w   d0,6027c
+00060282  4ffa 0010       lea.l   60294(pc),sp
+00060286  303c 02ec       move.w  #2ec,d0
+0006028a  3217            move.w  (sp),d1
+0006028c  4441            neg.w   d1              # neg
+0006028e  3ec1            move.w  d1,(sp)+
+00060290  51c8 fff8       dbf.w   d0,6028a
+00060294  4ffa 0010       lea.l   602a6(pc),sp
+00060298  303c 02e3       move.w  #2e3,d0
+0006029c  3217            move.w  (sp),d1
+0006029e  e859            ror.w   #4,d1           # ror #4
+000602a0  3ec1            move.w  d1,(sp)+
+000602a2  51c8 fff8       dbf.w   d0,6029c
+000602a6  4ffa 001c       lea.l   602c4(pc),sp
+000602aa  303c 0169       move.w  #169,d0
+000602ae  030f 0000       movep.w 0(sp),d1
+000602b2  050f 0001       movep.w 1(sp),d2        # switch odd/even bytes
+000602b6  038f 0001       movep.w d1,1(sp)
+000602ba  058f 0000       movep.w d2,0(sp)
+000602be  588f            addq.l  #4,sp
+000602c0  51c8 ffec       dbf.w   d0,602ae
+000602c4  4ffa 0010       lea.l   602d6(pc),sp
+000602c8  303c 02cb       move.w  #2cb,d0
+000602cc  323c aa49       move.w  #aa49,d1
+000602d0  b35f            eor.w   d1,(sp)+        # eor aa49
+000602d2  51c8 fffc       dbf.w   d0,602d0
+000602d6  4ffa 0010       lea.l   602e8(pc),sp
+000602da  303c 02c2       move.w  #2c2,d0
+000602de  3217            move.w  (sp),d1
+000602e0  e359            rol.w   #1,d1           # rol #1
+000602e2  3ec1            move.w  d1,(sp)+
+000602e4  51c8 fff8       dbf.w   d0,602de
+000602e8  4ffa 0010       lea.l   602fa(pc),sp
+000602ec  303c 02b9       move.w  #2b9,d0
+000602f0  323c 3aa4       move.w  #3aa4,d1
+000602f4  d35f            add.w   d1,(sp)+        # add 3aa4
+000602f6  51c8 fffc       dbf.w   d0,602f4
+000602fa  4ffa 0018       lea.l   60314(pc),sp
+000602fe  303c 00aa       move.w  #aa,d0
+00060302  4c9f 0f00       movem.w (sp)+,a0-a3
+00060306  c748            exg.l   a3,a0           # permute words 0,3 & 1,2
+00060308  c549            exg.l   a2,a1
+0006030a  48a7 00f0       movem.w a0-a3,-(sp)
+0006030e  508f            addq.l  #8,sp
+00060310  51c8 fff0       dbf.w   d0,60302
+00060314  4ffa 0010       lea.l   60326(pc),sp
+00060318  303c 02a3       move.w  #2a3,d0
+0006031c  323c a754       move.w  #a754,d1
+00060320  b35f            eor.w   d1,(sp)+        # eor a754
+00060322  51c8 fffc       dbf.w   d0,60320
+
+# Onto the next stage: back to supervisor mode and reload exception vectors
+00060326  0a7c 2000       eori.w  #2000,sr        # SR.S=1, back to SSP
+0006032a  41fa 001a       lea.l   60346(pc),a0
+0006032e  43f9 0000 0008  lea.l   8,a1
+00060334  7007            moveq   #7,d0           # Reload exn vectors 2-9
+00060336  7200            moveq   #0,d1
+00060338  3218            move.w  (a0)+,d1
+0006033a  d28c            add.l   a4,d1           # d1 += 600d2
+0006033c  22c1            move.l  d1,(a1)+
+0006033e  51c8 fff6       dbf.w   d0,60336
+00060342  6000 2229       bra.w   6256d           # ADDRESS ERROR!
+# Exception vector offsets from 600d2 (vectors 2-9 inc.)
+00060346 *0caa 0284 00ea 0cea 0d2a 0daa 02de 0124
+-------------------------
+
+---------- ADDRESS ERROR:
+# The intention here is both to obfuscate, but also to checksum all the code
+# used so far (including the trace vector decoder!). So any attempts to modify
+# to dump progress will cause an unpredictable jump and crash.
+00060356  302f 0006       move.w  6(sp),d0
+0006035a  0240 f000       andi.w  #f000,d0
+0006035e  b07c 6000       cmp.w   #6000,d0
+00060362  6606            bne.b   6036a
+00060364  4fef 0008       lea.l   8(sp),sp   # 68000 stack frame: skip the
+00060368  601a            bra.b   60384      # extended stuff, carry on.
+------
+0006036a *2008            move.l  a0,d0      # 68010+ extended frame
+0006036c *207a fd26       move.l  60094(pc),a0 # a0 = original saved ssp
+00060370 *313c 0003       move.w  #3,-(a0)   # Push vector + short format
+00060374 *212f 0002       move.l  2(sp),-(a0)# Push saved PC + 2
+00060378 *0690 0000 0002  addi.l  #2,(a0)
+0006037e *3117            move.w  (sp),-(a0) # Push saved SR
+00060380 *2e48            move.l  a0,sp
+00060382 *2040            move.l  d0,a0      # Restore SP/A0
+------
+00060384  027c f8ff       andi.w  #f8ff,sr   # Re-enable interrupts
+00060388  48e7 80c0       movem.l d0/a0-a1,-(sp)
+0006038c  06af 0000 0002  addi.l  #2,e(sp)   # Increment saved PC by 2
+00060392  000e 
+00060394  226f 000e       move.l  e(sp),a1   # A1 = saved PC
+00060398  7000            moveq   #0,d0
+0006039a  d05c            add.w   (a4)+,d0   # Sum all from 600d2...
+0006039c  b9c9            cmpa.l  a1,a4      # ...continue until reach 60346
+0006039e  6dfa            blt.b   6039a
+000603a0  5540            subq.w  #2,d0
+000603a2  0880 0000       bclr.l  #0,d0      # sum = (sum - 2) & ~1
+000603a6  d9c0            adda.l  d0,a4      # a4 += d0 (i.e., = 60346 + sum)
+000603a8  2f4c 000e       move.l  a4,e(sp)   # saved PC = a4
+000603ac  6000 fe50       bra.w   601fe      # jump into trace handler
+
+---------- PRIVILEGE VIOLATION:
+000603b0  0857 0005       bchg.b  #5,(sp)    # Toggle SR.S
+000603b4  06af 0000 0004  addi.l  #4,2(sp)   # Skip 'eori.w #2000,sr'
+000603ba  0002 
+000603bc  6000 fe38       bra.w   601f6      # jump into trace handler
+000603c0 *0000 0000       ori.b   #0,d0
+000603c4 *0000 0000       ori.b   #0,d0
+      [4 more]
+-------------------------------
+
+# Continue here after address error handling. SR.T=1 still.
+# Multiple decryption loops again, now we re-validated the TVD.
+000603d8  0a7c 2000       eori.w  #2000,sr     # Back to user mode...
+000603dc  4ffa 0010       lea.l   603ee(pc),sp # ... so we can abuse USP again
+000603e0  303c 02f5       move.w  #2f5,d0
+000603e4  3217            move.w  (sp),d1
+000603e6  4441            neg.w   d1           # neg
+000603e8  3ec1            move.w  d1,(sp)+
+000603ea  51c8 fff8       dbf.w   d0,603e4
+000603ee  4ffa 0010       lea.l   60400(pc),sp
+000603f2  303c 02ec       move.w  #2ec,d0
+000603f6  323c 8e2c       move.w  #8e2c,d1
+000603fa  d35f            add.w   d1,(sp)+     # add 8e2c
+000603fc  51c8 fffc       dbf.w   d0,603fa
+00060400  4ffa 0010       lea.l   60412(pc),sp
+00060404  303c 02e3       move.w  #2e3,d0
+00060408  3217            move.w  (sp),d1
+0006040a  4641            not.w   d1           # not
+0006040c  3ec1            move.w  d1,(sp)+
+0006040e  51c8 fff8       dbf.w   d0,60408
+00060412  4ffa ffb4       lea.l   603c8(pc),sp
+00060416  303c 0183       move.w  #183,d0
+0006041a  da9f            add.l   (sp)+,d5     # d5 = checksum from 603c8
+0006041c  51c8 fffc       dbf.w   d0,6041a
+00060420  4ffa 0010       lea.l   60432(pc),sp
+00060424  303c 02d3       move.w  #2d3,d0
+00060428  323c ce38       move.w  #ce38,d1
+0006042c  d35f            add.w   d1,(sp)+     # add ce38
+0006042e  51c8 fffc       dbf.w   d0,6042c
+00060432  4ffa 0018       lea.l   6044c(pc),sp
+00060436  303c 00b0       move.w  #b0,d0
+0006043a  4c9f 0f00       movem.w (sp)+,a0-a3
+0006043e  c748            exg.l   a3,a0        # permute words 0,3 & 1,2
+00060440  c549            exg.l   a2,a1
+00060442  48a7 00f0       movem.w a0-a3,-(sp)
+00060446  508f            addq.l  #8,sp
+00060448  51c8 fff0       dbf.w   d0,6043a
+0006044c  4ffa ff7a       lea.l   603c8(pc),sp
+00060450  303c 0183       move.w  #183,d0
+00060454  de9f            add.l   (sp)+,d7     # d7 = checksum from 603c8
+00060456  51c8 fffc       dbf.w   d0,60454
+0006045a  4ffa 0010       lea.l   6046c(pc),sp
+0006045e  303c 02b6       move.w  #2b6,d0
+00060462  3217            move.w  (sp),d1
+00060464  4641            not.w   d1           # not
+00060466  3ec1            move.w  d1,(sp)+
+00060468  51c8 fff8       dbf.w   d0,60462
+0006046c  4ffa 0010       lea.l   6047e(pc),sp
+00060470  303c 02ad       move.w  #2ad,d0
+00060474  323c d338       move.w  #d338,d1
+00060478  d35f            add.w   d1,(sp)+     # add d338
+0006047a  51c8 fffc       dbf.w   d0,60478
+0006047e  4ffa 0018       lea.l   60498(pc),sp
+00060482  303c 00a7       move.w  #a7,d0
+00060486  4c9f 0f00       movem.w (sp)+,a0-a3
+0006048a  c748            exg.l   a3,a0        # permute words 0,3 & 1,2
+0006048c  c549            exg.l   a2,a1
+0006048e  48a7 00f0       movem.w a0-a3,-(sp)
+00060492  508f            addq.l  #8,sp
+00060494  51c8 fff0       dbf.w   d0,60486
+00060498  4ffa 0010       lea.l   604aa(pc),sp
+0006049c  303c 0297       move.w  #297,d0
+000604a0  3217            move.w  (sp),d1
+000604a2  4441            neg.w   d1           # neg
+000604a4  3ec1            move.w  d1,(sp)+
+000604a6  51c8 fff8       dbf.w   d0,604a0
+000604aa  4ffa 0018       lea.l   604c4(pc),sp
+000604ae  303c 00a1       move.w  #a1,d0
+000604b2  4c9f 0f00       movem.w (sp)+,a0-a3
+000604b6  c748            exg.l   a3,a0        # permute words 0,3 & 1,2
+000604b8  c549            exg.l   a2,a1
+000604ba  48a7 00f0       movem.w a0-a3,-(sp)
+000604be  508f            addq.l  #8,sp
+000604c0  51c8 fff0       dbf.w   d0,604b2
+
+# Onto the next stage: sync 8912 shorter than 8911 shorter than 8914
+000604c4  0a7c 2000       eori.w  #2000,sr     # Back to supervisor mode
+000604c8  43fa fbce       lea.l   60098(pc),a1
+000604cc  42a9 001c       clr.l   1c(a1)       # Clear orig saved trace vector
+000604d0  6100 0098       bsr.w   6056a        # get_sector_8a91()
+000604d4  6700 0392       beq.w   60868        # failure branch
+000604d8  7406            moveq   #6,d2
+000604da  5382            subq.l  #1,d2        # Loop 5 times...
+000604dc  6760            beq.b   6053e
+000604de  41fa fb24       lea.l   60004(pc),a0 # a0 = dskpt = 60004
+000604e2  7005            moveq   #5,d0
+000604e4  6100 00c8       bsr.w   605ae        # get_sector(5,60004) #8911
+000604e8  2600            move.l  d0,d3        # d3 = #5 timing (sync 8911)
+000604ea  7004            moveq   #4,d0
+000604ec  6100 00c0       bsr.w   605ae        # get_sector(4,60004) #8912
+000604f0  2200            move.l  d0,d1        # d1 = #4 timing (sync 8912)
+000604f2  2003            move.l  d3,d0        # [sync 8912 is a short sector]
+000604f4  615c            bsr.b   60552        # check_sector_time()
+000604f6  6be2            bmi.b   604da        # failure retry
+000604f8  7006            moveq   #6,d0
+000604fa  6100 00b2       bsr.w   605ae        # get_sector(6,60004) #8914
+000604fe  2203            move.l  d3,d1        # [sync 8914 is a long sector]
+00060500  6150            bsr.b   60552        # check_sector_time()
+00060502  6bd6            bmi.b   604da        # failure retry
+
+# Key check: decoded longs from sector sync 8914
+00060504  0c90 526f 6220  cmpi.l  #526f6220,(a0)  # 526f6220?
+0006050a  66ce            bne.b   604da
+0006050c  0ca8 4e6f 7274  cmpi.l  #4e6f7274,4(a0) # 4e6f7274?
+00060512  0004 
+00060514  66c4            bne.b   604da
+00060516  0ca8 6865 6e20  cmpi.l  #68656e20,8(a0) # 68656e20?
+0006051c  0008 
+0006051e  66ba            bne.b   604da
+00060520  0ca8 436f 6d70  cmpi.l  #436f6d70,c(a0) # 436f6d70?
+00060526  000c 
+00060528  66b0            bne.b   604da
+
+0006052a  7205            moveq   #5,d1
+0006052c  2248            move.l  a0,a1
+0006052e  d099            add.l   (a1)+,d0          # checksum all 6 longs
+00060530  e398            rol.l   #1,d0             # from sector 8914
+00060532  51c9 fffa       dbf.w   d1,6052e          # d0.l = checksum
+
+00060536  43fa fb60       lea.l   60098(pc),a1
+0006053a  d1a9 001c       add.l   d0,1c(a1)         # Orig trace vec = checksum
+0006053e  343a fb88       move.w  600c8(pc),d2      # get original track#
+00060542  6100 0202       bsr.w   60746             # seek_to_track(orig)
+00060546  6100 01cc       bsr.w   60714             # motor_off
+0006054a  203a fb68       move.l  600b4(pc),d0      # d0 = checksum
+0006054e  6000 0318       bra.w   60868             # go to 60868
+
+-------------------------
+# 60552 = check_sector_time(d0=long_sec,d1=short_sec) ; d0=0 on success
+00060552  9081            sub.l   d1,d0             # delta = long_s - short_s
+00060554  6b10            bmi.b   60566             # -ve? failure branch
+00060556  c0fc 0064       mulu.w  #64,d0            # delta *= 100
+0006055a  80c1            divu.w  d1,d0             # delta /= short
+0006055c  b03c 0003       cmp.b   #3,d0             # is the longer track less
+00060560  6d04            blt.b   60566             # than 3% slower? Fail.
+00060562  7000            moveq   #0,d0             # d0==0 CC.Z==1 success
+00060564  4e75            rts
+
+00060566 *75fe            moveq   #-2,d2
+00060568 *c474            and.w   3(a4,d7.w*8),d2
+
+# 6056a = get_sector_8a91()
+0006056a  7603            moveq   #3,d3
+0006056c  6100 0192       bsr.w   60700             # motor_on
+00060570  6624            bne.b   60596             # failure branch
+00060572  7400            moveq   #0,d2
+00060574  6100 01d0       bsr.w   60746             # seek_to_track(0)
+00060578  661c            bne.b   60596             # failure branch
+0006057a  41fa fa88       lea.l   60004(pc),a0      # a0=dskpt=60004
+0006057e  7402            moveq   #2,d2             # d2=retry counter?
+00060580  303a 0162       move.w  606e4(pc),d0      # d0=sync=8a91
+00060584  6100 00a8       bsr.w   6062e             # get_track(8a91,60004)
+00060588  6622            bne.b   605ac             # success branch
+0006058a  51ca fff4       dbf.w   d2,60580          # retry 3 times
+0006058e  343a fb38       move.w  600c8(pc),d2
+00060592  6100 01b2       bsr.w   60746             # seek_to_track(orig)
+00060596  6100 017c       bsr.w   60714             # motor_off
+0006059a  41fa fb28       lea.l   600c4(pc),a0
+0006059e  0650 0001       addi.w  #1,(a0)           # try next drive
+000605a2  0250 0003       andi.w  #3,(a0)
+000605a6  51cb ffc4       dbf.w   d3,6056c          # retry for all 4 drives
+000605aa  7000            moveq   #0,d0
+000605ac  4e75            rts
+
+# 605ae = get_sector(d0=sync_idx, a0=dskpt): returns #iters in d0
+000605ae  48e7 e0c0       movem.l d0-d2/a0-a1,-(sp)
+000605b2  6150            bsr.b   60604             # d0 = mfm_encode_word(d0)
+000605b4  2400            move.l  d0,d2             # d2 = encoded word
+000605b6  2017            move.l  (sp),d0           # d0 = original word
+000605b8  43fa 012a       lea.l   606e4(pc),a1
+000605bc  e388            lsl.l   #1,d0             # d0 = 606e4+2*d0
+000605be  3031 0800       move.w  0(a1,d0.l*1),d0   # (d0 = sync word)
+000605c2  2200            move.l  d0,d1
+000605c4  2001            move.l  d1,d0             # d0=d1=sync word
+000605c6  6166            bsr.b   6062e             # get_track(sync,60004)
+000605c8  67fa            beq.b   605c4             # failure branch
+000605ca  2e80            move.l  d0,(sp)           # return #iters
+000605cc  3010            move.w  (a0),d0
+000605ce  b540            eor.w   d2,d0
+000605d0  0240 5555       andi.w  #5555,d0          # first mfm word
+000605d4  66ee            bne.b   605c4             # encodes sync idx
+000605d6  2248            move.l  a0,a1
+000605d8  4a58            tst.w   (a0)+             # skip 1 word
+000605da  720b            moveq   #b,d1
+000605dc  2018            move.l  (a0)+,d0          # get long
+000605de  6100 000e       bsr.w   605ee             # mfm_decode_word()
+000605e2  32c0            move.w  d0,(a1)+          # write-back decoded word
+000605e4  51c9 fff6       dbf.w   d1,605dc          # decode 12 words
+000605e8  4cdf 0307       movem.l (sp)+,d0-d2/a0-a1
+000605ec  4e75            rts
+
+605ee = d0 = mfm_decode_word(d0.l)
+000605ee  48e7 6000       movem.l d1-d2,-(sp)
+000605f2  2200            move.l  d0,d1
+000605f4  740f            moveq   #f,d2
+000605f6  e591            roxl.l  #2,d1
+000605f8  e390            roxl.l  #1,d0
+000605fa  51ca fffa       dbf.w   d2,605f6
+000605fe  4cdf 0006       movem.l (sp)+,d1-d2
+00060602  4e75            rts
+
+60604 = d0.l = mfm_encode_word(d0.w)
+# Insert clock bit between each data bit in d0.w. No odd/even bit split.
+00060604  48e7 6000       movem.l d1-d2,-(sp)
+00060608  4840            swap    d0
+0006060a  2400            move.l  d0,d2
+0006060c  720f            moveq   #f,d1
+0006060e  e588            lsl.l   #2,d0      # d0 <<= 2
+00060610  e392            roxl.l  #1,d2      # shift d2[msb] -> CC.C
+00060612  650c            bcs.b   60620      # If it was set d0[0]=1
+00060614  0800 0002       btst.l  #2,d0      # Test d0[2] (was d0[0])
+00060618  660a            bne.b   60624      # If it was clear set d0[1]=1
+0006061a  08c0 0001       bset.l  #1,d0
+0006061e  6004            bra.b   60624
+00060620  08c0 0000       bset.l  #0,d0
+00060624  51c9 ffe8       dbf.w   d1,6060e   # 16 times...
+00060628  4cdf 0006       movem.l (sp)+,d1-d2
+0006062c  4e75            rts
+
+# 6062e = get_track(a0=dskpt, d0=sync): RESULT = d0 = PIO iterations
+0006062e  48e7 78c0       movem.l d1-d4/a0-a1,-(sp)
+00060632  2248            move.l  a0,a1
+00060634  41f9 00df f000  lea.l   dff000,a0
+0006063a  3140 007e       move.w  d0,7e(a0)       # dsksync
+0006063e  6100 01ec       bsr.w   6082c           # unit_and_head_select
+00060642  317c 4000 0024  move.w  #4000,24(a0)    # DSKLEN DMA off
+00060648  2149 0020       move.l  a1,20(a0)       # dskpt
+0006064c  317c 6600 009e  move.w  #6600,9e(a0)
+00060652  317c 9500 009e  move.w  #9500,9e(a0)    # Standard MFM wordsync
+00060658  317c 8010 0096  move.w  #8010,96(a0)    # dmacon: Disk DMA on
+0006065e  317c 0002 009c  move.w  #2,9c(a0)       # Clear intreq.dskblkdone
+00060664  6100 0010       bsr.w   60676           # do_polled_disk_io()
+00060668  317c 0400 009e  move.w  #400,9e(a0)     # Turn off WORDSYNC
+0006066e  4a80            tst.l   d0              # CC_Z == 1 on failure
+00060670  4cdf 031e       movem.l (sp)+,d1-d4/a0-a1
+00060674  4e75            rts
+
+# 60676 = do_polled_disk_io()
+# -- Read 1024 bytes from sync word. Write to (a1). PIO iterations in d0.
+00060676  4afc            illegal                 # TVD *OFF*
+00060678  4a39 00bf dd00  tst.b   ciabicr
+0006067e  0839 0004 00bf  btst.b  #4,ciabicr
+00060684  dd00 
+00060686  67f6            beq.b   6067e           # Wait for dskindex
+00060688  317c 8000 0024  move.w  #8000,24(a0)
+0006068e  317c 8000 0024  move.w  #8000,24(a0)    # Zero length read DMA
+00060694  7200            moveq   #0,d1
+00060696  243c 0006 1a80  move.l  #61a80,d2
+0006069c  5382            subq.l  #1,d2
+0006069e  672a            beq.b   606ca           # timeout branch
+000606a0  1028 001a       move.b  1a(a0),d0       
+000606a4  0800 0004       btst.l  #4,d0           # dskbytr.wordequal?
+000606a8  67f2            beq.b   6069c           # loop while not
+000606aa  7431            moveq   #31,d2
+000606ac  5281            addq.l  #1,d1
+000606ae  3028 001a       move.w  1a(a0),d0       # Poll dskbytr, count
+000606b2  6af8            bpl.b   606ac           # iterations in d1
+000606b4  12c0            move.b  d0,(a1)+        # Put byte in (a1)+
+000606b6  51ca fff4       dbf.w   d2,606ac        # get 0x32 (50d) bytes
+000606ba  343c 03cd       move.w  #3cd,d2
+000606be  5281            addq.l  #1,d1
+000606c0  3028 001a       move.w  1a(a0),d0       # Continue to poll dskbytr
+000606c4  6af8            bpl.b   606be           # and accumulate iters in d1
+000606c6  51ca fff6       dbf.w   d2,606be        # see another 0x3ce (974d)
+000606ca  3028 001e       move.w  1e(a0),d0       # d0 = intreqr
+000606ce  317c 0002 009c  move.w  #2,9c(a0)       # intreq.dskblkdone=0
+000606d4  317c 4000 0024  move.w  #4000,24(a0)    # stop Disk DMA
+000606da  0800 0001       btst.l  #1,d0
+000606de  661a            bne.b   606fa           # DMA done? Iter count in d0
+000606e0 *7200            moveq   #0,d1
+000606e2 *6016            bra.b   606fa
+000606e4 *8a91            or.l    (a1),d5     # sync list?
+000606e6 *8a44            or.w    d4,d5
+000606e8 *8a45            or.w    d5,d5
+000606ea *8a51            or.w    (a1),d5
+000606ec *8912            or.b    d4,(a2)
+000606ee *8911            or.b    d4,(a1)
+000606f0 *8914            or.b    d4,(a4)
+000606f2 *8915            or.b    d4,(a5)
+000606f4 *8944            or.w    d4,d4
+000606f6 *8945            or.w    d4,d5
+000606f8 *8951            or.w    d4,(a1)
+000606fa  2001            move.l  d1,d0
+000606fc  4afc            illegal                 # TVD *ON*
+000606fe  4e75            rts
+
+# 60700 = MOTOR_ON
+00060700  72ff            moveq   #-1,d1
+00060702  0881 0007       bclr.l  #7,d1
+00060706  610e            bsr.b   60716       # motor_on
+00060708  203c 0009 27c0  move.l  #927c0,d0
+0006070e  6100 0150       bsr.w   60860       # delay
+00060712  6016            bra.b   6072a       # check dskrdy and exit
+# 60714 = MOTOR_OFF
+00060714  72ff            moveq   #-1,d1
+00060716  41f9 00bf d100  lea.l   ciabprb,a0
+0006071c  1081            move.b  d1,(a0)
+0006071e  303a f9a4       move.w  600c4(pc),d0 #disk#
+00060722  5680            addq.l  #3,d0
+00060724  0181            bclr.l  d0,d1
+00060726  1081            move.b  d1,(a0)
+00060728  4e75            rts
+
+0006072a  41f9 00bf e001  lea.l   ciaapra,a0
+00060730  203c 0000 061a  move.l  #61a,d0
+00060736  0810 0005       btst.b  #5,(a0)
+0006073a  6706            beq.b   60742       # dskrdy?
+0006073c  5380            subq.l  #1,d0
+0006073e  6af6            bpl.b   60736
+00060742  7000            moveq   #0,d0       # return d0=0 if so (CC_Z=1)
+00060744  4e75            rts
+
+# 60746 == seek_to_track(d2)
+00060746  48e7 7c00       movem.l d1-d5,-(sp)
+0006074a  3a02            move.w  d2,d5
+0006074c  6100 00de       bsr.w   6082c       # unit_and_head_select
+00060750  0245 007f       andi.w  #7f,d5
+00060754  670c            beq.b   60762
+ <unexecuted encrypted code>
+00060762  6100 003e       bsr.w   607a2       # seek_track0
+00060766  6628            bne.b   60790       # failure branch
+00060768  7800            moveq   #0,d4
+0006076a  ba44            cmp.w   d4,d5
+0006076c  670e            beq.b   6077c       # no need to step :-)
+ <unexecuted encrypted code>
+0006077c  6100 00ae       bsr.w   6082c       # unit_and_head_select
+00060780  303a f942       move.w  600c4(pc),d0 # disk#
+00060784  e348            lsl.w   #1,d0
+00060786  41fa f934       lea.l   600bc(pc),a0
+0006078a  3184 0000       move.w  d4,0(a0,d0.w*1) # update track#
+0006078e  7000            moveq   #0,d0
+00060790  4cdf 003e       movem.l (sp)+,d1-d5
+00060794  4e75            rts
+
+# 607a2 = SEEK_TRACK0
+000607a2  48e7 7800       movem.l d1-d4,-(sp)
+000607a6  7855            moveq   #55,d4      # step counter?
+000607a8  0839 0004 00bf  btst.b  #4,ciaapra
+000607ae  e001 
+000607b0  670c            beq.b   607be       # check track0
+ <unexecuted encrypted code>
+000607be  303a f904       move.w  600c4(pc),d0
+000607c2  e348            lsl.w   #1,d0
+000607c4  41fa f8f6       lea.l   600bc(pc),a0
+000607c8  4270 0000       clr.w   0(a0,d0.w*1) # 600bc == track#
+000607cc  7055            moveq   #55,d0
+000607ce  9084            sub.l   d4,d0
+000607d0  41fa f8f6       lea.l   600c8(pc),a0 # 600c8 == original track#
+000607d4  3080            move.w  d0,(a0)
+000607d6  7000            moveq   #0,d0
+000607d8  4cdf 001e       movem.l (sp)+,d1-d4
+000607dc  4e75            rts
+
+# 6082c = unit_and_head_select
+0006082c  303a f896       move.w  600c4(pc),d0  # 600c4 = disk#
+00060830  323a f894       move.w  600c6(pc),d1  # 600c6 = dskside
+00060834  3f02            move.w  d2,-(sp)
+00060836  1439 00bf d100  move.b  ciabprb,d2
+0006083c  0002 007f       ori.b   #7f,d2
+00060840  0600 0003       addi.b  #3,d0
+00060844  0182            bclr.l  d0,d2
+00060846  0400 0003       subi.b  #3,d0
+0006084a  4a01            tst.b   d1
+0006084c  6704            beq.b   60852
+0006084e  0882 0002       bclr.l  #2,d2
+00060852  13c2 00bf d100  move.b  d2,ciabprb    # select unit and head
+00060858  203c 0000 05dc  move.l  #5dc,d0
+0006085e  341f            move.w  (sp)+,d2
+
+# 60860 = software delay loop
+00060860  ea88            lsr.l   #5,d0
+00060862  5380            subq.l  #1,d0
+00060864  66fc            bne.b   60862
+00060866  4e75            rts
+
+------------------
+00060868  d880            add.l   d0,d4         # d4 = checksum
+0006086a  6000 5b99       bra.w   66405         # ADDRESS ERROR!
+
+0006086e *0000 0000       ori.b   #0,d0
+00060872 *0000 0000       ori.b   #0,d0
+      [2 more]
+-------------------------------
+
+# Multiple decryption loops in user mode again.
+0006087e  4e71            nop
+00060880  0a7c 2000       eori.w  #2000,sr      # SR.S = 0
+00060884  4ffa 0010       lea.l   60896(pc),sp
+00060888  303c 0153       move.w  #153,d0
+0006088c  323c 17a1       move.w  #17a1,d1
+00060890  d35f            add.w   d1,(sp)+      # add 17a1
+00060892  51c8 fffc       dbf.w   d0,60890
+00060896  4ffa 0018       lea.l   608b0(pc),sp
+0006089a  303c 0050       move.w  #50,d0
+0006089e  4c9f 0f00       movem.w (sp)+,a0-a3
+000608a2  c748            exg.l   a3,a0         # permute words 0.3 & 1,2
+000608a4  c549            exg.l   a2,a1
+000608a6  48a7 00f0       movem.w a0-a3,-(sp)
+000608aa  508f            addq.l  #8,sp
+000608ac  51c8 fff0       dbf.w   d0,6089e
+000608b0  4ffa 0010       lea.l   608c2(pc),sp
+000608b4  303c 013d       move.w  #13d,d0
+000608b8  3217            move.w  (sp),d1
+000608ba  e559            rol.w   #2,d1         # rol #2
+000608bc  3ec1            move.w  d1,(sp)+
+000608be  51c8 fff8       dbf.w   d0,608b8
+000608c2  4ffa 0018       lea.l   608dc(pc),sp
+000608c6  303c 004b       move.w  #4b,d0
+000608ca  4c9f 0f00       movem.w (sp)+,a0-a3
+000608ce  c748            exg.l   a3,a0         # permute words 0,3 & 1,2
+000608d0  c549            exg.l   a2,a1
+000608d2  48a7 00f0       movem.w a0-a3,-(sp)
+000608d6  508f            addq.l  #8,sp
+000608d8  51c8 fff0       dbf.w   d0,608ca
+000608dc  4ffa 0010       lea.l   608ee(pc),sp
+000608e0  303c 0127       move.w  #127,d0
+000608e4  323c c45e       move.w  #c45e,d1
+000608e8  935f            sub.w   d1,(sp)+      # sub c45e
+000608ea  51c8 fffc       dbf.w   d0,608e8
+000608ee  4ffa 0010       lea.l   60900(pc),sp
+000608f2  303c 011e       move.w  #11e,d0
+000608f6  3217            move.w  (sp),d1
+000608f8  4441            neg.w   d1            # neg
+000608fa  3ec1            move.w  d1,(sp)+
+000608fc  51c8 fff8       dbf.w   d0,608f6
+00060900  4ffa 001c       lea.l   6091e(pc),sp
+00060904  303c 0087       move.w  #87,d0
+00060908  030f 0000       movep.w 0(sp),d1      # switch odd/even bytes
+0006090c  050f 0001       movep.w 1(sp),d2
+00060910  038f 0001       movep.w d1,1(sp)
+00060914  058f 0000       movep.w d2,0(sp)
+00060918  588f            addq.l  #4,sp
+0006091a  51c8 ffec       dbf.w   d0,60908
+0006091e  4ffa 0010       lea.l   60930(pc),sp
+00060922  303c 0106       move.w  #106,d0
+00060926  3217            move.w  (sp),d1
+00060928  4441            neg.w   d1            # neg
+0006092a  3ec1            move.w  d1,(sp)+
+0006092c  51c8 fff8       dbf.w   d0,60926
+00060930  4ffa 001c       lea.l   6094e(pc),sp
+00060934  303c 007b       move.w  #7b,d0
+00060938  030f 0000       movep.w 0(sp),d1      # switch odd/even bytes
+0006093c  050f 0001       movep.w 1(sp),d2
+00060940  038f 0001       movep.w d1,1(sp)
+00060944  058f 0000       movep.w d2,0(sp)
+00060948  588f            addq.l  #4,sp
+0006094a  51c8 ffec       dbf.w   d0,60938
+0006094e  4ffa 0010       lea.l   60960(pc),sp
+00060952  303c 00ee       move.w  #ee,d0
+00060956  323c 8b11       move.w  #8b11,d1
+0006095a  b35f            eor.w   d1,(sp)+      # eor 8b11
+0006095c  51c8 fffc       dbf.w   d0,6095a
+00060960  4ffa 0010       lea.l   60972(pc),sp
+00060964  303c 00e5       move.w  #e5,d0
+00060968  3217            move.w  (sp),d1
+0006096a  e559            rol.w   #2,d1         # rol #2
+0006096c  3ec1            move.w  d1,(sp)+
+0006096e  51c8 fff8       dbf.w   d0,60968
+
+# Onto the next stage: decrypt 1064-byte payload at 0x60cfc
+00060972  0a7c 2000       eori.w  #2000,sr      # SR.S = 1
+00060976  da84            add.l   d4,d5         # d4 = sector checksum
+00060978  dc85            add.l   d5,d6         # d5-d7 = code checksums
+0006097a  de86            add.l   d6,d7         # d7 = sum of all checksums
+0006097c  41fa f754       lea.l   600d2(pc),a0
+00060980  303c 0612       move.w  #612,d0
+00060984  de58            add.w   (a0)+,d7      # d7 += another code checksum
+00060986  51c8 fffc       dbf.w   d0,60984
+0006098a  1a06            move.b  d6,d5
+0006098c  0606 0016       addi.b  #16,d6
+00060990  41fa 036a       lea.l   60cfc(pc),a0  # a0 = encrypted payload
+00060994  43fa f666       lea.l   5fffc(pc),a1
+00060998  45fa 0366       lea.l   60d00(pc),a2  # a1=a2=unused
+0006099c  203a 0050       move.l  609ee(pc),d0  # d0 = #longs = 0x10a
+000609a0  223a 0044       move.l  609e6(pc),d1  # d1=1
+000609a4  4afc            illegal               # TVD *OFF*
+000609a6  e38f            lsl.l   #1,d7         # why? maybe d0 is large and
+000609a8  0b07            btst.l  d5,d7         # this would be too slow if
+000609aa  6706            beq.b   609b2         # decrypted insn by insn...?
+000609ac  0d07            btst.l  d6,d7
+000609ae  6706            beq.b   609b6
+000609b0 *6006            bra.b   609b8
+000609b2  0d07            btst.l  d6,d7
+000609b4  6702            beq.b   609b8
+000609b6  5287            addq.l  #1,d7
+000609b8  df90            add.l   d7,(a0)
+000609ba  de98            add.l   (a0)+,d7
+000609bc  5380            subq.l  #1,d0
+000609be  66e6            bne.b   609a6
+000609c0  4afc            illegal               # TVD *ON*
+000609c2  5381            subq.l  #1,d1
+000609c4  6710            beq.b   609d6
+ <unexecuted encrypted code>
+000609d6  6000 2975       bra.w   6334d         # ADDRESS ERROR!
+
+-------------------------------
+# Carry on to here. more multiple decryption loops.
+00060a06  4e71            nop
+00060a08  0a7c 2000       eori.w  #2000,sr      # Back to user mode for USP
+00060a0c  4ffa 0010       lea.l   60a1e(pc),sp
+00060a10  303c 0156       move.w  #156,d0
+00060a14  3217            move.w  (sp),d1
+00060a16  4441            neg.w   d1            # neg
+00060a18  3ec1            move.w  d1,(sp)+
+00060a1a  51c8 fff8       dbf.w   d0,60a14
+00060a1e  4ffa 0018       lea.l   60a38(pc),sp
+00060a22  303c 0051       move.w  #51,d0
+00060a26  4c9f 0f00       movem.w (sp)+,a0-a3
+00060a2a  c748            exg.l   a3,a0         # permute words 0,3 & 1,2
+00060a2c  c549            exg.l   a2,a1
+00060a2e  48a7 00f0       movem.w a0-a3,-(sp)
+00060a32  508f            addq.l  #8,sp
+00060a34  51c8 fff0       dbf.w   d0,60a26
+00060a38  4ffa 0010       lea.l   60a4a(pc),sp
+00060a3c  303c 0140       move.w  #140,d0
+00060a40  323c de1a       move.w  #de1a,d1
+00060a44  935f            sub.w   d1,(sp)+      # sub de1a
+00060a46  51c8 fffc       dbf.w   d0,60a44
+00060a4a  4ffa 0010       lea.l   60a5c(pc),sp
+00060a4e  303c 0137       move.w  #137,d0
+00060a52  3217            move.w  (sp),d1
+00060a54  4641            not.w   d1            # not
+00060a56  3ec1            move.w  d1,(sp)+
+00060a58  51c8 fff8       dbf.w   d0,60a52
+00060a5c  4ffa 0010       lea.l   60a6e(pc),sp
+00060a60  303c 012e       move.w  #12e,d0
+00060a64  323c 1bc3       move.w  #1bc3,d1
+00060a68  935f            sub.w   d1,(sp)+      # sub 1bc3
+00060a6a  51c8 fffc       dbf.w   d0,60a68
+00060a6e  4ffa 0010       lea.l   60a80(pc),sp
+00060a72  303c 0125       move.w  #125,d0
+00060a76  3217            move.w  (sp),d1
+00060a78  4441            neg.w   d1            # neg
+00060a7a  3ec1            move.w  d1,(sp)+
+00060a7c  51c8 fff8       dbf.w   d0,60a76
+00060a80  4ffa 0010       lea.l   60a92(pc),sp
+00060a84  303c 011c       move.w  #11c,d0
+00060a88  3217            move.w  (sp),d1
+00060a8a  ed59            rol.w   #6,d1         # rol #6
+00060a8c  3ec1            move.w  d1,(sp)+
+00060a8e  51c8 fff8       dbf.w   d0,60a88
+00060a92  4ffa 0018       lea.l   60aac(pc),sp
+00060a96  303c 0043       move.w  #43,d0
+00060a9a  4c9f 0f00       movem.w (sp)+,a0-a3
+00060a9e  c748            exg.l   a3,a0         # permute words 0,3 & 1,2
+00060aa0  c549            exg.l   a2,a1
+00060aa2  48a7 00f0       movem.w a0-a3,-(sp)
+00060aa6  508f            addq.l  #8,sp
+00060aa8  51c8 fff0       dbf.w   d0,60a9a
+00060aac  4ffa 001c       lea.l   60aca(pc),sp
+00060ab0  303c 007f       move.w  #7f,d0
+00060ab4  030f 0000       movep.w 0(sp),d1      # swap odd/even bytes
+00060ab8  050f 0001       movep.w 1(sp),d2
+00060abc  038f 0001       movep.w d1,1(sp)
+00060ac0  058f 0000       movep.w d2,0(sp)
+00060ac4  588f            addq.l  #4,sp
+00060ac6  51c8 ffec       dbf.w   d0,60ab4
+00060aca  4ffa 0010       lea.l   60adc(pc),sp
+00060ace  303c 00f7       move.w  #f7,d0
+00060ad2  3217            move.w  (sp),d1
+00060ad4  4441            neg.w   d1            # neg
+00060ad6  3ec1            move.w  d1,(sp)+
+00060ad8  51c8 fff8       dbf.w   d0,60ad2
+00060adc  4ffa 0010       lea.l   60aee(pc),sp
+00060ae0  303c 00ee       move.w  #ee,d0
+00060ae4  323c bd0d       move.w  #bd0d,d1
+00060ae8  b35f            eor.w   d1,(sp)+      # eor bd0d
+00060aea  51c8 fffc       dbf.w   d0,60ae8
+
+# Onto the next stage...
+00060aee  0a7c 2000       eori.w  #2000,sr      # SR.S = 1
+00060af2  203a fef2       move.l  609e6(pc),d0
+00060af6  e588            lsl.l   #2,d0
+00060af8  45fa 0202       lea.l   60cfc(pc),a2
+00060afc  d5c0            adda.l  d0,a2
+00060afe  47fa f500       lea.l   60000(pc),a3
+00060b02  d7fa fede       adda.l  609e2(pc),a3
+00060b06  b7ca            cmpa.l  a2,a3
+00060b08  6730            beq.b   60b3a         # success bra on sanity checks
+ <unexecuted encrypted code>
+00060b3a  6000 33f9       bra.w   63f35         # ADDRESS ERROR!
+-------------------------------
+
+# More multiple decryption loops:
+00060b74  0a7c 2000       eori.w  #2000,sr      # SR.S = 0
+00060b78  4ffa ffea       lea.l   60b64(pc),sp
+00060b7c  303c 0064       move.w  #64,d0
+00060b80  da9f            add.l   (sp)+,d5      # d5 = checksum from 60b64
+00060b82  51c8 fffc       dbf.w   d0,60b80
+00060b86  4ffa 0010       lea.l   60b98(pc),sp
+00060b8a  303c 00af       move.w  #af,d0
+00060b8e  323c 4a09       move.w  #4a09,d1
+00060b92  d35f            add.w   d1,(sp)+      # add 4a09
+00060b94  51c8 fffc       dbf.w   d0,60b92
+00060b98  4ffa 0018       lea.l   60bb2(pc),sp
+00060b9c  303c 0027       move.w  #27,d0
+00060ba0  4c9f 0f00       movem.w (sp)+,a0-a3
+00060ba4  c748            exg.l   a3,a0         # permute words 0,3 & 1,2
+00060ba6  c549            exg.l   a2,a1
+00060ba8  48a7 00f0       movem.w a0-a3,-(sp)
+00060bac  508f            addq.l  #8,sp
+00060bae  51c8 fff0       dbf.w   d0,60ba0
+00060bb2  4ffa 0010       lea.l   60bc4(pc),sp
+00060bb6  303c 0099       move.w  #99,d0
+00060bba  3217            move.w  (sp),d1
+00060bbc  4441            neg.w   d1            # neg
+00060bbe  3ec1            move.w  d1,(sp)+
+00060bc0  51c8 fff8       dbf.w   d0,60bba
+00060bc4  4ffa 0010       lea.l   60bd6(pc),sp
+00060bc8  303c 0090       move.w  #90,d0
+00060bcc  323c 04a0       move.w  #4a0,d1
+00060bd0  b35f            eor.w   d1,(sp)+      # eor 4a0
+00060bd2  51c8 fffc       dbf.w   d0,60bd0
+00060bd6  4ffa 0010       lea.l   60be8(pc),sp
+00060bda  303c 0087       move.w  #87,d0
+00060bde  3217            move.w  (sp),d1
+00060be0  e959            rol.w   #4,d1         # rol #4
+00060be2  3ec1            move.w  d1,(sp)+
+00060be4  51c8 fff8       dbf.w   d0,60bde
+00060be8  4ffa 0018       lea.l   60c02(pc),sp
+00060bec  303c 001d       move.w  #1d,d0
+00060bf0  4c9f 0f00       movem.w (sp)+,a0-a3
+00060bf4  c748            exg.l   a3,a0         # permute words 0,3 & 1,2
+00060bf6  c549            exg.l   a2,a1
+00060bf8  48a7 00f0       movem.w a0-a3,-(sp)
+00060bfc  508f            addq.l  #8,sp
+00060bfe  51c8 fff0       dbf.w   d0,60bf0
+00060c02  4ffa 0010       lea.l   60c14(pc),sp
+00060c06  303c 0071       move.w  #71,d0
+00060c0a  3217            move.w  (sp),d1
+00060c0c  4441            neg.w   d1            # neg
+00060c0e  3ec1            move.w  d1,(sp)+
+00060c10  51c8 fff8       dbf.w   d0,60c0a
+00060c14  4ffa 0010       lea.l   60c26(pc),sp
+00060c18  303c 0068       move.w  #68,d0
+00060c1c  3217            move.w  (sp),d1
+00060c1e  e359            rol.w   #1,d1         # rol #1
+00060c20  3ec1            move.w  d1,(sp)+
+00060c22  51c8 fff8       dbf.w   d0,60c1c
+00060c26  4ffa ff3c       lea.l   60b64(pc),sp
+00060c2a  303c 0064       move.w  #64,d0
+00060c2e  dc9f            add.l   (sp)+,d6      # d6 = checksum from 60b64
+00060c30  51c8 fffc       dbf.w   d0,60c2e
+00060c34  4ffa 0018       lea.l   60c4e(pc),sp
+00060c38  303c 0014       move.w  #14,d0
+00060c3c  4c9f 0f00       movem.w (sp)+,a0-a3
+00060c40  c748            exg.l   a3,a0         # permute words 0,3 & 1,2
+00060c42  c549            exg.l   a2,a1
+00060c44  48a7 00f0       movem.w a0-a3,-(sp)
+00060c48  508f            addq.l  #8,sp
+00060c4a  51c8 fff0       dbf.w   d0,60c3c
+00060c4e  4ffa 0010       lea.l   60c60(pc),sp
+00060c52  303c 004b       move.w  #4b,d0
+00060c56  3217            move.w  (sp),d1
+00060c58  e959            rol.w   #4,d1         # rol #4
+00060c5a  3ec1            move.w  d1,(sp)+
+00060c5c  51c8 fff8       dbf.w   d0,60c56
+
+# Onto the next stage...
+00060c60  0a7c 2000       eori.w  #2000,sr      # SR.S = 1
+00060c64  0897 0007       bclr.b  #7,(sp)       # clear SR.T in saved SR
+00060c68  41fa f396       lea.l   60000(pc),a0
+00060c6c  303a 008a       move.w  60cf8(pc),d0
+00060c70  6704            beq.b   60c76
+ <unexecuted encrypted code>
+00060c76  2f48 0002       move.l  a0,2(sp)      # saved PC = 60000
+00060c7a  4cfa 7fff f3ce  movem.l 6004c(pc),d0-d7/a0-a6
+00060c80  48e7 fffe       movem.l d0-d7/a0-a6,-(sp) # orig regs -> stack
+00060c84  207a f40a       move.l  60090(pc),a0
+00060c88  4e60            move.l  a0,usp        # restore orig USP
+00060c8a  41fa 0052       lea.l   60cde(pc),a0
+00060c8e  45f9 0000 03e6  lea.l   3e6,a2
+00060c94  303c 000c       move.w  #c,d0
+00060c98  34d8            move.w  (a0)+,(a2)+   # move copy loop -> 3e6
+00060c9a  51c8 fffc       dbf.w   d0,60c98
+00060c9e  41fa f360       lea.l   60000(pc),a0  (609e2 is based on checksums)
+00060ca2  d1fa fd3e       adda.l  609e2(pc),a0  # a0 = 60d00
+00060ca6  43fa f358       lea.l   60000(pc),a1
+00060caa  2449            move.l  a1,a2         # a1 = a2 = 60000
+00060cac  203a 004e       move.l  60cfc(pc),d0
+00060cb0  e588            lsl.l   #2,d0
+00060cb2  d5c0            adda.l  d0,a2         # a2 = 60424
+00060cb4  4cfa 00ff f3e0  movem.l 60098(pc),d0-d7
+00060cba  2039 0000 0004  move.l  4,d0
+00060cc0  2200            move.l  d0,d1
+00060cc2  2e01            move.l  d1,d7         # saved vectors in d0-d7?
+00060cc4  4879 0000 03e6  pea.l   3e6           # jump out to 3e6
+00060cca  4afc            illegal
+00060ccc  203a f3ea       move.l  600b8(pc),d0
+00060cd0  6b04            bmi.b   60cd6
+00060cd2 *4e7b 0002       movec.l d0,cacr       # restore CACR iff saved
+00060cd6  2039 0000 0004  move.l  4,d0          # d0 = ExecBase?
+00060cdc  4e75            rts                   # To copy loop...
+# END OF COPYLOCK
+
+# start copy loop
+00060cde *22d8            move.l  (a0)+,(a1)+   # 60d00 -> 60000
+00060ce0 *b3ca            cmpa.l  a2,a1         # ...up to 60424 (61124)
+00060ce2 *6dfa            blt.b   60cde
+00060ce4 *4299            clr.l   (a1)+         # zap beyond end of copy
+00060ce6 *b3c8            cmpa.l  a0,a1         # range 60424-61124
+00060ce8 *6dfa            blt.b   60ce4
+00060cea *48f9 00ff 0000  movem.l d0-d7,8       # restore saved vectors
+00060cf0  0008 
+00060cf2 *4cdf 7fff       movem.l (sp)+,d0-d7/a0-a6 # restore orig regs
+00060cf6 *4e73            rte                   # To 60000 (see below!)
+# end copy loop
+
+00060cf8 *0000 0000       ori.b   #0,d0
+00060cfc *0000 0109       ori.b   #9,d0
+
+# This code is loaded to 60000 after copylock:
+00060d00 *48e7 80c0       movem.l d0/a0-a1,-(sp)
+00060d04 *43fa 001e       lea.l   60d24(pc),a1
+00060d08 *203c 0000 00ff  move.l  #ff,d0        # Copy 1kB (60d24-61124)
+00060d0e *20d9            move.l  (a1)+,(a0)+   # Copy orig bootblock over the
+00060d10 *51c8 fffc       dbf.w   d0,60d0e      # RNC bootblock
+00060d14 *2c78 0004       move.l  4,a6
+00060d18 *4eae ff76       jsr     -8a(a6)       # Exec.Permit()
+00060d1c *4cdf 0301       movem.l (sp)+,d0/a0-a1
+00060d20 *4ee8 000c       jmp     c(a0)         # Jump to orig bootblock!
+
+# Original bootblock is here...
+00060d24 *444f 5300       'D', 'O', 'S', '\0'
+00060d28 *dc4c 1aa8       <bootblock checksum>
+00060d2c *0000 0000       <root block idx>
+00060d30 *6000 035c       bra.w   6108e         # Branch to copy loop...
+00060d34 *6000 0138       bra.w   60e6e         # Now branch to proper code
+00060d38 *0000 0000       ori.b   #0,d0         # (now at 76000)
+00060d3c *0000 0000       ori.b   #0,d0
+      [75 more]
+-------------------------------
+00060e6e *4ff9 0000 0400  lea.l   400,sp
+00060e74 *4bf9 00df f000  lea.l   dff000,a5
+00060e7a *3b7c 7fff 009c  move.w  #7fff,9c(a5)
+00060e80 *3b7c 7f00 009e  move.w  #7f00,9e(a5)
+00060e86 *3b7c 9100 009e  move.w  #9100,9e(a5)
+00060e8c *3b7c 8380 0096  move.w  #8380,96(a5)
+00060e92 *207c 0000 0400  move.l  #400,a0       # Load to 400 (a0)
+00060e98 *203c 0000 005a  move.l  #5a,d0        # track 0x5a (90d) (d0)
+00060e9e *6100 0038       bsr.w   60ed8         # Load it up
+00060ea2 *4ef8 0400       jmp     400           # Jump at 400
+
+# motor_on:
+00060ea6 *0039 00f8 00bf  ori.b   #f8,ciabprb
+00060eac  d100 
+00060eae *08b9 0007 00bf  bclr.b  #7,ciabprb
+00060eb4  d100 
+00060eb6 *08f9 0002 00bf  bset.b  #2,ciabprb
+00060ebc  d100 
+00060ebe *08b9 0003 00bf  bclr.b  #3,ciabprb
+00060ec4  d100 
+00060ec6 *0839 0005 00bf  btst.b  #5,ciaapra
+00060ecc  e001 
+00060ece *6600 fff6       bne.w   60ec6
+00060ed2 *4e75            rts
+00060ed4 *0000 0000       ori.b   #0,d0
+
+# Loader:
+00060ed8 *21cf 61a0       move.l  sp,61a0
+00060edc *3f00            move.w  d0,-(sp)
+00060ede *31c1 2008       move.w  d1,2008
+00060ee2 *21c8 2004       move.l  a0,2004
+00060ee6 *6100 ffbe       bsr.w   60ea6          # motor_on
+00060eea *6100 010c       bsr.w   60ff8          # seek_track0
+00060eee *31df 200a       move.w  (sp)+,200a
+00060ef2 *6100 010e       bsr.w   61002          # seek_track(0x5a)
+00060ef6 *2b7c 0006 8000  move.l  #68000,20(a5)  # dskpt = 68000
+00060efc  0020 
+00060efe *3b7c 8010 0096  move.w  #8010,96(a5)   # dmacon.diskdma = 1
+00060f04 *3b7c 4000 0024  move.w  #4000,24(a5)
+00060f0a *303c 9996       move.w  #9996,d0
+00060f0e *3b7c 0002 009c  move.w  #2,9c(a5)      # clear intreq.dskblkdone
+00060f14 *3b7c 4489 007e  move.w  #4489,7e(a5)   # 0x4489 sync
+00060f1a *3b7c 8400 009e  move.w  #8400,9e(a5)   # wordsync
+00060f20 *3b40 0024       move.w  d0,24(a5)      # dsklen = 0x1996 words
+00060f24 *0839 0004 00bf  btst.b  #4,ciabicr
+00060f2a  dd00 
+00060f2c *0839 0004 00bf  btst.b  #4,ciabicr     # wait for dskindex...
+00060f32  dd00 
+00060f34 *67f6            beq.b   60f2c
+00060f36 *3b40 0024       move.w  d0,24(a5)      # dsklen = 0x1996 words
+00060f3a *302d 001e       move.w  1e(a5),d0
+00060f3e *0800 0001       btst.l  #1,d0
+00060f42 *67f6            beq.b   60f3a          # wait for intreq.dskblkdone
+00060f44 *3b7c 4000 0024  move.w  #4000,24(a5)   # clear dsklen
+00060f4a *3b7c 0002 009c  move.w  #2,9c(a5)      # clear intreq
+00060f50 *3b7c 0010 0096  move.w  #10,96(a5)     # disable disk dma
+00060f56 *207c 0006 8000  move.l  #68000,a0
+00060f5c *0c58 4489       cmpi.w  #4489,(a0)+
+00060f60 *6694            bne.b   60ef6          # expect >= 1 word of 0x4489
+00060f62 *0c10 0044       cmpi.b  #44,(a0)
+00060f66 *660a            bne.b   60f72
+00060f68 *0c28 0089 0001  cmpi.b  #89,1(a0)      # poss skip a 2nd 4489
+00060f6e *6602            bne.b   60f72
+00060f70 *5488            addq.l  #2,a0
+00060f72 *49fa fdc6       lea.l   60d3a(pc),a4   # a4 = scratch buffer
+00060f76 *7e0a            moveq   #a,d7
+00060f78 *6100 0008       bsr.w   60f82          # decode_sector()
+00060f7c *51cf fffa       dbf.w   d7,60f78       # decode 11 sectors
+00060f80 *4e75            rts
+
+# decode_sector:
+00060f82 *224c            move.l  a4,a1
+00060f84 *7204            moveq   #4,d1
+00060f86 *6100 0050       bsr.w   60fd8          # decode_bytes(4)
+00060f8a *7210            moveq   #10,d1
+00060f8c *6100 004a       bsr.w   60fd8          # decode_bytes(16)
+00060f90 *7204            moveq   #4,d1
+00060f92 *6100 0044       bsr.w   60fd8          # decode_bytes(4)
+00060f96 *7204            moveq   #4,d1
+00060f98 *6100 003e       bsr.w   60fd8          # decode_bytes(4)
+00060f9c *224c            move.l  a4,a1
+00060f9e *4280            clr.l   d0
+00060fa0 *102c 0002       move.b  2(a4),d0       # d0 = sector#
+00060fa4 *0200 000f       andi.b  #f,d0
+00060fa8 *e180            asl.l   #8,d0          # d0 *= 512
+00060faa *d080            add.l   d0,d0
+00060fac *d0b8 2004       add.l   2004,d0        # d0 += load_base
+00060fb0 *2240            move.l  d0,a1          # a1 = decode target
+00060fb2 *323c 0200       move.w  #200,d1        # 512 bytes
+00060fb6 *2f09            move.l  a1,-(sp)
+00060fb8 *6100 001e       bsr.w   60fd8          # decode_bytes(512)
+00060fbc *225f            move.l  (sp)+,a1
+00060fbe *323c 00ff       move.w  #ff,d1
+00060fc2 *0c58 4489       cmpi.w  #4489,(a0)+    # skip to and past sync in a0
+00060fc6 *6600 fffa       bne.w   60fc2
+00060fca *0c50 4489       cmpi.w  #4489,(a0)
+00060fce *6600 0004       bne.w   60fd4
+00060fd2 *5488            addq.l  #2,a0
+00060fd4 *4280            clr.l   d0             # d0=0 == success
+00060fd6 *4e75            rts
+
+# decode_bytes: d1 = #bytes, a0 = src, a1 = dst
+00060fd8 *45f0 1000       lea.l   0(a0,d1.w*1),a2
+00060fdc *5341            subq.w  #1,d1
+00060fde *1018            move.b  (a0)+,d0
+00060fe0 *0200 0055       andi.b  #55,d0
+00060fe4 *d000            add.b   d0,d0
+00060fe6 *141a            move.b  (a2)+,d2
+00060fe8 *0202 0055       andi.b  #55,d2
+00060fec *8002            or.b    d2,d0
+00060fee *12c0            move.b  d0,(a1)+
+00060ff0 *51c9 ffec       dbf.w   d1,60fde
+00060ff4 *204a            move.l  a2,a0
+00060ff6 *4e75            rts
+
+# 60ff8 = seek_track0()
+00060ff8 *4278 200a       clr.w   200a             # (200a) = 0
+00060ffc *31fc 0052 200c  move.w  #52,200c         # (200c) = current cyl#
+
+# 61002 = seek_track()
+00061002 *3038 200a       move.w  200a,d0          # d0 = (200a).w = track#
+00061006 *08f9 0002 00bf  bset.b  #2,ciabprb
+0006100c  d100 
+0006100e *e248            lsr.w   #1,d0
+00061010 *6400 000a       bcc.w   6101c
+00061014 *08b9 0002 00bf  bclr.b  #2,ciabprb       # set dskside appropriately
+0006101a  d100 
+0006101c *31c0 2000       move.w  d0,2000          # (2000).w = cylinder#
+00061020 *08b9 0001 00bf  bclr.b  #1,ciabprb       # seek inwards
+00061026  d100 
+00061028 *343c 0001       move.w  #1,d2
+0006102c *3038 2000       move.w  2000,d0          # (2000) = wanted cyl#
+00061030 *b078 200c       cmp.w   200c,d0          # (200c) = current cyl#
+00061034 *6700 0054       beq.w   6108a            # done if equal
+00061038 *6400 000c       bcc.w   61046            # inward or outward?
+0006103c *08f9 0001 00bf  bset.b  #1,ciabprb       # seek outwards
+00061042  d100 
+00061044 *4442            neg.w   d2
+00061046 *d578 200c       add.w   d2,200c          # inc or dec current cyl#
+0006104a *08b9 0000 00bf  bclr.b  #0,ciabprb
+00061050  d100 
+00061052 *343c 0032       move.w  #32,d2
+00061056 *51ca fffe       dbf.w   d2,61056
+0006105a *08f9 0000 00bf  bset.b  #0,ciabprb       # step the heads...
+00061060  d100 
+00061062 *343c 1770       move.w  #1770,d2
+00061066 *51ca fffe       dbf.w   d2,61066         # skanky dbf loop
+0006106a *3038 2000       move.w  2000,d0
+0006106e *0839 0004 00bf  btst.b  #4,ciaapra
+00061074  e001 
+00061076 *6600 ff8a       bne.w   61002            # on track 0?
+0006107a *4278 200c       clr.w   200c             # current cylin# = 0
+0006107e *4278 200a       clr.w   200a             # current track# = 0
+00061082 *08f9 0002 00bf  bset.b  #2,ciabprb       # (select side 0!)
+00061088  d100 
+0006108a *4e75            rts
+0006108c *0000
+
+# Copy loop: 60d34 -> 76000
+0006108e *33fc 7fff 00df f09a move.w #7fff,intena
+00061096 *41fa fc9c       lea.l   60d34(pc),a0
+0006109a *303c 00d5       move.w  #d5,d0
+0006109e *227c 0007 6000  move.l  #76000,a1
+000610a4 *22d8            move.l  (a0)+,(a1)+
+000610a6 *51c8 fffc       dbf.w   d0,610a4
+000610aa *4ef9 0007 6000  jmp     76000        # jump 76000 (code from 60d34)
+
+000610b0 *0000 0000       ori.b   #0,d0
+000610b4 *0000 0000       ori.b   #0,d0
+      [31677 more]
+-------------------------------
+0007ffac *0006 0d00       ori.b   #0,d6
+0007ffb0 *0006 0000       ori.b   #0,d6
+0007ffb4 *2704            move.l  d4,-(a3)
+0007ffb6 *0006 0ccc       ori.b   #cc,d6
+0007ffba *0000 03e6       ori.b   #e6,d0
+0007ffbe *0000 0000       ori.b   #0,d0
+0007ffc2 *0000 0000       ori.b   #0,d0
+      [13 more]
+-------------------------------
+0007fffa *0000 0006       ori.b   #6,d0

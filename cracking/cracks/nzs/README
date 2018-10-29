@@ -1,0 +1,24 @@
+The same crack and trainer is shown here in native PhxAss assembler,
+and also in syntax suitable for GNU gcc+binutils.
+
+Main changes for the GNU toolchain:
+
+1. Flags are passed to GNU as to avoid needing to prefix register
+names with %, keep branches always PC-relative, and to keep addressing
+displacements 16-bit.
+
+2. Hex literals are prefixed 0x rather than $.
+
+3. Automatic shortening of BRA, Bcc, and BSR instructions requires use
+of pseudo-op names JRA, Jcc, JBSR.
+
+4. Comments are C-style rather than ; to end-of-line.
+
+5. RS.x directives for allocating BSS space do not exist. Fake out an
+alternative with CPP plus the .struct directive.
+
+6. Use .ascii and .asciz directives for string literals.
+
+7. Use CPP in place of equ directives
+
+Really not very much, and the assembler is less buggy than PhxAss.
