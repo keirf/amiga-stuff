@@ -776,7 +776,7 @@ static void mainmenu(void)
     clear_whole_screen();
     keycode_buffer = 0;
 
-    sprintf(s, "SysTest - by KAF <keir.xen@gmail.com>");
+    sprintf(s, "SysTest v%s - by KAF <keir.xen@gmail.com>", version);
     print_line(&r);
     r.y++;
     sprintf(s, "------------------------------------");

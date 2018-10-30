@@ -13,3 +13,4 @@
 
 char build_date[] = __DATE__;
 char build_time[] = __TIME__;
+char version[] = VER;

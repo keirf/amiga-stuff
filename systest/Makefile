@@ -1,3 +1,5 @@
+VER := 1.1
+
 OBJS += entry.o
 OBJS += cancellation.o
 OBJS += util.o
@@ -21,17 +23,23 @@ include ../base/Rules.mk
 .PHONY: build.c
 
 .PHONY: all
-all: systest.zip
+all: systest-v$(VER).zip
+
+build.o: CFLAGS += -DVER="\"$(VER)\""
 
 entry.o: AFLAGS += -DDETECT_MEMORY
 
-systest.zip: systest.adf systest.exe SysTest.info README.md
+systest-v$(VER).zip: systest.adf SysTest SysTest.info README.md systest.elf
+	$(RM) -r systest-v$(VER)
+	mkdir -p systest-v$(VER)/debug
+	cp $^ systest-v$(VER)
+	mv systest-v$(VER)/systest.elf systest-v$(VER)/debug
+	$(RM) $@
+	zip -r $@ systest-v$(VER)
+
+SysTest: systest.exe
 	cp systest.exe SysTest
 	chmod 0755 SysTest
-	mkdir -p debug ; cp systest.elf debug
-	$(RM) $@
-	zip -q $@ $(subst systest.exe,SysTest,$^) debug/*
-	$(RM) -r SysTest debug
 
 systest.exe: systest.bin
 	python ../base/mk_amiga_exe.py $< $@
@@ -41,3 +49,4 @@ systest.adf: bootblock.bin systest.bin
 
 clean::
 	$(RM) *.adf *.exe *.zip SysTest
+	$(RM) -r systest-v*

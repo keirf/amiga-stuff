@@ -112,7 +112,7 @@ static void crash(struct frame *f)
     /* Print a banner. */
     x = 4;
     y = 0;
-    sprintf(s, "SysTest build: %s %s", build_date, build_time);
+    sprintf(s, "SysTest v%s (build: %s %s)", version, build_date, build_time);
     print(x, y, s);
 
     /* Calculate stack pointers. */
