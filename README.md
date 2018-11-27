@@ -3,10 +3,7 @@
 
 ## SysTest
 
-### Binaries
-
-The latest build of SysTest can always be found [here (Google Drive)]
-(https://drive.google.com/open?id=0B6F45EdkSMp1ZGhXMWRvOXVDd3M).
+### Download the latest build of SysTest [here (Github)](https://github.com/keirf/Amiga-Stuff/releases/download/systest-v1.1/systest-v1.1.zip).
 
 ### Build From Source
 
