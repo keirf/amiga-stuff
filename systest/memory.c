@@ -11,6 +11,28 @@
 
 #include "systest.h"
 
+static uint32_t lb(uint32_t _lb)
+{
+    /* Round down to 64kB boundary. */
+    uint32_t lb = _lb & ~0xffff;
+    if (_lb > 0x10000000) {
+        /* ZorroIII: Round to nearest 1MB (issue #6). */
+        lb = (_lb + 0x7ffff) & ~0xfffff;
+    }
+    return lb;
+}
+
+static uint32_t ub(uint32_t _ub)
+{
+    /* Round up to 64kB boundary. */
+    uint32_t ub = (_ub + 0xffff) & ~0xffff;
+    if (_ub > 0x10000000) {
+        /* ZorroIII: Round to nearest 1MB (issue #6). */
+        ub = (_ub + 0x7ffff) & ~0xfffff;
+    }
+    return ub;
+}
+
 static inline __attribute__((always_inline)) uint32_t lfsr(uint32_t x)
 {
     asm volatile (
@@ -552,8 +574,8 @@ static void kickstart_test_one_region(struct char_row *r, unsigned int i)
 
     /* Calculate inclusive range [a,b] with limits expanded to 64kB alignment 
      * (Kickstart sometimes steals RAM from the limits). */
-    a = mem_region[i].lower & ~0xffff;
-    b = ((mem_region[i].upper + 0xffff) & ~0xffff) - 1;
+    a = lb(mem_region[i].lower);
+    b = ub(mem_region[i].upper) - 1;
 
     clear_whole_screen();
     print_menu_nav_line();
@@ -665,8 +687,8 @@ restart:
         r.x = 0;
         r.y = 3;
         for (i = base; (i < nr_mem_regions) && (i < base+8); i++) {
-            a = mem_region[i].lower & ~0xffff;
-            b = (mem_region[i].upper + 0xffff) & ~0xffff;
+            a = lb(mem_region[i].lower);
+            b = ub(mem_region[i].upper);
             sprintf(s, "$%u %2u  %08x - %08x  %s  %3u.%u MB$",
                     i-base+1, i, a, b-1,
                     mem_region[i].attr & 2 ? "Chip" :
@@ -738,8 +760,8 @@ static void kickstart_memory_test(struct char_row *r)
         for (i = 0; !do_exit && (i < nr_mem_regions); i++) {
             /* Calculate inclusive range [a,b] with limits expanded to 64kB
              * alignment (Kickstart sometimes steals RAM from the limits). */
-            a = max_t(uint32_t, 0x40000, mem_region[i].lower & ~0xffff);
-            b = ((mem_region[i].upper + 0xffff) & ~0xffff) - 1;
+            a = max_t(uint32_t, 0x40000, lb(mem_region[i].lower));
+            b = ub(mem_region[i].upper) - 1;
             tm_args.start = a;
             while (!do_exit && (keycode_buffer != K_ESC)
                    && tm_args.start && (tm_args.start < b)) {
@@ -782,8 +804,8 @@ void memcheck(void)
 
         chip = fast = slow = 0;
         for (i = 0; i < nr_mem_regions; i++) {
-            a = mem_region[i].lower & ~0xffff;
-            b = (mem_region[i].upper + 0xffff) & ~ 0xffff;
+            a = lb(mem_region[i].lower);
+            b = ub(mem_region[i].upper);
             if (mem_region[i].attr & 2)
                 chip += b-a;
             else if ((a >= 0x00c00000) && (a < 0x00d00000))
