@@ -594,7 +594,7 @@ static void inc_dec_year(enum bc_type bc_type, uint32_t base, int8_t amount)
         yr = ((rp5c01->yr10 & 0xf) * 10) + (rp5c01->yr1 & 0xf);
         yr += (yr < 78) ? 2000 : 1900;        /* 0 <= yr <= 99 --> 1978-2077 */
 
-		yr += amount;
+	    yr += amount;
         if (yr > 2077)
             yr = 1978;
 
