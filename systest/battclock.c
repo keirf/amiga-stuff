@@ -11,6 +11,15 @@
 
 #include "systest.h"
 
+struct time {
+    uint8_t sec;   /* 0-59 */
+    uint8_t min;   /* 0-59 */
+    uint8_t hour;  /* 0-23 */
+    uint8_t mday;  /* 1-31 */
+    uint8_t mon;   /* 0-11 */
+    uint16_t year; /* 1978-2077 */
+};
+
 struct msm6242 {
     uint8_t _0[3], sec1;
     uint8_t _1[3], sec10;
@@ -53,6 +62,22 @@ enum bc_type {
     BC_RP5C01 = 0,
     BC_MSM6242,
     BC_NONE
+};
+
+struct bc {
+    enum bc_type type;
+    uint32_t base;
+};
+
+const static uint8_t days_in_month[] = {
+    31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+};
+const static char *mon_str[] = {
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+};
+const static char *day_week_str[] = {
+    "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
 };
 
 /* This function has to be careful: 
@@ -106,10 +131,9 @@ static enum bc_type detect_clock_at(uint32_t base)
     return BC_NONE;
 }
 
-static enum bc_type detect_clock(uint32_t *base)
+static void detect_clock(struct bc *bc)
 {
     uint32_t bases[] = { 0xdc0000, 0xd80000 };
-    enum bc_type bc_type;
     unsigned int i, nr = ARRAY_SIZE(bases);
 
     /* AGA systems never have RTC at 0xD80000 (only early A2000). Indeed A4000 
@@ -118,25 +142,23 @@ static enum bc_type detect_clock(uint32_t *base)
         nr--;
 
     for (i = 0; i < nr; i++) {
-        bc_type = detect_clock_at(*base = bases[i]);
-        if (bc_type != BC_NONE)
+        bc->type = detect_clock_at(bc->base = bases[i]);
+        if (bc->type != BC_NONE)
             break;
     }
-
-    return bc_type;
 }
 
 /* Look for out-of-range register values indicating that the configured 
  * time/date is invalid and requires reset. This will often be the case 
  * when running a clock with no backup battery. */
-static int bc_time_is_bogus(enum bc_type bc_type, uint32_t base)
+static int bc_time_is_bogus(struct bc *bc)
 {
     int good = 0;
     uint8_t t;
 
-    switch (bc_type) {
+    switch (bc->type) {
     case BC_RP5C01: {
-        volatile struct rp5c01 *rp5c01 = (struct rp5c01 *)base;
+        volatile struct rp5c01 *rp5c01 = (struct rp5c01 *)bc->base;
         rp5c01->ctl_d = 0; /* stop timer */
         good = ((rp5c01->sec1 & 0xf) <= 9)
             && ((rp5c01->sec10 & 0xf) <= 5)
@@ -151,7 +173,7 @@ static int bc_time_is_bogus(enum bc_type bc_type, uint32_t base)
         break;
     }
     case BC_MSM6242: {
-        volatile struct msm6242 *msm6242 = (struct msm6242 *)base;
+        volatile struct msm6242 *msm6242 = (struct msm6242 *)bc->base;
         msm6242->ctl_d = 1; /* set HOLD */
         t = 10;
         while ((msm6242->ctl_d & 2) && --t) { /* wait 10ms for !BUSY */
@@ -178,138 +200,154 @@ static int bc_time_is_bogus(enum bc_type bc_type, uint32_t base)
     return !good;
 }
 
-static void bc_get_time(enum bc_type bc_type, uint32_t base, char *s)
+static void bc_get_time(struct bc *bc, struct time *t)
 {
-    const static uint8_t days_in_month[] = {
-        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
-    };
-    const static char *mon_str[] = {
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-    };
-    const static char *day_week_str[] = {
-        "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
-    };
+    uint8_t hr24;
+    unsigned int i;
 
-    uint32_t days_since_1900;
-    uint8_t sec, min, hr, day, day_week, mon, hr24, t;
-    uint16_t yr;
-    switch (bc_type) {
+    switch (bc->type) {
     case BC_RP5C01: {
-        volatile struct rp5c01 *rp5c01 = (struct rp5c01 *)base;
+        volatile struct rp5c01 *rp5c01 = (struct rp5c01 *)bc->base;
         rp5c01->ctl_d = 9;
         hr24 = rp5c01->mon10 & 1;
         rp5c01->ctl_d = 0; /* stop timer */
-        sec = ((rp5c01->sec10 & 0xf) * 10) + (rp5c01->sec1 & 0xf);
-        min = ((rp5c01->min10 & 0xf) * 10) + (rp5c01->min1 & 0xf);
+        t->sec = ((rp5c01->sec10 & 0xf) * 10) + (rp5c01->sec1 & 0xf);
+        t->min = ((rp5c01->min10 & 0xf) * 10) + (rp5c01->min1 & 0xf);
         if (hr24) {
-            hr = ((rp5c01->hr10 & 0x3) * 10) + (rp5c01->hr1 & 0xf);
+            t->hour = ((rp5c01->hr10 & 0x3) * 10) + (rp5c01->hr1 & 0xf);
         } else {
-            hr = ((rp5c01->hr10 & 0x1) * 10) + (rp5c01->hr1 & 0xf);
+            t->hour = ((rp5c01->hr10 & 0x1) * 10) + (rp5c01->hr1 & 0xf);
             if (rp5c01->hr10 & 0x2)
-                hr += 12;
+                t->hour += 12;
         }
-        day = ((rp5c01->day10 & 0x3) * 10) + (rp5c01->day1 & 0xf);
-        mon = ((rp5c01->mon10 & 0x1) * 10) + (rp5c01->mon1 & 0xf);
-        yr = ((rp5c01->yr10 & 0xf) * 10) + (rp5c01->yr1 & 0xf);
-        day_week = rp5c01->day_of_week & 0xf;
+        t->mday = ((rp5c01->day10 & 0x3) * 10) + (rp5c01->day1 & 0xf);
+        t->mon = ((rp5c01->mon10 & 0x1) * 10) + (rp5c01->mon1 & 0xf);
+        t->year = ((rp5c01->yr10 & 0xf) * 10) + (rp5c01->yr1 & 0xf);
+        /*day_week = rp5c01->day_of_week & 0xf;*/
         rp5c01->ctl_d = 8; /* start timer */
         break;
     }
     case BC_MSM6242: {
-        volatile struct msm6242 *msm6242 = (struct msm6242 *)base;
+        volatile struct msm6242 *msm6242 = (struct msm6242 *)bc->base;
         hr24 = !!(msm6242->ctl_f & 4);
         msm6242->ctl_d = 1; /* set HOLD */
-        t = 10;
-        while ((msm6242->ctl_d & 2) && --t) { /* wait 10ms for !BUSY */
+        i = 10;
+        while ((msm6242->ctl_d & 2) && --i) { /* wait 10ms for !BUSY */
             msm6242->ctl_d = 0;
             delay_ms(1);
             msm6242->ctl_d = 1;
         }
-        sec = ((msm6242->sec10 & 0xf) * 10) + (msm6242->sec1 & 0xf);
-        min = ((msm6242->min10 & 0xf) * 10) + (msm6242->min1 & 0xf);
+        t->sec = ((msm6242->sec10 & 0xf) * 10) + (msm6242->sec1 & 0xf);
+        t->min = ((msm6242->min10 & 0xf) * 10) + (msm6242->min1 & 0xf);
         if (hr24) {
-            hr = ((msm6242->hr10 & 0x3) * 10) + (msm6242->hr1 & 0xf);
+            t->hour = ((msm6242->hr10 & 0x3) * 10) + (msm6242->hr1 & 0xf);
         } else {
-            hr = ((msm6242->hr10 & 0x1) * 10) + (msm6242->hr1 & 0xf);
+            t->hour = ((msm6242->hr10 & 0x1) * 10) + (msm6242->hr1 & 0xf);
             if (msm6242->hr10 & 0x4)
-                hr += 12;
+                t->hour += 12;
         }
-        day = ((msm6242->day10 & 0x3) * 10) + (msm6242->day1 & 0xf);
-        mon = ((msm6242->mon10 & 0x1) * 10) + (msm6242->mon1 & 0xf);
-        yr = ((msm6242->yr10 & 0xf) * 10) + (msm6242->yr1 & 0xf);
-        day_week = msm6242->day_of_week & 0xf;
+        t->mday = ((msm6242->day10 & 0x3) * 10) + (msm6242->day1 & 0xf);
+        t->mon = ((msm6242->mon10 & 0x1) * 10) + (msm6242->mon1 & 0xf);
+        t->year = ((msm6242->yr10 & 0xf) * 10) + (msm6242->yr1 & 0xf);
+        /*day_week = msm6242->day_of_week & 0xf;*/
         msm6242->ctl_d = 0; /* clear HOLD */
         break;
     }
     default:
-        s[0] = '\0';
         return;
     }
 
-    sec %= 60;
-    min %= 60;
-    hr %= 24;
-    day &= 31;
-    day_week %= 7;
-    mon = (uint8_t)(mon-1) % 12;
-    yr %= 100;
-    yr += (yr < 78) ? 2000 : 1900;
+    t->sec %= 60;
+    t->min %= 60;
+    t->hour %= 24;
+    t->mday &= 31;
+    t->mon = (uint8_t)(t->mon-1) % 12;
+    t->year %= 100;
+    t->year += (t->year < 78) ? 2000 : 1900;
+}
+
+static uint8_t get_day_week(struct time *t)
+{
+    uint32_t days_since_1900;
+    unsigned int i;
 
     /* Workbench ignores the day-of-week register and does not set it. 
      * So calculate the day-of-week ourselves. */
-    days_since_1900 = (uint32_t)(yr - 1900) * 365; /* years */
-    if (yr >= 1904)
-        days_since_1900 += (yr - 1901 + (mon >= 2)) >> 2; /* leap years */
-    for (t = 0; t < mon; t++)
-        days_since_1900 += days_in_month[t]; /* months */
-    days_since_1900 += day - 1; /* day of month */
+    days_since_1900 = (t->year - 1900) * 365; /* years */
+    if (t->year >= 1904) {
+        /* leap years */
+        days_since_1900 += (t->year - 1901 + (t->mon >= 2)) >> 2;
+    }
+    for (i = 0; i < t->mon; i++)
+        days_since_1900 += days_in_month[i]; /* months */
+    days_since_1900 += t->mday - 1; /* day of month */
     days_since_1900 += 1; /* 1 Jan 1900 was a Monday */
-    day_week = do_div(days_since_1900, 7);
-
-    sprintf(s, "%s %s %u %02u:%02u:%02u %u",
-            day_week_str[day_week], mon_str[mon],
-            day, hr, min, sec, yr);
+    return do_div(days_since_1900, 7);
 }
 
-static void bc_reset(enum bc_type bc_type, uint32_t base)
+static void strtime(struct time *t, char *s)
 {
-    switch (bc_type) {
+    uint8_t day_week = get_day_week(t);
+
+    sprintf(s, "%s %s %u %02u:%02u:%02u %u",
+            day_week_str[day_week], mon_str[t->mon],
+            t->mday, t->hour, t->min, t->sec, t->year);
+}
+
+static void bc_set_time(struct bc *bc, struct time *t)
+{
+    uint8_t day_week = get_day_week(t);
+    uint8_t yr = t->year - 1900;
+    uint8_t mon = t->mon + 1;
+
+    switch (bc->type) {
     case BC_RP5C01: {
-        volatile struct rp5c01 *rp5c01 = (struct rp5c01 *)base;
+        volatile struct rp5c01 *rp5c01 = (struct rp5c01 *)bc->base;
         rp5c01->ctl_d = 9; /* stop timer, mode 01 */
         rp5c01->mon10 = 1; /* set 24h mode */
         rp5c01->ctl_d = 0; /* stop timer, mode 00 */
         /* Jan 1 00:00:00 2016 */
-        rp5c01->sec10 = rp5c01->sec1 = 0;
-        rp5c01->min10 = rp5c01->min1 = 0;
-        rp5c01->hr10 = rp5c01->hr1 = 0;
-        rp5c01->yr10 = 1; rp5c01->yr1 = 6;
-        rp5c01->mon10 = 0; rp5c01->mon1 = 1;
-        rp5c01->day10 = 0; rp5c01->day1 = 1;
-        rp5c01->day_of_week = 6; /* Friday */
+        rp5c01->sec10 = t->sec / 10;
+        rp5c01->sec1 = t->sec % 10;
+        rp5c01->min10 = t->min / 10;
+        rp5c01->min1 = t->min % 10;
+        rp5c01->hr10 = t->hour / 10;
+        rp5c01->hr1 = t->hour % 10;
+        rp5c01->yr10 = (yr / 10) % 10;
+        rp5c01->yr1 = yr % 10;
+        rp5c01->mon10 = mon / 10;
+        rp5c01->mon1 = mon % 10;
+        rp5c01->day10 = t->mday / 10;
+        rp5c01->day1 = t->mday % 10;
+        rp5c01->day_of_week = day_week;
         rp5c01->ctl_d = 8; /* start timer */
         break;
     }
     case BC_MSM6242: {
-        volatile struct msm6242 *msm6242 = (struct msm6242 *)base;
-        uint8_t t;
+        volatile struct msm6242 *msm6242 = (struct msm6242 *)bc->base;
+        uint8_t i;
         msm6242->ctl_d = 1; /* set HOLD */
-        t = 10;
-        while ((msm6242->ctl_d & 2) && --t) { /* wait 10ms for !BUSY */
+        i = 10;
+        while ((msm6242->ctl_d & 2) && --i) { /* wait 10ms for !BUSY */
             msm6242->ctl_d = 0;
             delay_ms(1);
             msm6242->ctl_d = 1;
         }
         msm6242->ctl_f = 4; /* set 24h mode */
-        msm6242->sec10 = msm6242->sec1 = 0;
-        msm6242->min10 = msm6242->min1 = 0;
-        msm6242->hr10 = msm6242->hr1 = 0;
+        msm6242->sec10 = t->sec / 10;
+        msm6242->sec1 = t->sec % 10;
+        msm6242->min10 = t->min / 10;
+        msm6242->min1 = t->min % 10;
+        msm6242->hr10 = t->hour / 10;
+        msm6242->hr1 = t->hour % 10;
         /* NB. WB1.3 does not clamp yr10 in range 0-9 and borks if we do so. */
-        msm6242->yr10 = 11; msm6242->yr1 = 6; /* 2016-1900 = 116 */
-        msm6242->mon10 = 0; msm6242->mon1 = 1;
-        msm6242->day10 = 0; msm6242->day1 = 1;
-        msm6242->day_of_week = 6; /* Friday */
+        msm6242->yr10 = yr / 10;
+        msm6242->yr1 = yr % 10;
+        msm6242->mon10 = mon / 10;
+        msm6242->mon1 = mon % 10;
+        msm6242->day10 = t->mday / 10;
+        msm6242->day1 = t->mday % 10;
+        msm6242->day_of_week = day_week;
         msm6242->ctl_d = 0; /* clear HOLD */
         break;
     }
@@ -323,41 +361,46 @@ void battclock_test(void)
     char s[80];
     struct char_row r = { .s = s };
     uint8_t key = 0, is_bogus = 0;
-    enum bc_type bc_type;
-    uint32_t base;
+    struct time time;
+    struct bc bc;
 
     r.x = 5;
     r.y = 0;
     sprintf(s, "-- Battery-Backed Clock Test --");
     print_line(&r);
 
-    bc_type = detect_clock(&base);
-    if (bc_type == BC_NONE) {
+    detect_clock(&bc);
+    if (bc.type == BC_NONE) {
         sprintf(s, "** No Clock Detected **");
     } else {
         sprintf(s, "%s detected at %08x",
-                (bc_type == BC_RP5C01) ? "RP5C01" : "MSM6242",
-                base);
+                (bc.type == BC_RP5C01) ? "RP5C01" : "MSM6242",
+                bc.base);
     }
     r.x = 7;
     r.y = 3;
     print_line(&r);
 
-    if (bc_type != BC_NONE) {
-        r.x = 9;
-        r.y = 8;
-        sprintf(s, "$1 Reset Date & Time$");
-        print_line(&r);
+    if (bc.type == BC_NONE) {
+        while (!do_exit && (keycode_buffer != K_ESC))
+            continue;
+        return;
     }
+
+    r.x = 9;
+    r.y = 8;
+    sprintf(s, "$1 Reset Date & Time$");
+    print_line(&r);
 
     while (!do_exit) {
         do {
             r.x = 7;
             r.y = 5;
-            bc_get_time(bc_type, base, s);
+            bc_get_time(&bc, &time);
+            strtime(&time, s);
             wait_bos();
             print_line(&r);
-            if (bc_time_is_bogus(bc_type, base) && !is_bogus) {
+            if (bc_time_is_bogus(&bc) && !is_bogus) {
                 is_bogus = 1;
                 r.y++;
                 sprintf(s, "WARNING: Invalid date/time -- needs reset?");
@@ -369,7 +412,11 @@ void battclock_test(void)
         if (key == K_ESC)
             break;
         if (key == K_F1) {
-            bc_reset(bc_type, base);
+            /* Fri Jan 1 00:00:00 2016 */
+            memset(&time, 0, sizeof(time));
+            time.mday = 1;
+            time.year = 2016;
+            bc_set_time(&bc, &time);
             is_bogus = 0;
             clear_text_rows(6, 1);
         }
