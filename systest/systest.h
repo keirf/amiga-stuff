@@ -48,6 +48,7 @@ extern uint8_t cpu_model; /* 680[x]0 */
 
 /* Keyboard IRQ: Keyboard variables. */
 extern volatile uint8_t keycode_buffer, do_exit;
+extern volatile uint8_t key_pressed[128];
 
 /* Keycodes used for menu navigation. */
 enum {

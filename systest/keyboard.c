@@ -13,6 +13,7 @@
 
 /* Keyboard IRQ: Keyboard variables. */
 volatile uint8_t keycode_buffer, do_exit;
+volatile uint8_t key_pressed[128];
 /* A buffer ring for holding up to 1024 consecutive keycodes without loss.
  * Avoids losing key events during the keyboard test. Note no use of volatile:
  * make sure to use barrier() as needed to synchronise with the irq handler. */
@@ -39,6 +40,9 @@ uint8_t keyboard_IRQ(void)
     /* Place key-down events in the basic keycode buffer. */
     if (!(key & 0x80))
         keycode_buffer = key;
+
+    /* Maintain an array of which keys are currently pressed. */
+    key_pressed[key & 0x7f] = !(key & 0x80);
 
     /* Place all keycodes in the buffer ring if there is space. */
     if ((keycode_prod - keycode_cons) != ARRAY_SIZE(keycode_ring))

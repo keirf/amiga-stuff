@@ -356,11 +356,98 @@ static void bc_set_time(struct bc *bc, struct time *t)
     }
 }
 
+static void battclock_set_time(
+    struct bc *bc, struct time *t, struct char_row *r)
+{
+    char *s = (char *)r->s;
+    uint8_t key;
+    unsigned int i, j;
+
+    r->x = 10;
+    r->y = 7;
+    sprintf(s, "-- Set Date & Time --");
+    print_line(r);
+    r->x -= 7;
+    r->y++;
+    sprintf(s, "$1 Month$  $2 Day$      $3 Year$");
+    print_line(r);
+    r->y++;
+    sprintf(s, "$4 Hour$   $5 Minutes$  $6 Seconds$");
+    print_line(r);
+    r->x += 9;
+    r->y++;
+    sprintf(s, "$E Save & Exit$");
+    print_line(r);
+
+    r->x = 7;
+    r->y = 5;
+    strtime(t, s);
+    wait_bos();
+    print_line(r);
+
+    for (;;) {
+
+        do {
+            while (!(key = keycode_buffer) && !do_exit)
+                continue;
+            keycode_buffer = 0;
+
+            if (do_exit || (key == K_ESC))
+                goto out;
+        } while ((key < K_F1) || (key > K_F6));
+
+        i = 0;
+        do {
+            switch (key) {
+            case K_F1: /* Month */
+                t->mon++;
+                t->mon %= 12;
+                break;
+            case K_F2: /* Day */
+                t->mday++;
+                if (t->mday > 31)
+                    t->mday = 1;
+                break;
+            case K_F3: /* Year */
+                t->year++;
+                if (t->year > 2077)
+                    t->year = 1978;
+                break;
+            case K_F4: /* Hour */
+                t->hour++;
+                t->hour %= 24;
+                break;
+            case K_F5: /* Minutes */
+                t->min++;
+                t->min %= 60;
+                break;
+            case K_F6: /* Seconds */
+                t->sec++;
+                t->sec %= 60;
+                break;
+            }
+
+            strtime(t, s);
+            wait_bos();
+            print_line(r);
+
+            j = (i == 0) ? 500 : (i < 5) ? 100 : 50;
+            while (--j && !do_exit && key_pressed[key])
+                delay_ms(1);
+            i++;
+
+        } while (key_pressed[key] && !do_exit);
+    }
+
+out:
+    clear_text_rows(7, 4);
+}
+
 void battclock_test(void)
 {
     char s[80];
     struct char_row r = { .s = s };
-    uint8_t key = 0, is_bogus = 0;
+    uint8_t key, is_bogus;
     struct time time;
     struct bc bc;
 
@@ -370,6 +457,7 @@ void battclock_test(void)
     print_line(&r);
 
     detect_clock(&bc);
+redisplay:
     if (bc.type == BC_NONE) {
         sprintf(s, "** No Clock Detected **");
     } else {
@@ -384,6 +472,7 @@ void battclock_test(void)
     if (bc.type == BC_NONE) {
         while (!do_exit && (keycode_buffer != K_ESC))
             continue;
+        keycode_buffer = 0;
         return;
     }
 
@@ -391,6 +480,12 @@ void battclock_test(void)
     r.y = 8;
     sprintf(s, "$1 Reset Date & Time$");
     print_line(&r);
+    r.y++;
+    sprintf(s, "$2 Set Date & Time$");
+    print_line(&r);
+    r.y++;
+
+    is_bogus = 0;
 
     while (!do_exit) {
         do {
@@ -411,7 +506,8 @@ void battclock_test(void)
         keycode_buffer = 0;
         if (key == K_ESC)
             break;
-        if (key == K_F1) {
+        switch (key) {
+        case K_F1:
             /* Fri Jan 1 00:00:00 2016 */
             memset(&time, 0, sizeof(time));
             time.mday = 1;
@@ -419,6 +515,14 @@ void battclock_test(void)
             bc_set_time(&bc, &time);
             is_bogus = 0;
             clear_text_rows(6, 1);
+            break;
+        case K_F2:
+            clear_text_rows(6, 1);
+            battclock_set_time(&bc, &time, &r);
+            if (do_exit)
+                break;
+            bc_set_time(&bc, &time);
+            goto redisplay;
         }
     }
 }
