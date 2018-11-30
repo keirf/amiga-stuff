@@ -3,7 +3,7 @@
 
 ## SysTest
 
-### Download the latest build of SysTest [here (Github)](https://github.com/keirf/Amiga-Stuff/releases/download/systest-v1.1/systest-v1.1.zip).
+### Download the latest build of SysTest [here (Github)](https://github.com/keirf/Amiga-Stuff/releases/download/systest-v1.2/systest-v1.2.zip).
 
 ### Build From Source
 

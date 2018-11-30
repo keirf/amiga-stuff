@@ -1,4 +1,4 @@
-VER := 1.1
+VER := 1.2
 
 OBJS += entry.o
 OBJS += cancellation.o
