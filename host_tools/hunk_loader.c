@@ -71,7 +71,7 @@ int main(int argc, char **argv)
 {
     int ch, fd, do_reloc = 0;
     uint32_t hunk_id, insz, outsz, i, x, first, last;
-    uint32_t hunk_offs[3], cur = 0;
+    uint32_t *hunk_offs, cur = 0;
     char *in, *out, *p, *buf, *outbuf;
     uint32_t base = 0;
 
@@ -133,10 +133,21 @@ int main(int argc, char **argv)
         printf(" Table size: %u, First: %u, Last: %u\n", x, first, last);
         goto bad_hunk;
     }
+    hunk_offs = malloc(x * sizeof(*hunk_offs));
+    memset(hunk_offs, 0, x * sizeof(*hunk_offs));
     hunk_offs[0] = base;
     for (i = first; i <= last; i++) {
+        uint8_t type;
         x = fetch32(&p);
-        printf("  Hunk %u: %u longwords\n", i, x);
+        type = x >> 30;
+        x &= (1u<<30)-1;
+        if (type >= 3) {
+            /* We don't support extended AllocMem flags (type=3) */
+            printf("Bad hunk AllocFlag %u\n", type);
+            goto bad_hunk;
+        }
+        printf("  Hunk %u: %u longwords (%s)\n", i, x,
+               (type == 0) ? "Any" : (type == 1) ? "Chip" : "Fast");
         /* Real Amiga loader would AllocMem() here. */
         hunk_offs[i+1] = hunk_offs[i] + 4*x;
     }
@@ -145,7 +156,7 @@ int main(int argc, char **argv)
     
     cur = 0;
     while ((p - buf) < insz) {
-        hunk_id = fetch32(&p);
+        hunk_id = fetch32(&p) & ((1<<30)-1);
         switch (hunk_id) {
         case HUNK_CODE:
             printf("\nHUNK_CODE [Hunk %u]\n", cur);
