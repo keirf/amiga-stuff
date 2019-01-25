@@ -1,0 +1,331 @@
+Decrunch HUNK_CODE section from Skid Row crack of Atlantis.
+Crunched file is in HUNK_DATA.
+
+Skid Row Strategy:
+HUNK_CODE (depacker, hunk loader)
+HUNK_DATA (packed exe), hacked HUNK_HEADER for depack size
+Depacker:
+ Depacks in-place, backwards, overwriting pack data from end back to start
+Loader:
+ Pass #1: Loads code/data/bss; skips (delta-encoded) RELOC32s
+  - Large code/data payloads are FreeMem()ed, remaining exe is memcpy()ed up
+ Pass #2: Processes RELOC32s.
+  - Gets hunk addresses from walking the SegList
+ Frees remainder of original HUNK_DATA
+Post-Fixup:
+ SegList includes HUNK_CODE plus loaded hunks
+ Return address is fixed up with first loaded hunk
+ CacheClearU
+ **DONE**
+
+My Strategy:
+HUNK_CODE (tiny, jumps to second...)
+HUNK_CODE (depacker)
+HUNK_DATA (packed [data, hunk-loader]), hacked HUNK_HEADER for depack size
+Depacker:
+ Unhook HUNK_CODE and HUNK_DATA
+ Fast copy HUNK_DATA to end of its extended space
+ Depack
+ CacheClear
+ Jump to hunk-loader
+Hunk Loader:
+ Dealloc HUNK_CODE
+ Load Hunks, Dealloc from HUNK_DATA as we go
+ CacheClear
+ Dealloc Tail: PEA exe-start; JMP FreeMem(a6)
+NB. RELOC32s can be delta-encoded and moved to end of the exe (custom layout)
+
+disassemble atlantis 24 278 10000 
+00010000  487a 01c8       pea.l   101ca(pc) # push address of RTS
+00010004  48e7 fffe       movem.l d0-d7/a0-a6,-(sp)
+
+00010008  49fa fff2       lea.l   fffc(pc),a4 # our SegList first BPTR
+0001000c  2054            movea.l (a4),a0     # a0 = BPTR(HUNK_DATA)
+0001000e  d1c8            adda.l  a0,a0
+00010010  d1c8            adda.l  a0,a0
+00010012  5848            addq.w  #4,a0       # a0 = start of packed data
+
+00010014  2648            movea.l a0,a3       # a3 = start of unpacked data
+00010016  504b            addq.w  #8,a3       # a3 = skip header
+00010018  2c78 0004       movea.l 4,a6        # a6 = ExecBase
+0001001c  2f08            move.l  a0,-(sp)    # Push pack start
+0001001e  d1fc 0001 812c  adda.l  #1812c,a0   # a0 = end of pack
+                                              # (1812c = len(HUNK_DATA))
+00010024  6100 01a6       bsr.w   101cc       # unpack (? to where?)
+00010028  2057            movea.l (sp),a0
+0001002a  5148            subq.w  #8,a0       
+0001002c  2610            move.l  (a0),d3     # d3 = HUNK_DATA alloc length
+0001002e  d688            add.l   a0,d3       # d3 = ptr to end of HUNK_DATA
+00010030  504b            addq.w  #8,a3
+00010032  2e1b            move.l  (a3)+,d7    # d7 = # segs
+00010034  504b            addq.w  #8,a3       # a3 = &len_table[0]
+00010036  206e 0114       movea.l 114(a6),a0  # a0 = ThisTask
+0001003a  2028 00ac       move.l  ac(a0),d0   # d0 = pr_CLI
+0001003e  670a            beq.b   1004a
+
+00010040  e588            lsl.l   #2,d0
+00010042  2040            movea.l d0,a0
+00010044  4294            clr.l   (a4)        # Unhook HUNK_DATA from SegList
+00010046  49e8 003c       lea.l   3c(a0),a4   # SegList of current command
+
+0001004a  2c07            move.l  d7,d6
+0001004c  e58e            lsl.l   #2,d6
+0001004e  45f3 6800       lea.l   0(a3,d6.l*1),a2 # a2 = &seg[0]
+00010052  9bcd            suba.l  a5,a5       # a5 = Seg linked list (=0)
+00010054  7c00            moveq   #0,d6       # d6 = hunk# (=0)
+00010056  7a00            moveq   #0,d5       # d5 = seen-loadable (=0)
+# next_hunk:
+00010058  564a            addq.w  #3,a2
+0001005a  200a            move.l  a2,d0
+0001005c  0200 00fc       andi.b  #fc,d0
+00010060  2440            movea.l d0,a2       # a2 aligned
+00010062  281a            move.l  (a2)+,d4    # d4 = hunk id
+00010064  0c44 03ec       cmpi.w  #3ec,d4
+00010068  6620            bne.b   1008a
+# is_reloc32: (stamps the hunk id and then skips the hunk):
+0001006a  3546 fffc       move.w  d6,-4(a2)   # seg nr stamped into hunk id
+0001006e  524a            addq.w  #1,a2
+00010070  200a            move.l  a2,d0
+00010072  0880 0000       bclr.l  #0,d0
+00010076  2440            movea.l d0,a2
+00010078  301a            move.w  (a2)+,d0    # d0 = count
+0001007a  67dc            beq.b   10058       #    == 0?
+0001007c  5c4a            addq.w  #6,a2
+0001007e  5340            subq.w  #1,d0
+00010080  67ec            beq.b   1006e
+00010082  4a1a            tst.b   (a2)+
+00010084  66f8            bne.b   1007e
+00010086  564a            addq.w  #3,a2
+00010088  60f4            bra.b   1007e
+#
+0001008a  0c44 03f2       cmpi.w  #3f2,d4
+0001008e  6700 008c       beq.w   1011c
+# is_code_data_bss:
+00010092  4a05            tst.b   d5
+00010094  6702            beq.b   10098         # already loaded?
+00010096  5286            addq.l  #1,d6         # then inc the hunk#
+00010098  7a01            moveq   #1,d5
+0001009a  201b            move.l  (a3)+,d0      # d0 = alloc size & flags
+0001009c  5480            addq.l  #2,d0
+0001009e  7201            moveq   #1,d1
+000100a0  4841            swap    d1
+000100a2  0800 001e       btst.l  #1e,d0
+000100a6  6702            beq.b   100aa
+000100a8  5401            addq.b  #2,d1
+000100aa  e588            lsl.l   #2,d0
+000100ac  2400            move.l  d0,d2
+000100ae  4eae ff3a       jsr     -c6(a6)       # NewSeg = AllocMem
+000100b2  4a80            tst.l   d0
+000100b4  6700 00ea       beq.w   101a0         # alloc fail?
+000100b8  2240            movea.l d0,a1
+000100ba  22c2            move.l  d2,(a1)+      # NewSeg->Len = alloc_len
+000100bc  2009            move.l  a1,d0
+000100be  e488            lsr.l   #2,d0
+000100c0  2880            move.l  d0,(a4)       # Seg->Next = NewSeg
+000100c2  2849            movea.l a1,a4         # Seg = NewSeg
+000100c4  5849            addq.w  #4,a1         # a1 = &NewHunk
+000100c6  200d            move.l  a5,d0
+000100c8  6602            bne.b   100cc
+000100ca  2a49            movea.l a1,a5         # a5 = head of Seg list
+000100cc  201a            move.l  (a2)+,d0      # d0 = load size
+000100ce  6788            beq.b   10058         #    == 0?
+000100d0  2f0a            move.l  a2,-(sp)      # (sp) = &hunk_payload[0]
+000100d2  0c44 03eb       cmpi.w  #3eb,d4       # HUNK_BSS?
+000100d6  6736            beq.b   1010e         # ...then skip the memcpy
+000100d8  2400            move.l  d0,d2
+000100da  e58a            lsl.l   #2,d2         # d2 = #bytes to load
+000100dc  41f2 2800       lea.l   0(a2,d2.l*1),a0 # a0 = &hunk_payload[end]
+000100e0  2203            move.l  d3,d1         # d1 = &unpack_end
+000100e2  9288            sub.l   a0,d1         # d1 = unpack_end-payload_end
+000100e4  e489            lsr.l   #2,d1         # d1 = (in longwords)
+000100e6  22da            move.l  (a2)+,(a1)+   # MEMCPY
+000100e8  5380            subq.l  #1,d0
+000100ea  66fa            bne.b   100e6
+000100ec  2457            movea.l (sp),a2       # a2 = &hunk_payload[0]
+000100ee  0c42 1000       cmpi.w  #1000,d2      # loaded >4kB?
+000100f2  651c            bcs.b   10110         # ...if not, skip
+#
+000100f4  24d8            move.l  (a0)+,(a2)+   # memcpy(&payload[0],
+000100f6  5381            subq.l  #1,d1         #        &payload[end],
+000100f8  66fa            bne.b   100f4         #      unpack_end-payload_end)
+000100fa  2457            movea.l (sp),a2       # a2 = &next_hunk_id
+000100fc  2003            move.l  d3,d0
+000100fe  9682            sub.l   d2,d3
+00010100  5e83            addq.l  #7,d3
+00010102  0203 00f8       andi.b  #f8,d3        # d3 = new_unpack_end
+00010106  2243            movea.l d3,a1         # a1 = d3 = free_start
+00010108  9083            sub.l   d3,d0         # d0 = free_len
+0001010a  4eae ff2e       jsr     -d2(a6)       # FreeMem (8-byte aligned!)
+0001010e  7400            moveq   #0,d2
+#
+00010110  2502            move.l  d2,-(a2)      # update load size with...
+00010112  588a            addq.l  #4,a2         # ...(remaining) payload bytes
+00010114  d5c2            adda.l  d2,a2         # skip that payload
+00010116  588f            addq.l  #4,sp         # fix up stack
+00010118  6000 ff3e       bra.w   10058         # ...and onto next hunk_id
+# is_hunk_end:
+0001011c  7a00            moveq   #0,d5         # seen no loaded hunk
+0001011e  5286            addq.l  #1,d6         # ...at this new forced id
+00010120  be86            cmp.l   d6,d7
+00010122  6200 ff34       bhi.w   10058         # next hunk_id please...
+00010126  3546 fffc       move.w  d6,-4(a2)     # save max hunk# over HUNK_END
+0001012a  2f4d 0040       move.l  a5,40(sp)     # overwrite return address
+0001012e  564b            addq.w  #3,a3
+00010130  200b            move.l  a3,d0
+00010132  0200 00fc       andi.b  #fc,d0
+00010136  2640            movea.l d0,a3
+00010138  221b            move.l  (a3)+,d1      # a3 = our new cursor
+# reloc_pass:
+0001013a  0c41 03ec       cmpi.w  #3ec,d1       # RELOC32?
+0001013e  6650            bne.b   10190         # ..skip if not
+00010140  4841            swap    d1
+00010142  6138            bsr.b   1017c         # Get seg base
+00010144  2409            move.l  a1,d2         # d2 = seg being modified
+00010146  524b            addq.w  #1,a3
+00010148  200b            move.l  a3,d0
+0001014a  0880 0000       bclr.l  #0,d0
+0001014e  2640            movea.l d0,a3
+00010150  301b            move.w  (a3)+,d0
+00010152  67da            beq.b   1012e
+00010154  321b            move.w  (a3)+,d1      # Get seg base
+00010156  6124            bsr.b   1017c         # a1 = target seg
+00010158  281b            move.l  (a3)+,d4
+0001015a  2442            movea.l d2,a2
+0001015c  2209            move.l  a1,d1
+0001015e  d5c4            adda.l  d4,a2
+00010160  d392            add.l   d1,(a2)
+00010162  5340            subq.w  #1,d0
+00010164  67e0            beq.b   10146
+00010166  7200            moveq   #0,d1
+00010168  121b            move.b  (a3)+,d1
+0001016a  660a            bne.b   10176
+0001016c  121b            move.b  (a3)+,d1
+0001016e  e189            lsl.l   #8,d1
+00010170  121b            move.b  (a3)+,d1
+00010172  e189            lsl.l   #8,d1
+00010174  121b            move.b  (a3)+,d1
+00010176  e389            lsl.l   #1,d1
+00010178  d881            add.l   d1,d4
+0001017a  60de            bra.b   1015a
+
+# Get seg base (d1):
+0001017c  224d            movea.l a5,a1
+0001017e  5989            subq.l  #4,a1
+00010180  5341            subq.w  #1,d1
+00010182  6508            bcs.b   1018c
+00010184  2251            movea.l (a1),a1
+00010186  d3c9            adda.l  a1,a1
+00010188  d3c9            adda.l  a1,a1
+0001018a  60f4            bra.b   10180
+0001018c  5889            addq.l  #4,a1
+0001018e  4e75            rts
+
+# skip_non_reloc:
+00010190  0c41 03f2       cmpi.w  #3f2,d1
+00010194  6704            beq.b   1019a
+00010196  d7db            adda.l  (a3)+,a3
+00010198  7200            moveq   #0,d1
+0001019a  4841            swap    d1
+0001019c  4a41            tst.w   d1            # is this final tagged HUNK_END
+0001019e  678e            beq.b   1012e         # ...loop if not
+
+# final_fixup:
+000101a0  225f            movea.l (sp)+,a1
+000101a2  5189            subq.l  #8,a1         # a1 = Seg Start of HUNK_DATA
+000101a4  2003            move.l  d3,d0
+000101a6  9089            sub.l   a1,d0
+000101a8  4eae ff2e       jsr     -d2(a6)       # Final FreeMeM
+000101ac  41fa fe4e       lea.l   fffc(pc),a0   # our SegList BPTR
+000101b0  4a90            tst.l   (a0)
+000101b2  6606            bne.b   101ba         # is our BPTR NULL?
+000101b4  2008            move.l  a0,d0         # It is, so chain ourself
+000101b6  e488            lsr.l   #2,d0         # onto the new SegList
+000101b8  2880            move.l  d0,(a4)
+000101ba  0c6e 0025 0014  cmpi.w  #25,14(a6)
+000101c0  6504            bcs.b   101c6
+000101c2  4eae fd84       jsr     -27c(a6)      # CacheClear
+000101c6  4cdf 7fff       movem.l (sp)+,d0-d7/a0-a6
+000101ca  4e75            rts                   # jump at unpacked exe!
+
+# unpack: (a0 = end of pack?, a3 = unpack start?)
+000101cc  4bfa 009e       lea.l   1026c(pc),a5
+000101d0  7c03            moveq   #3,d6
+000101d2  7801            moveq   #1,d4
+000101d4  7e07            moveq   #7,d7
+000101d6  7a01            moveq   #1,d5
+000101d8  244b            movea.l a3,a2
+000101da  2220            move.l  -(a0),d1
+000101dc  4a01            tst.b   d1
+000101de  6706            beq.b   101e6
+000101e0  6128            bsr.b   1020a
+000101e2  9284            sub.l   d4,d1
+000101e4  e2ad            lsr.l   d1,d5
+000101e6  e089            lsr.l   #8,d1
+000101e8  d7c1            adda.l  d1,a3
+#
+000101ea  611e            bsr.b   1020a
+000101ec  653e            bcs.b   1022c
+000101ee  7400            moveq   #0,d2
+000101f0  3004            move.w  d4,d0
+000101f2  6124            bsr.b   10218
+000101f4  d441            add.w   d1,d2
+000101f6  b246            cmp.w   d6,d1
+000101f8  67f6            beq.b   101f0
+000101fa  7007            moveq   #7,d0
+000101fc  611a            bsr.b   10218
+000101fe  1701            move.b  d1,-(a3)
+00010200  51ca fff8       dbf.w   d2,101fa
+00010204  b5cb            cmpa.l  a3,a2
+00010206  6524            bcs.b   1022c
+00010208  4e75            rts
+#
+0001020a  e8ad            lsr.l   d4,d5
+0001020c  6702            beq.b   10210
+0001020e  4e75            rts
+00010210  2a20            move.l  -(a0),d5
+00010212  e8b5            roxr.l  d4,d5
+00010214  4e75            rts
+#
+00010216  9044            sub.w   d4,d0
+00010218  7200            moveq   #0,d1
+0001021a  e8ad            lsr.l   d4,d5
+0001021c  6708            beq.b   10226
+0001021e  e9b1            roxl.l  d4,d1
+00010220  51c8 fff8       dbf.w   d0,1021a
+00010224  4e75            rts
+00010226  2a20            move.l  -(a0),d5
+00010228  e8b5            roxr.l  d4,d5
+0001022a  60f2            bra.b   1021e
+#
+0001022c  3004            move.w  d4,d0
+0001022e  61e8            bsr.b   10218
+00010230  7000            moveq   #0,d0
+00010232  1035 1000       move.b  0(a5,d1.w*1),d0
+00010236  3401            move.w  d1,d2
+00010238  b446            cmp.w   d6,d2
+0001023a  6616            bne.b   10252
+0001023c  61cc            bsr.b   1020a
+0001023e  6502            bcs.b   10242
+00010240  7007            moveq   #7,d0
+00010242  61d2            bsr.b   10216
+00010244  3601            move.w  d1,d3
+00010246  7002            moveq   #2,d0
+00010248  61ce            bsr.b   10218
+0001024a  d441            add.w   d1,d2
+0001024c  b247            cmp.w   d7,d1
+0001024e  67f6            beq.b   10246
+00010250  6004            bra.b   10256
+00010252  61c2            bsr.b   10216
+00010254  3601            move.w  d1,d3
+00010256  d444            add.w   d4,d2
+00010258  1733 3000       move.b  0(a3,d3.w*1),-(a3)
+0001025c  51ca fffa       dbf.w   d2,10258
+00010260  6004            bra.b   10266
+00010262  00df 0001
+00010266  b5cb            cmpa.l  a3,a2
+00010268  6580            bcs.b   101ea
+0001026a  4e75            rts
+0001026c  090a 0c0d       movep.w c0d(a2),d4
+00010270  0003 7e7c       ori.b   #7c,d3
+00010274  4e46            trap    #6
+00010276  8280            or.l    d0,d1
