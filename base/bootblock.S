@@ -73,78 +73,12 @@ start:
 
         /* We have loaded code from disk: Flush caches if possible */
         cmp.w   #37,LibBase_Version(a6) /* exec.lib_version >= 37? */
-        jmi     .nocache
+        jcs     .nocache
         jsr     Exec_CacheClearU(a6)
 .nocache:
 
-        move.l  (sp),a3         /* a3 = payload data */
-        move.l  (a3),d0
-        cmp.l   #HUNK_HEADER,d0 /* AmigaDOS load file? */
-        jeq     LoadSeg         /* LoadSeg it if so. */
-
-        /* Raw payload: jump directly at it. */
-        addq.l  #8,sp
+        move.l  (sp)+,a0        /* a0 = payload data */
+        move.l  (sp)+,a1        /* a1 = TDIOReq */
         jmp     (a3)
 
-LoadSeg: /* LoadSeg(a3) */
-        add.w   #16,a3          /* Skip HUNK_HEADER, string, nr hunks, first */
-        move.l  (a3)+,d2        /* d2 = d3 = last hunk id (== nr - 1) */
-        move.l  d2,d3
-        lea     hunks(pc),a2
-1:      move.l  (a3)+,d0        /* d0 = hunk size (longwords) + flags */
-        move.l  d0,d1
-        lsl.l   #2,d0           /* d0 = hunk size (bytes) */
-        rol.l   #3,d1
-        and.l   #7,d1
-        or.b    #1,d1           /* d1 = AllocMem flags */
-        jsr     Exec_AllocMem(a6)
-        move.l  d0,(a2)+        /* save hunk base to hunks[] */
-        dbf     d2,1b
-        lea     hunks(pc),a2
-
-next_hunk:
-        move.l  (a3)+,d0        /* d0 = hunk id */
-        move.l  (a3)+,d2
-        subq.w  #1,d2           /* d2 = hunk size (longwords) - 1 */
-        move.l  (a2)+,a0
-        move.l  a0,a1           /* a0 = a1 = hunk base address */
-        cmp.w   #HUNK_BSS,d0
-        jeq     hunk_bss
-hunk_code_or_data:              /* HUNK_CODE, HUNK_DATA */
-1:      move.l  (a3)+,(a1)+     /* Fill the hunk */
-        dbf     d2,1b
-        jra     next_subhunk
-hunk_bss:                       /* HUNK_BSS */
-        moveq   #0,d0
-1:      move.l  d0,(a1)+        /* Zero the hunk */
-        dbf     d2,1b
-next_subhunk:
-        move.l  (a3)+,d0        /* d0 = subhunk id */
-        cmp.w   #HUNK_RELOC32,d0
-        jne     hunk_end        /* must be HUNK_END */
-next_reloc:                     /* HUNK_RELOC32 */
-        move.l  (a3)+,d2        /* nr relocs */
-        jeq     next_subhunk
-        subq.w  #1,d2           /* d2 = nr relocs - 1 */
-        move.l  (a3)+,d1        /* reloc hunk */
-        lsl.w   #2,d1
-        move.l  hunks(pc,d1.w),d1 /* reloc hunk base address */
-1:      move.l  (a3)+,d0        /* reloc offset */
-        add.l   d1,(a0,d0.l)
-        dbf     d2,1b
-        jra     next_reloc
-hunk_end:                       /* HUNK_END */
-        dbf     d3,next_hunk
-
-        /* Free the payload */
-        move.l  (sp)+,a1
-        move.l  load_len(pc),d0
-        jsr     Exec_FreeMem(a6)
-
-        /* Jump at Hunk 0 (must be HUNK_CODE!) */
-        move.l  hunks(pc),a0
-        move.l  (sp)+,a1        /* a1 = TDIOReq */
-        jmp     (a0)
-        
-        .align  4
-hunks:
+.align 4
