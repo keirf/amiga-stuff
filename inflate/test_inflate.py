@@ -20,24 +20,39 @@ def usage(argv):
     sys.exit(1)
 
 def main(argv):
+    nr = 0
     for a in argv[1:]:
-        test(a)
+        if os.path.isfile(a):
+            test(a)
+            nr += 1
+    print("** Tested %u OK" % nr)
 
 def test(name):
     print("Testing '%s'..." % name)
-    os.system('cp ' + name + ' ' + PREFIX + '0')
+
+    # _test_0: Local copy of original file
+    os.system('cp "' + name + '" ' + PREFIX + '0')
     crc16 = crcmod.predefined.Crc('crc-ccitt-false')
     with open(PREFIX + '0', 'rb') as f:
         crc16.update(f.read())
+
+    # _test_1: Gzipped file
     os.system('gzip -c9 ' + PREFIX + '0 >' + PREFIX + '1')
+
+    # _test_2: DEFLATE stream + custom header/footer
     os.system('degzip -H ' + PREFIX + '1 ' + PREFIX + '2')
+
+    # _test_3: Register & memory state for 68000 emulator
     f = open(PREFIX + '3', 'wb')
+    # Initial register state: only SR,PC,SP really matter
     f.write(struct.pack('>18IH6x', 0,0,0,0,0,0,0,0, # D0-D7
-                        0,0,0,0,0,0,0,0x7fffc, # A0-A7
+                        0,0,0,0,0,0,0,0x1ffffc, # A0-A7
                         0x1000, # PC
                         0, # SSP
                         0)) # SR
+    # Poison exception vectors and low memory to 0x1000
     mem = bytearray([0xde,0xad,0xbe,0xef]) * 0x400
+    # Marshal the depacker and test harness (Amiga load file)
     with open('test_inflate', 'rb') as infile:
         (id, x, nr, first, last) = struct.unpack('>5I', infile.read(5*4))
         assert id == HUNK_HEADER and x == 0
@@ -47,14 +62,18 @@ def test(name):
         mem += infile.read(nr * 4)
         (id,) = struct.unpack('>I', infile.read(4))
         assert id == HUNK_END
+    # Marshal the compressed binary with header (padded to longword)
     with open(PREFIX + '2', 'rb') as infile:
         mem += infile.read()
-    mem += bytearray([0]) * (4-(len(mem)&3))
-    remain = (0x80000 - len(mem)) // 4
+    mem += bytearray([0]) * (-len(mem)&3)
+    # Poison remaining longwords to top of memory
+    remain = (0x200000 - len(mem)) // 4
     mem += bytearray([0xde,0xad,0xbe,0xef]) * (remain-1)
+    # Final return address is magic longword (we check PC after emulation)
     mem += bytearray([0xf0,0xe0,0xd0,0xc0])
     f.write(mem)
     f.close()
+
     # Requires m68k_emulate from Github:keirf/Disk-Utilities.git/m68k on PATH
     os.system('m68k_emulate ' + PREFIX + '3 ' + PREFIX + '4')
     with open(PREFIX + '4', 'rb') as f:
@@ -69,7 +88,7 @@ def test(name):
               % (a0,a1,a2,a3,a4,a5,a6,a7))
         print('pc: %08x  ssp: %08x  sr: %04x' % (pc,ssp,sr))
         assert pc == 0xf0e0d0c0
-        assert a7 == 0x80000
+        assert a7 == 0x200000
         assert d0&0xffff == crc16.crcValue # Emulated CRC == our CRC?
         assert d0&0xffff == d2&0xffff      # Emulated CRC == header CRC?
         assert sr&4 # CC_Z (ie crcs match)
@@ -78,8 +97,9 @@ def test(name):
         crc16.crcValue = 0xffff
         crc16.update(mem[a0:a0+d1])
         assert d0&0xffff == crc16.crcValue # Emulated CRC == our check?
-    print()
-        
+
+    # All done: clean up
+    print("")
     os.system('rm ' + PREFIX + '*')
     
 if __name__ == "__main__":

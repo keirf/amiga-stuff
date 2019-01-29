@@ -25,7 +25,7 @@ all: degzip
 
 test_inflate: test_inflate.o
 	$(CC) -o $@ $^ $(LDFLAGS)
-	$(PYTHON) test_inflate.py *.c *.S *.asm
+	$(PYTHON) test_inflate.py *.[cSo] *.asm ../cracking/protections/* ../cracking/cracks/nzs/gnu_c/* ../systest/*
 
 degzip: degzip_gnu.c
 	gcc -O2 -Wall -o $@ $^
@@ -33,4 +33,4 @@ degzip: degzip_gnu.c
 .PHONY: test_inflate
 
 clean:
-	$(RM) degzip *.o *~ test_inflate
+	$(RM) degzip *.o *~ test_inflate _test_*
