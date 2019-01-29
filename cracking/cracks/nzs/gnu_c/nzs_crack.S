@@ -123,7 +123,7 @@ main:   move.w  #0x2000,sr      /* allow CPU interrupts now that we are */
         lea.l   0x64(a5),a1
 1:      move.l  (a0)+,(a1)+
         cmp.l   a0,a2
-        jpl     1b
+        jcc     1b
 
         /* Patch the old track loader to jump at us */
         /* 76698: bsr.w nzs_load_tracks */
@@ -160,7 +160,7 @@ patch2: /* (We jump here instead of the final jump to 0x400) */
         lea.l   (0xc28).w,a1
 1:      move.l  (a0)+,(a1)+
         cmp.l   a0,a2
-        jpl     1b
+        jcc     1b
 
         /* TRAINER 1. Infinite lives */
         lea.l   config_options(pc),a4
@@ -351,7 +351,7 @@ _load_sector:
         move.w  #0x4000,0x24(a4)  /* dsklen -- no more dma */
 .decode_mfm:
         move.l  8(sp),a0                /* a0 = mfm start */
-        lea     mfm_bytes-0x438(a0),a1  /* a1 = mfm end - 1 sector */
+        lea     mfm_bytes-1080(a0),a1   /* a1 = mfm end - 1 sector */
 .next_sector:
         cmpi.w  #0x4489,(a0)      /* skip 4489 sync */
         jeq     .find_sector
@@ -363,7 +363,7 @@ _load_sector:
         lea.l   0x438(a0),a0      /* skip this sector */
 .find_sector:
         cmpa.l  a0,a1             /* bail if we scan to end of mfm buffer */
-        jmi     .fail_retry
+        jls     .fail_retry
         cmpi.w  #0x4489,(a0)+
         jne     .find_sector
         jra     .next_sector
@@ -525,8 +525,8 @@ mfm_encode_track:
         dbf     d7,.sect
         move.l  #0xaaaaaaaa,d0
 .lop3:  move.l  d0,-(a1)
-        cmpa.l  a1,a0
-        jmi     .lop3
+        cmpa.l  a0,a1
+        jhi     .lop3
         movem.l (sp)+,d0-d7/a0-a1
         rts
 

@@ -59,7 +59,7 @@ start:
 
         /* We have loaded code from disk: Flush caches if possible */
         cmp.w   #37,0x14(a6)    /* exec.lib_version >= 37 */
-        jmi     .done
+        jcs     .done
         jsr     -0x27c(a6)      /* exec.CacheClearU */
 
         /* Clean up our stack and jump at what we just loaded */

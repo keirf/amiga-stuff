@@ -46,7 +46,7 @@
 
         /* Disable caches if possible, including flush. */
         cmp.w   #37,0x14(a6)    /* exec.lib_version >= 37 */
-        jmi     .no_cache_disable
+        jcs     .no_cache_disable
         moveq   #0,d0
         moveq   #-1,d1
         jsr     EXEC_CacheControl(a6)

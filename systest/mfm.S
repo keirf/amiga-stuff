@@ -13,7 +13,7 @@ mfm_decode_track:
         move.l  (a3)+,d0          /* mfm_bytes */
         moveq   #0,d3             /* nr_sectors */
         move.l  #0x55555555,d5
-        sub.w   #0x438,d0
+        sub.w   #1080,d0
         lea     (a0,d0.w),a3      /* a3 = mfm end - 1 sector */
 .next_sector:
         cmpi.w  #0x4489,(a0)      /* skip 4489 sync */
@@ -39,7 +39,7 @@ mfm_decode_track:
         move.l  d4,(a1)+          /* save the EOR checksum */
 .find_sector:
         cmpa.l  a0,a3             /* bail if we scan to end of mfm buffer */
-        jmi     .done
+        jls     .done
         cmpi.w  #0x4489,(a0)+
         jne     .find_sector
         jra     .next_sector
@@ -114,8 +114,8 @@ mfm_encode_track:
         dbf     d7,.sect
         move.l  #0xaaaaaaaa,d0
 .lop3:  move.l  d0,-(a1)
-        cmpa.l  a1,a0
-        jmi     .lop3
+        cmpa.l  a0,a1
+        jhi     .lop3
         movem.l (sp)+,d0-d7/a0-a1
         rts
 
