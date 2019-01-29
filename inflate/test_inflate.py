@@ -44,12 +44,6 @@ def test(name):
 
     # _test_3: Register & memory state for 68000 emulator
     f = open(PREFIX + '3', 'wb')
-    # Initial register state: only SR,PC,SP really matter
-    f.write(struct.pack('>18IH6x', 0,0,0,0,0,0,0,0, # D0-D7
-                        0,0,0,0,0,0,0,0x1ffffc, # A0-A7
-                        0x1000, # PC
-                        0, # SSP
-                        0)) # SR
     # Poison exception vectors and low memory to 0x1000
     mem = bytearray([0xde,0xad,0xbe,0xef]) * 0x400
     # Marshal the depacker and test harness (Amiga load file)
@@ -72,11 +66,18 @@ def test(name):
     # Final return address is magic longword (we check PC after emulation)
     mem += bytearray([0xf0,0xe0,0xd0,0xc0])
     f.write(mem)
+    # Initial register state: only SR,PC,SP really matter
+    f.write(struct.pack('>18IH6x', 0,0,0,0,0,0,0,0, # D0-D7
+                        0,0,0,0,0,0,0,0x1ffffc, # A0-A7
+                        0x1000, # PC
+                        0, # SSP
+                        0)) # SR
     f.close()
 
     # Requires m68k_emulate from Github:keirf/Disk-Utilities.git/m68k on PATH
     os.system('m68k_emulate ' + PREFIX + '3 ' + PREFIX + '4')
     with open(PREFIX + '4', 'rb') as f:
+        mem = bytes(f.read(0x200000))
         (d0,d1,d2,d3,d4,d5,d6,d7) = struct.unpack('>8I', f.read(8*4))
         (a0,a1,a2,a3,a4,a5,a6,a7) = struct.unpack('>8I', f.read(8*4))
         (pc,ssp,sr) = struct.unpack('>2IH6x', f.read(4*4))
@@ -93,7 +94,6 @@ def test(name):
         assert d0&0xffff == d2&0xffff      # Emulated CRC == header CRC?
         assert sr&4 # CC_Z (ie crcs match)
         # Check CRC in situ in the returned memory buffer
-        mem = bytes(f.read())
         crc16.crcValue = 0xffff
         crc16.update(mem[a0:a0+d1])
         assert d0&0xffff == crc16.crcValue # Emulated CRC == our check?
