@@ -176,7 +176,7 @@ build_code_loop:
         bls     .2
         lsl.w   #2,d6           ; symbol <<= 2 if so
 .2:     cmp.b   #9-1,d5
-        bpl     codelen_gt_8
+        bcc     codelen_gt_8
 
 codelen_le_8: ; codelen <= 8: leaf in table entry(s)
         lsl.w   #3,d6
@@ -190,7 +190,7 @@ codelen_le_8: ; codelen <= 8: leaf in table entry(s)
         or.w    d7,d3           ; d3 = last table offset
 .1:     move.w  d6,(a1,d3.w)
         sub.w   d2,d3
-        bpl     .1
+        bcc     .1
         bra     build_code_next
 
 codelen_gt_8: ; codelen > 8: requires a tree walk
@@ -253,7 +253,7 @@ STREAM_NEXTSYMBOL macro
         subq.b  #8,d6           ; consume 8 bits from the stream
 .2\@:   ; stream_next_bits(1), inlined & optimised
         subq.b  #1,d6           ; 4 cy
-        bpl     .3\@            ; 10 cy (taken)
+        bcc     .3\@            ; 10 cy (taken)
         move.b  (a5)+,d5        ; [8 cy]
         moveq   #7,d6           ; [4 cy]
 .3\@:   lsr.w   #1,d5           ; 8 cy
@@ -364,7 +364,7 @@ STREAM_NEXTSYMBOL macro
         moveq   #0,d0
 .1\@:   ; stream_next_bits(1), inlined & optimised
         subq.b  #1,d6           ; 4 cy
-        bpl     .2\@            ; 10 cy (taken)
+        bcc     .2\@            ; 10 cy (taken)
         move.b  (a5)+,d5        ; [8 cy]
         moveq   #7,d6           ; [4 cy]
 .2\@:   lsr.w   #1,d5           ; 8 cy
@@ -382,7 +382,7 @@ STREAM_NEXTSYMBOL macro
 STREAM_NEXTBITS macro
 .1\@:   moveq   #0,d0
         cmp.b   d1,d6
-        bpl     .2\@            ; while (s->nr < nr)
+        bcc     .2\@            ; while (s->nr < nr)
         move.b  (a5)+,d0
         lsl.l   d6,d0
         or.l    d0,d5           ; s->cur |= *p++ << s->nr
@@ -519,7 +519,7 @@ huffman:
 c_loop:
         INLINE_stream_next_symbol
         cmp.b   #16,d0
-        bmi     .c_lit
+        bcs     .c_lit
         beq     .c_16
         cmp.b   #17,d0
         beq     .c_17
@@ -585,7 +585,7 @@ decode_loop:
         else
         cmp.w   #256,d0  ;  8 cy
         endc
-        bpl     .2       ;  8 cy
+        bcc     .2       ;  8 cy
         ; 0-255: Byte literal
         move.b  d0,(a4)+ ;  8 cy
         bra     .1       ; 10 cy
@@ -636,6 +636,7 @@ stream_next_symbol:
         endc
 
         ; Build a base/extra-bits table on the stack
+        ; d0 = #pairs-1, d2 = max_value, d4 = log_2(extrabits_repeat)
 build_base_extrabits:
         ifeq	OPT_STORAGE_OFFSTACK
         move.l  (sp)+,a0
@@ -643,11 +644,11 @@ build_base_extrabits:
 .1:     move.w  d0,d3
         lsr.w   d4,d3
         subq.w  #1,d3
-        bpl     .2
+        bcc     .2
         moveq   #0,d3
 .2:     moveq   #0,d1
-        bset    d3,d1
-        sub.w   d1,d2
+        bset    d3,d1           ; d1 = 1 << extrabits
+        sub.w   d1,d2           ; d2 = base
         move.w  d2,-(aS)
         move.w  d3,-(aS)
         dbf     d0,.1

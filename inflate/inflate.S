@@ -171,7 +171,7 @@ build_code:
         jls     9f
         lsl.w   #2,d6           /* symbol <<= 2 if so */
 9:      cmp.b   #9-1,d5
-        jpl     codelen_gt_8
+        jcc     codelen_gt_8
 
 codelen_le_8: /* codelen <= 8: leaf in table entry(s) */
         lsl.w   #3,d6
@@ -185,7 +185,7 @@ codelen_le_8: /* codelen <= 8: leaf in table entry(s) */
         or.w    d7,d3           /* d3 = last table offset */
 9:      move.w  d6,(a1,d3.w)
         sub.w   d2,d3
-        jpl     9b
+        jcc     9b
         jra     4f
 
 codelen_gt_8: /* codelen > 8: requires a tree walk */
@@ -247,7 +247,7 @@ codelen_gt_8: /* codelen > 8: requires a tree walk */
         subq.b  #8,d6           /* consume 8 bits from the stream */
 98:     /* stream_next_bits(1), inlined & optimised */
         subq.b  #1,d6           /* 4 cy */
-        jpl     97f             /* 10 cy (taken) */
+        jcc     97f             /* 10 cy (taken) */
         move.b  (a5)+,d5        /* [8 cy] */
         moveq   #7,d6           /* [4 cy] */
 97:     lsr.w   #1,d5           /* 8 cy */
@@ -354,7 +354,7 @@ build_code:
         moveq   #0,d0
 99:     /* stream_next_bits(1), inlined & optimised */
         subq.b  #1,d6           /* 4 cy */
-        jpl     98f             /* 10 cy (taken) */
+        jcc     98f             /* 10 cy (taken) */
         move.b  (a5)+,d5        /* [8 cy] */
         moveq   #7,d6           /* [4 cy] */
 98:     lsr.w   #1,d5           /* 8 cy */
@@ -372,7 +372,7 @@ build_code:
 .macro  STREAM_NEXT_BITS
 99:     moveq   #0,d0
         cmp.b   d1,d6
-        jpl     99f             /* while (s->nr < nr) */
+        jcc     99f             /* while (s->nr < nr) */
         move.b  (a5)+,d0
         lsl.l   d6,d0
         or.l    d0,d5           /* s->cur |= *p++ << s->nr */
@@ -499,7 +499,7 @@ dynamic_huffman:
         move.l  a1,a0           /* a0 = a1 = codelen_tree */
 1:      INLINE_stream_next_symbol
         cmp.b   #16,d0
-        jmi     c_lit
+        jcs     c_lit
         jeq     c_16
         cmp.b   #17,d0
         jeq     c_17
@@ -565,7 +565,7 @@ decode_loop:
 #else
         cmp.w   #256,d0  /*  8 cy */
 #endif
-        jpl     2f       /*  8 cy */
+        jcc     2f       /*  8 cy */
         /* 0-255: Byte literal */
         move.b  d0,(a4)+ /*  8 cy */
         jra     2b       /* 10 cy */
@@ -615,7 +615,8 @@ stream_next_symbol:
         rts
 #endif
 
-        /* Build a base/extra-bits table on the stack */
+        /* Build a base/extra-bits table on the stack.
+         * d0 = #pairs-1, d2 = max_value, d4 = log_2(extrabits_repeat) */
 build_base_extrabits:
 #if !OPT_STORAGE_OFFSTACK
         move.l  (sp)+,a0
@@ -623,11 +624,11 @@ build_base_extrabits:
 1:      move.w  d0,d3
         lsr.w   d4,d3
         subq.w  #1,d3
-        jpl     2f
+        jcc     2f
         moveq   #0,d3
 2:      moveq   #0,d1
-        bset    d3,d1
-        sub.w   d1,d2
+        bset    d3,d1    /* d1 = 1 << extrabits */
+        sub.w   d1,d2    /* d2 = base */
         move.w  d2,-(aS)
         move.w  d3,-(aS)
         dbf     d0,1b
