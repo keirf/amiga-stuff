@@ -43,7 +43,7 @@ start:
         add.l   d0,a0           // a0 = stream_end
         // Output buffer must include the full DEFLATE stream
         cmp.l   a0,a1           // stream_end > buffer_end?
-        bcc     1f
+        jcc     1f
         move.l  a0,a1           // buffer_end = stream_end
 1:      // Compute CRC table
         move.l  a1,-(sp)        // Save crctable

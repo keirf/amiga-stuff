@@ -23,8 +23,8 @@ all: degzip
 %.o: %.c
 	$(CC) -o $@ -c $< $(CFLAGS)
 
-test_inflate: test_inflate.o
-	$(CC) -o $@ $^ $(LDFLAGS)
+test_inflate: degzip test_inflate.o
+	$(CC) -o $@ $@.o $(LDFLAGS)
 	$(PYTHON) test_inflate.py *.[cSo] *.asm ../cracking/protections/* ../cracking/cracks/nzs/gnu_c/* ../systest/*
 
 degzip: degzip_gnu.c
