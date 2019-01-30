@@ -1,0 +1,297 @@
+# pack_exe.py
+# 
+# Convert an Amiga load file into a self-unpacking executable.
+# 
+# Written & released by Keir Fraser <keir.xen@gmail.com>
+# 
+# This is free and unencumbered software released into the public domain.
+# See the file COPYING for more details, or visit <http://unlicense.org>.
+
+import crcmod.predefined
+import struct, sys, os
+
+# The unpacker code fragments and the degzip binary are in the
+# same directory as the script.
+scriptdir = os.path.split(os.path.abspath(__file__))[0] + '/'
+
+# Hunk/Block identifiers.
+HUNK_HEADER  = 0x3f3
+HUNK_CODE    = 0x3e9
+HUNK_DATA    = 0x3ea
+HUNK_BSS     = 0x3eb
+HUNK_RELOC32 = 0x3ec
+HUNK_END     = 0x3f2
+
+# Dictionary of Hunk/Block names.
+hname = {
+    HUNK_CODE: 'HUNK_CODE',
+    HUNK_DATA: 'HUNK_DATA',
+    HUNK_BSS: 'HUNK_BSS',
+    HUNK_RELOC32: 'HUNK_RELOC32'
+}
+
+# Minimum number of bytes that compression must save.
+MIN_COMPRESSION = 8
+
+# Prefix for intermediate (temporary) files.
+PREFIX = '_pack'
+
+# Relocation table:
+# u16 hunk (0xffff = sentinel)
+# u16 nr (0 = sentinel)
+# u16 target
+# u8 delta1[, delta3[3]] (delta3 iff delta1==0)
+# delta = (deltaN + 1) * 2
+relocs = bytes()
+
+# List of allocation sizes and attributes (HUNK_HEADER).
+allocs = []
+
+# DEFLATE stream size (in bytes) for each hunk.
+# If 0 then that hunk is stored uncompressed.
+stream_sizes = []
+
+# List of output hunks
+hunks = []
+
+# Delta-encode a list of Amiga RELOC32 offsets:
+# Delta_n = (Off_n - Off_n-1) / 2 - 1; Off_0 = -4
+def process_relocs(target, offs):
+    global relocs
+    offs.sort()
+    relocs += struct.pack('>2H', len(offs), target)
+    p = -4
+    for o in offs:
+        assert o > p and -(o-p)&1 == 0
+        delta = ((o - p) >> 1) - 1
+        assert 0 <= delta <= ((1<<24)-1)
+        relocs += struct.pack('>B' if 1 <= delta <= 255 else '>I', delta)
+        p = o
+    relocs += bytes(-len(relocs)&1)
+
+# Get the (one) position-independent code hunk from an Amiga load file.
+def get_code(name):
+    with open(scriptdir + name, 'rb') as f:
+        (id, x, nr, first, last) = struct.unpack('>5I', f.read(5*4))
+        assert id == HUNK_HEADER and x == 0
+        assert nr == 1 and first == 0 and last == 0
+        (x, id, nr) = struct.unpack('>3I', f.read(3*4))
+        assert id == HUNK_CODE and nr == x
+        code = bytes(f.read(nr * 4))
+        (id,) = struct.unpack('>I', f.read(4))
+        assert id == HUNK_END
+    #print('"%s": %u bytes (%u longs)' % (name, len(code), len(code)//4))
+    return code
+
+# Compress the given raw byte sequence.
+def pack(raw):
+    # Compress to a DEFLATE stream.
+    with open(PREFIX, 'wb') as f:
+        f.write(raw)
+    os.system('gzip -fk9 ' + PREFIX)
+    os.system(scriptdir + 'degzip -H ' + PREFIX + '.gz ' + PREFIX + '.raw'
+              ' >/dev/null')
+    with open(PREFIX+'.raw', 'rb') as f:
+        packed = f.read()
+    (inb, outb, crc, leeway) = struct.unpack('>2I2H', packed[:12])
+    # Extract the DEFLATE stream and check the header's length fields.
+    inb -= 14
+    packed = packed[12:-2]
+    assert inb == len(packed) and outb == len(raw)
+    # Check the header CRC.
+    crc16 = crcmod.predefined.Crc('crc-ccitt-false')
+    crc16.update(raw)
+    assert crc == crc16.crcValue
+    # Pad the DEFLATE stream.
+    padding = -len(packed) & 3
+    packed += bytes(padding)
+    # Extend and pad leeway.
+    leeway += padding
+    leeway += -leeway & 3
+    return (packed, crc, leeway)
+
+# Read next hunk from the input file, compress it if appropriate, and appends
+# the encoded output hunk to hunks[], updates allocs[i], and appends
+# delta-encoded RELOC32 blocks to relocs[].
+def process_hunk(f, i):
+    global allocs, stream_sizes, relocs, hunks
+    alloc = _alloc = (allocs[i] & 0x3fffffff) * 4
+    first_reloc = True # Have we seen a RELOC32 block yet?
+    seen_dat = False   # Have we seen CODE/DATA/BSS yet?
+    hunk = bytes() # Full encoding of this hunk
+    while True:
+        (_id,) = struct.unpack('>I', f.read(4))
+        id = _id & 0x3fffffff
+        if id == HUNK_CODE or id == HUNK_DATA:
+            if seen_dat:
+                f.seek(-4, os.SEEK_CUR)
+                break # Done with this hunk!
+            seen_dat = True
+            (_nr,) = struct.unpack('>I', f.read(4))
+            nr = _nr & 0x3fffffff
+            raw = f.read(nr*4)
+            assert alloc >= len(raw)
+            (packed, crc, leeway) = pack(raw)
+            if i != 0 and nr*4 < len(packed)+MIN_COMPRESSION:
+                # This hunk is not worth compressing. Store it as is.
+                packed = raw
+                print("Hunk %u: %s: %u stored, %u alloc" %
+                      (i, hname[id], len(raw), alloc))
+                stream_sizes.append(0) # No compression
+            else:
+                if i == 0:
+                    # First hunk must be code: we inject our entry/exit code
+                    assert id == HUNK_CODE
+                    packed = get_code('depacker_entry') + packed
+                    # Allocate explicit extra space for the final exit code
+                    # This must always extend the allocation as these bytes
+                    # will not be zeroed before we jump to the original exe.
+                    alloc += 8
+                # Extend the hunk allocation for depacker leeway.
+                # We also deal with compression making the hunk longer here
+                # (hunk 0 only, as other hunks we would store uncompressed).
+                alloc = max(alloc, len(raw) + leeway, len(packed))
+                print("Hunk %u: %s: %u -> %u (%u%%), %u extra alloc" %
+                      (i, hname[id], nr*4, len(packed),
+                       (nr*4-len(packed))*100/(nr*4), alloc-_alloc))
+                stream_sizes.append(len(packed)) # DEFLATE stream size
+            # Write out this block.
+            hunk += struct.pack('>2I', id, len(packed)//4) + packed
+        elif id == HUNK_BSS:
+            assert i != 0
+            if seen_dat:
+                f.seek(-4, os.SEEK_CUR)
+                break # Done with this hunk!
+            seen_dat = True
+            (_nr,) = struct.unpack('>I', f.read(4))
+            nr = _nr & 0x3fffffff
+            assert nr*4 == alloc
+            print("Hunk %u: %s: %u alloc" % (i, hname[id], alloc))
+            stream_sizes.append(0) # No compression
+            # Write out this block as is.
+            hunk += struct.pack('>2I', id, nr)
+        elif id == HUNK_END:
+            assert seen_dat
+            break # Done with this hunk!
+        elif id == HUNK_RELOC32:
+            while True:
+                (nr,) = struct.unpack('>I', f.read(4))
+                if nr == 0:
+                    break # Done with RELOC32
+                (h,) = struct.unpack('>I', f.read(4))
+                offs = list(struct.unpack('>%dI' % nr, f.read(nr*4)))
+                if first_reloc:
+                    # Write out this hunk's number.
+                    relocs += struct.pack('>H', i)
+                    first_reloc = False
+                # Write out the target hunk number and delta-encoded offsets.
+                process_relocs(h, offs)
+        else:
+            print("Unexpected hunk %04x" % (id))
+            assert False
+    # Generate HUNK_END (optional?)
+    # hunk += struct.pack('>I', HUNK_END)
+    if not first_reloc:
+        # There were relocations for this hunk: Write the sentinel value.
+        relocs += struct.pack('>H', 0)
+    # Update the allocation size for this hunk.
+    assert alloc&3 == 0
+    allocs[i] &= 0xc0000000
+    allocs[i] |= alloc // 4
+    # Add this hunk to the global list for later write-out.
+    hunks.append(hunk)
+
+# Generate the final hunk, which contains the depacker, the packed-stream
+# size table, the delta-encoded relocation tables, and the relocator.
+# Everything except the depacker itself is stored compressed.
+def generate_final_hunk():
+    global allocs, relocs, hunks
+    depacker = get_code('depacker_main')
+    # Generate the raw byte sequence for compression:
+    # 1. Table of stream sizes;
+    stream_sizes.append(0) # Sentinel value for the stream-size table
+    raw = struct.pack('>%dI' % len(stream_sizes), *stream_sizes)
+    # 2. Relocation and epilogue code; and 3. Relocation tables.
+    raw += get_code('depacker_packed') + relocs
+    # Ensure everything is a longword multiple.
+    raw += bytes(-len(raw) & 3)
+    assert len(depacker)&3 == 0 and len(raw)&3 == 0
+    # Allocation size covers the depacker and the depacked stream.
+    alloc = len(depacker) + 4 + len(raw)
+    # Compress the raw byte sequence.
+    (packed, crc, leeway) = pack(raw)
+    if len(raw) < len(packed)+MIN_COMPRESSION:
+        # Not worth compressing, so don't bother.
+        print("Depacker: %s: %u stored" % (hname[HUNK_CODE], alloc))
+        hunk = depacker + bytes(4) + raw # 'bytes(4)' means not packed
+    else:
+        # Compress everything except the depacker itself (and the
+        # longword containing the size of the compressed stream).
+        packed_len = len(depacker) + len(packed)
+        print("Depacker: %s: %u -> %u (%d%%), %u extra alloc" %
+              (hname[HUNK_CODE], alloc, packed_len,
+               (alloc-packed_len)*100/alloc, leeway))
+        alloc += leeway # Include depacker leeway in the hunk allocation
+        hunk = depacker + struct.pack('>I', len(packed)) + packed
+    assert alloc&3 == 0 and len(hunk)&3 == 0
+    # Add the hunk header/footer metadata to the code block.
+    hunk = struct.pack('>2I', HUNK_CODE, len(hunk)//4) + hunk
+    hunk += struct.pack('>I', HUNK_END)
+    # Add this hunk and its allocation size to the global lists.
+    hunks.append(hunk)
+    allocs.append(alloc//4)
+
+def process(f, out_f):
+    global allocs, relocs, hunks
+
+    # Read the load-file header of the input file, including every
+    # hunk's original allocation size.
+    (id, x, nr, first, last) = struct.unpack('>5I', f.read(5*4))
+    assert id == HUNK_HEADER and x == 0
+    assert first == 0 and last == nr-1 and nr > 0
+    allocs = list(struct.unpack('>%dI' % nr, f.read(nr*4)))
+
+    # Read and process each input hunk.
+    for i in range(nr):
+        process_hunk(f, i)
+
+    # Append the final sentinel value to the relocation table.
+    relocs += struct.pack('>H', 0xffff)
+
+    # Generate the depacker hunk.
+    generate_final_hunk()
+    nr += 1
+
+    # Remove intermediate temporary files.
+    os.system('rm ' + PREFIX + '*')
+
+    # Write out the compressed executable: HUNK_HEADER, then each hunk in turn.
+    out_f.write(struct.pack('>5I', HUNK_HEADER, 0, nr, 0, nr-1))
+    out_f.write(struct.pack('>%dI' % nr, *allocs))
+    [out_f.write(hunk) for hunk in hunks]
+
+    # Return the original- and compressed-file sizes to the caller.
+    f.seek(0, os.SEEK_END)
+    in_sz = f.tell()
+    out_sz = out_f.tell()
+    return (in_sz, out_sz)
+
+def usage(argv):
+    print("%s input-file output-file" % argv[0])
+    sys.exit(1)
+
+def main(argv):
+    if sys.version_info[0] < 3:
+        print("** Requires Python 3")
+        usage(argv)
+    if len(argv) != 3:
+        usage(argv)
+    (in_sz, out_sz) = process(open(argv[1], 'rb'), open(argv[2], 'wb'))
+    print('** RESULT:\n** Original: {} = {} bytes\n'
+          '** Compressed: {} = {} bytes\n'
+          '** Shrunk {} bytes ({:.1f}%)'
+          .format(argv[1], in_sz, argv[2], out_sz, in_sz - out_sz,
+                  (in_sz-out_sz)*100/in_sz))
+
+if __name__ == "__main__":
+    main(sys.argv)

@@ -70,5 +70,5 @@ start:
 #include "../attic/crc16_ccitt.S"        
 #include "inflate.S"
 
-.align 4
+        .balign 4
 input:

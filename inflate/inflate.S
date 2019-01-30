@@ -75,6 +75,14 @@
 #define OPT_PREGENERATE_TABLES 0
 #endif
 
+/* By default all registers are saved/restored across 'inflate' and
+ * 'inflate_fromtables'. This set can be reduced below. Note that if
+ * a4 is not saved then it will point at the end of the uncompressed output.
+ * If a5 is not saved then it will point at the end of the DEFLATE stream. */
+#ifndef SAVE_RESTORE_REGS
+#define SAVE_RESTORE_REGS d0-d6/a0-a5
+#endif
+
 #if OPT_STORAGE_OFFSTACK
 #define aS a6
 #else
@@ -649,7 +657,7 @@ codelen_order: /* Order of code lengths for the code length alphabet. */
         /* a4 = output, a5 = input, all regs preserved
          * a6 = *end* of storage area (only if OPT_STORAGE_OFFSTACK) */
 inflate:
-        movem.l d0-d6/a0-a5,-(aS)
+        movem.l SAVE_RESTORE_REGS,-(aS)
 
         /* Build the <length> base/extra-bits table */
         move.l  #258,d2
@@ -686,7 +694,7 @@ inflate:
         /* Pop the base/extra-bits lookup tables */
         lea     (30+29)*4(aS),aS
 
-        movem.l (aS)+,d0-d6/a0-a5
+        movem.l (aS)+,SAVE_RESTORE_REGS
         rts
 
 #if OPT_PREGENERATE_TABLES
@@ -719,7 +727,7 @@ inflate_gentables:
         /* a4 = output, a5 = input, all regs preserved
          * a6 = *end* of 6000-byte pre-generated storage area */
 inflate_fromtables:
-        movem.l d0-d6/a0-a5,-(aS)
+        movem.l SAVE_RESTORE_REGS,-(aS)
 
         /* Skip the pre-generated base/extra-bits lookup tables */
         lea     -(30+29)*4(aS),aS
@@ -745,7 +753,7 @@ inflate_fromtables:
         /* Pop the base/extra-bits lookup tables */
         lea     (30+29)*4(aS),aS
 
-        movem.l (aS)+,d0-d6/a0-a5
+        movem.l (aS)+,SAVE_RESTORE_REGS
         rts
 
 pregen_dispatch:

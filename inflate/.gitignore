@@ -1,3 +1,7 @@
 /test_inflate
 /m68k_emulate
 /_test_*
+/_pack*
+/depacker_entry
+/depacker_main
+/depacker_packed
