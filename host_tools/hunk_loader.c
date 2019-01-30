@@ -74,6 +74,9 @@ int main(int argc, char **argv)
     uint32_t *hunk_offs, cur = 0;
     char *in, *out, *p, *buf, *outbuf;
     uint32_t base = 0;
+    const static char *typename[] = { "Any", "Chip", "Fast", "Reserved" };
+    const static char *hunkname[] = { "HUNK_CODE", "HUNK_DATA", "HUNK_BSS" };
+    int seen_dat;
 
     const static char sopts[] = "hb:r";
     const static struct option lopts[] = {
@@ -146,37 +149,32 @@ int main(int argc, char **argv)
             printf("Bad hunk AllocFlag %u\n", type);
             goto bad_hunk;
         }
-        printf("  Hunk %u: %u longwords (%s)\n", i, x,
-               (type == 0) ? "Any" : (type == 1) ? "Chip" : "Fast");
+        printf("  Hunk %u: %u longwords (%s)\n", i, x, typename[type]);
         /* Real Amiga loader would AllocMem() here. */
         hunk_offs[i+1] = hunk_offs[i] + 4*x;
     }
     outsz = hunk_offs[i];
     outbuf = malloc(outsz);
     
-    cur = 0;
+    cur = seen_dat = 0;
     while ((p - buf) < insz) {
-        hunk_id = fetch32(&p) & ((1<<30)-1);
+        hunk_id = fetch32(&p) & ((1u<<30)-1);
         switch (hunk_id) {
         case HUNK_CODE:
-            printf("\nHUNK_CODE [Hunk %u]\n", cur);
-            x = fetch32(&p);
-            printf("  %u longwords\n", x);
-            memcpy(outbuf + hunk_offs[cur] - base, p, 4*x);
-            p += 4*x;
-            break;
         case HUNK_DATA:
-            printf("\nHUNK_DATA [Hunk %u]\n", cur);
-            x = fetch32(&p);
-            printf("  %u longwords\n", x);
-            memcpy(outbuf + hunk_offs[cur] - base, p, 4*x);
-            p += 4*x;
-            break;
         case HUNK_BSS:
-            printf("\nHUNK_BSS [Hunk %u]\n", cur);
+            if (seen_dat)
+                cur++;
+            seen_dat = 1;
+            printf("\n%s [Hunk %u]\n", hunkname[hunk_id-HUNK_CODE], cur);
             x = fetch32(&p);
             printf("  %u longwords\n", x);
-            memset(outbuf + hunk_offs[cur] - base, 0, 4*x);
+            if (hunk_id == HUNK_BSS) {
+                memset(outbuf + hunk_offs[cur] - base, 0, 4*x);
+            } else {
+                memcpy(outbuf + hunk_offs[cur] - base, p, 4*x);
+                p += 4*x;
+            }
             break;
         case HUNK_RELOC32: {
             uint32_t nr, id;
@@ -197,7 +195,12 @@ int main(int argc, char **argv)
         }
         case HUNK_END:
             printf("HUNK_END\n");
+            if (!seen_dat) {
+                printf("Premature HUNK_END\n");
+                goto bad_hunk;
+            }
             cur++;
+            seen_dat = 0;
             break;
         default:
             printf("%08x - UNKNOWN\n", hunk_id);
