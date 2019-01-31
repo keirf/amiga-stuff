@@ -66,14 +66,14 @@ relocs_done:
         /* Modify return address to jump at the unpacked exe. */
         move.l  (sp)+,a1        /* a1 = first segment BPTR */
         lea.l   4(a1),a0        /* a0 = unpacked entry point */
-        move.l  a0,14*4(sp)     /* modify return address */
+        move.l  a0,15*4(sp)     /* modify return address */
         /* Write register-restore epilogue code into the end of hunk#0. We will
          * jump there immediately after freeing this segment. It will restore
          * registers and then jump at the unpacked executable. */
         lea.l   -4(a1),a0
         add.l   (a0),a0           /* a0 = end of hunk#0 */
         move.w  #0x4e75,-(a0)     /* rts */
-        move.l  #0x4cdf3fff,-(a0) /* movem.l (sp)+,d0-d7/a0-a5 */
+        move.l  #0x4cdf7fff,-(a0) /* movem.l (sp)+,d0-d7/a0-a6 */
         move.l  a0,-(sp)          /* push address of epilogue onto stack. */
         /* Walk the SegList to the end. */
 1:      move.l  (a1),d0

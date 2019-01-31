@@ -12,7 +12,7 @@
         .text
 start:
         /* Save all registers and start of the SegList. */
-        movem.l d0-d7/a0-a6,-(sp)
+        movem.l d0-d7/a0-a7,-(sp)
         lea.l   start-4(pc),a0
         move.l  a0,-(sp)
         /* Walk the SegList to find the last segment. */
