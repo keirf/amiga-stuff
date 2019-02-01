@@ -81,4 +81,4 @@ start:
         move.l  (sp)+,a1        /* a1 = TDIOReq */
         jmp     (a3)
 
-.align 4
+        .balign 4

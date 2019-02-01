@@ -106,7 +106,7 @@ start:
 
 .dos:   .asciz  "dos.library"
 .gfx:   .asciz  "graphics.library"
-        .align  2
-        
+        .balign 2
+
 .begin:
 #include "init.S"
