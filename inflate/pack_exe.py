@@ -291,7 +291,7 @@ def main(argv):
         tot_old_store += old_store
         tot_new_store += new_store
 
-    print(' [Nr] Type      File (  Change,      %) ;  Memory (Change)')
+    print(' [Nr] Type      File (   delta,      %)    Memory (delta)')
     print('-----------------------------------------------------------')
 
     # Account for HUNK_HEADER: We grew it by 4 bytes (one extra hunk).
@@ -304,25 +304,25 @@ def main(argv):
     for i in range(len(infos)-1):
         (id, old_alloc, new_alloc, old_store, new_store) = infos[i]
         if new_store != 0:
-            print(" [%02u] %s %9u (%+8u, %+5.1f%%) ; %7u (%+5u)" %
+            print(' [%02u] %s %9u (%+8u, %+5.1f%%)   %7u (%+5u)' %
                   (i, hname[id], new_store, new_store-old_store,
                    (new_store-old_store)*100/old_store,
                    new_alloc, new_alloc-old_alloc))
 
     # Summarise the new depacker/relocation hunk.
     (id, old_alloc, new_alloc, old_store, new_store) = infos[-1]
-    print(" [%02u] DEPACK %7u %20s %7u" %
-          (len(infos)-1, new_store, ";", new_alloc))
+    print(' [%02u] DEPACK %7u %20s %7u' %
+          (len(infos)-1, new_store, '', new_alloc))
 
     # Print totals. Note that extra allocation reduces after unpacking:
     # The depacker/relocation hunk is freed before running the original exe.
     print('-----------------------------------------------------------')
-    print('%20u (%+8u, %+5.1f%%) ; %7u (%+5u)' %
+    print('%20u (%+8u, %+5.1f%%)   %7u (%+5u)' %
           (tot_new_store, tot_new_store-tot_old_store,
            (tot_new_store-tot_old_store)*100/tot_old_store,
            tot_new_alloc, tot_new_alloc-tot_old_alloc))
     print('After depack:   %25s %7u (%+5u)' %
-          (';', tot_new_alloc-new_alloc,
+          ('', tot_new_alloc-new_alloc,
            tot_new_alloc-new_alloc-tot_old_alloc))
 
     # A very final summary.
