@@ -24,10 +24,9 @@ HUNK_END     = 0x3f2
 
 # Dictionary of Hunk/Block names.
 hname = {
-    HUNK_CODE: 'HUNK_CODE',
-    HUNK_DATA: 'HUNK_DATA',
-    HUNK_BSS: 'HUNK_BSS',
-    HUNK_RELOC32: 'HUNK_RELOC32'
+    HUNK_CODE: 'Code',
+    HUNK_DATA: 'Data',
+    HUNK_BSS:  'BSS ',
 }
 
 # Minimum number of bytes that compression must save.
@@ -53,6 +52,9 @@ stream_sizes = []
 
 # List of output hunks
 hunks = []
+
+# Summary information about each hunk's processing
+infos = []
 
 # Delta-encode a list of Amiga RELOC32 offsets:
 # Delta_n = (Off_n - Off_n-1) / 2 - 1; Off_0 = -4
@@ -114,7 +116,8 @@ def pack(raw):
 # the encoded output hunk to hunks[], updates allocs[i], and appends
 # delta-encoded RELOC32 blocks to relocs[].
 def process_hunk(f, i):
-    global allocs, stream_sizes, relocs, hunks
+    global allocs, stream_sizes, relocs, hunks, infos
+    old_pos = f.tell()
     alloc = _alloc = (allocs[i] & 0x3fffffff) * 4
     first_reloc = True # Have we seen a RELOC32 block yet?
     seen_dat = False   # Have we seen CODE/DATA/BSS yet?
@@ -126,7 +129,7 @@ def process_hunk(f, i):
             if seen_dat:
                 f.seek(-4, os.SEEK_CUR)
                 break # Done with this hunk!
-            seen_dat = True
+            seen_dat = id
             (_nr,) = struct.unpack('>I', f.read(4))
             nr = _nr & 0x3fffffff
             raw = f.read(nr*4)
@@ -135,8 +138,6 @@ def process_hunk(f, i):
             if i != 0 and nr*4 < len(packed)+MIN_COMPRESSION:
                 # This hunk is not worth compressing. Store it as is.
                 packed = raw
-                print("Hunk %u: %s: %u stored, %u alloc" %
-                      (i, hname[id], len(raw), alloc))
                 stream_sizes.append(0) # No compression
             else:
                 if i == 0:
@@ -151,9 +152,6 @@ def process_hunk(f, i):
                 # We also deal with compression making the hunk longer here
                 # (hunk 0 only, as other hunks we would store uncompressed).
                 alloc = max(alloc, len(raw) + leeway, len(packed))
-                print("Hunk %u: %s: %u -> %u (%u%%), %u extra alloc" %
-                      (i, hname[id], nr*4, len(packed),
-                       (nr*4-len(packed))*100/(nr*4), alloc-_alloc))
                 stream_sizes.append(len(packed)) # DEFLATE stream size
             # Write out this block.
             hunk += struct.pack('>2I', id, len(packed)//4) + packed
@@ -162,14 +160,13 @@ def process_hunk(f, i):
             if seen_dat:
                 f.seek(-4, os.SEEK_CUR)
                 break # Done with this hunk!
-            seen_dat = True
+            seen_dat = id
             (_nr,) = struct.unpack('>I', f.read(4))
             nr = _nr & 0x3fffffff
-            assert nr*4 == alloc
-            print("Hunk %u: %s: %u alloc" % (i, hname[id], alloc))
+            assert alloc >= nr*4
             stream_sizes.append(0) # No compression
             # Write out this block as is.
-            hunk += struct.pack('>2I', id, nr)
+            hunk += struct.pack('>2I', id, alloc//4)
         elif id == HUNK_END:
             assert seen_dat
             break # Done with this hunk!
@@ -200,12 +197,13 @@ def process_hunk(f, i):
     allocs[i] |= alloc // 4
     # Add this hunk to the global list for later write-out.
     hunks.append(hunk)
+    infos.append((seen_dat, _alloc, alloc, f.tell()-old_pos, len(hunk)))
 
 # Generate the final hunk, which contains the depacker, the packed-stream
 # size table, the delta-encoded relocation tables, and the relocator.
 # Everything except the depacker itself is stored compressed.
 def generate_final_hunk():
-    global allocs, relocs, hunks
+    global allocs, relocs, hunks, infos
     depacker = get_code('depacker_main')
     # Generate the raw byte sequence for compression:
     # 1. Table of stream sizes;
@@ -222,15 +220,12 @@ def generate_final_hunk():
     (packed, crc, leeway) = pack(raw)
     if len(raw) < len(packed)+MIN_COMPRESSION:
         # Not worth compressing, so don't bother.
-        print("Depacker: %s: %u stored" % (hname[HUNK_CODE], alloc))
+        print("Depacker: %u stored" % (alloc))
         hunk = depacker + bytes(4) + raw # 'bytes(4)' means not packed
     else:
         # Compress everything except the depacker itself (and the
         # longword containing the size of the compressed stream).
         packed_len = len(depacker) + len(packed)
-        print("Depacker: %s: %u -> %u (%d%%), %u extra alloc" %
-              (hname[HUNK_CODE], alloc, packed_len,
-               (alloc-packed_len)*100/alloc, leeway))
         alloc += leeway # Include depacker leeway in the hunk allocation
         hunk = depacker + struct.pack('>I', len(packed)) + packed
     assert alloc&3 == 0 and len(hunk)&3 == 0
@@ -240,6 +235,7 @@ def generate_final_hunk():
     # Add this hunk and its allocation size to the global lists.
     hunks.append(hunk)
     allocs.append(alloc//4)
+    infos.append((0, 0, alloc, 0, len(hunk)))
 
 def process(f, out_f):
     global allocs, relocs, hunks
@@ -287,7 +283,50 @@ def main(argv):
     if len(argv) != 3:
         usage(argv)
     (in_sz, out_sz) = process(open(argv[1], 'rb'), open(argv[2], 'wb'))
-    print('** RESULT:\n** Original: {} = {} bytes\n'
+
+    tot_old_alloc = tot_new_alloc = tot_old_store = tot_new_store = 0
+    for (id, old_alloc, new_alloc, old_store, new_store) in infos:
+        tot_old_alloc += old_alloc
+        tot_new_alloc += new_alloc
+        tot_old_store += old_store
+        tot_new_store += new_store
+
+    print(' [Nr] Type      File (  Change,      %) ;  Memory (Change)')
+    print('-----------------------------------------------------------')
+
+    # Account for HUNK_HEADER: We grew it by 4 bytes (one extra hunk).
+    hlen = (len(infos)+5)*4
+    tot_old_store += hlen-4
+    tot_new_store += hlen
+    print(' [--] Header %7u (%+8u, %+5.1f%%)' % (hlen, 4, 400/(hlen-4)))
+
+    # Stats summary for all the original hunks.
+    for i in range(len(infos)-1):
+        (id, old_alloc, new_alloc, old_store, new_store) = infos[i]
+        if new_store != 0:
+            print(" [%02u] %s %9u (%+8u, %+5.1f%%) ; %7u (%+5u)" %
+                  (i, hname[id], new_store, new_store-old_store,
+                   (new_store-old_store)*100/old_store,
+                   new_alloc, new_alloc-old_alloc))
+
+    # Summarise the new depacker/relocation hunk.
+    (id, old_alloc, new_alloc, old_store, new_store) = infos[-1]
+    print(" [%02u] DEPACK %7u %20s %7u" %
+          (len(infos)-1, new_store, ";", new_alloc))
+
+    # Print totals. Note that extra allocation reduces after unpacking:
+    # The depacker/relocation hunk is freed before running the original exe.
+    print('-----------------------------------------------------------')
+    print('%20u (%+8u, %+5.1f%%) ; %7u (%+5u)' %
+          (tot_new_store, tot_new_store-tot_old_store,
+           (tot_new_store-tot_old_store)*100/tot_old_store,
+           tot_new_alloc, tot_new_alloc-tot_old_alloc))
+    print('After depack:   %25s %7u (%+5u)' %
+          (';', tot_new_alloc-new_alloc,
+           tot_new_alloc-new_alloc-tot_old_alloc))
+
+    # A very final summary.
+    print('\n** RESULT:\n** Original: {} = {} bytes\n'
           '** Compressed: {} = {} bytes\n'
           '** Shrunk {} bytes ({:.1f}%)'
           .format(argv[1], in_sz, argv[2], out_sz, in_sz - out_sz,
