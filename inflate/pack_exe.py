@@ -29,6 +29,13 @@ hname = {
     HUNK_BSS:  'BSS ',
 }
 
+memname = {
+    0: '',
+    1: 'Chip',
+    2: 'Fast',
+    3: 'Extra-Attr',
+}
+
 # Minimum number of bytes that compression must save.
 MIN_COMPRESSION = 8
 
@@ -304,10 +311,11 @@ def main(argv):
     for i in range(len(infos)-1):
         (id, old_alloc, new_alloc, old_store, new_store) = infos[i]
         if new_store != 0:
-            print(' [%02u] %s %9u (%+8u, %+5.1f%%)   %7u (%+5u)' %
+            print(' [%02u] %s %9u (%+8u, %+5.1f%%)   %7u (%+5u) %s' %
                   (i, hname[id], new_store, new_store-old_store,
                    (new_store-old_store)*100/old_store,
-                   new_alloc, new_alloc-old_alloc))
+                   new_alloc, new_alloc-old_alloc,
+                   memname[allocs[i] >> 30]))
 
     # Summarise the new depacker/relocation hunk.
     (id, old_alloc, new_alloc, old_store, new_store) = infos[-1]
