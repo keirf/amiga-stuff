@@ -1,9 +1,9 @@
 # Amiga-Stuff: Native & Cross-Dev Code & Tools for Amigas
 
 
-## SysTest
+## Amiga Test Kit
 
-### Download the latest build of SysTest [here (Github)](https://github.com/keirf/Amiga-Stuff/releases/download/systest-v1.2/systest-v1.2.zip).
+### Download the latest build of Amiga Test Kit [here (Github)](https://github.com/keirf/Amiga-Stuff/releases/download/testkit-v1.3/AmigaTestKit-v1.3.zip).
 
 ### Build From Source
 
@@ -19,8 +19,8 @@ not exhaustive toolchain build instructions!):
 Note that `/path/to/install` must be on your PATH both when building
 and using the cross compiler!
 
-To build SysTest: `make systest`. The ADF and distribution ZIP file are now
-in the systest/ folder.
+To build Amiga Test Kit: `make testkit`. The ADF and distribution ZIP file
+are now in the testkit/ folder.
 
 ## Summary
 
@@ -42,8 +42,8 @@ file header comments and run-time help info.
 - **base/**
   GNU build rules, initialisation code, utility code and headers.
 
-- **systest/**
-  Amiga system tests, built as a Workbench/CLI executable and as a
+- **testkit/**
+  Amiga Test Kit, built as a Workbench/CLI executable and as a
   bootable disk image.
 
 - **host_tools/kickconv**
