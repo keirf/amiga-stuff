@@ -1,3 +1,4 @@
+NAME := AmigaTestKit
 VER := 1.2
 
 OBJS += entry.o
@@ -14,7 +15,7 @@ OBJS += keyboard.o
 OBJS += memory.o
 OBJS += mfm.o
 OBJS += serpar.o
-OBJS += systest.o
+OBJS += testkit.o
 OBJS += video.o
 
 include ../base/Rules.mk
@@ -23,30 +24,30 @@ include ../base/Rules.mk
 .PHONY: build.c
 
 .PHONY: all
-all: systest-v$(VER).zip
+all: $(NAME)-v$(VER).zip
 
 build.o: CFLAGS += -DVER="\"$(VER)\""
 
 entry.o: AFLAGS += -DDETECT_MEMORY
 
-systest-v$(VER).zip: systest.adf SysTest SysTest.info README.md systest.elf
-	$(RM) -r systest-v$(VER)
-	mkdir -p systest-v$(VER)/debug
-	cp $^ systest-v$(VER)
-	mv systest-v$(VER)/systest.elf systest-v$(VER)/debug
+$(NAME)-v$(VER).zip: $(NAME).adf $(NAME) $(NAME).info README.md $(NAME).elf
+	$(RM) -r $(NAME)-v$(VER)
+	mkdir -p $(NAME)-v$(VER)/debug
+	cp $^ $(NAME)-v$(VER)
+	mv $(NAME)-v$(VER)/$(NAME).elf $(NAME)-v$(VER)/debug
 	$(RM) $@
-	zip -r $@ systest-v$(VER)
+	zip -r $@ $(NAME)-v$(VER)
 
-SysTest: systest.exe
-	cp systest.exe SysTest
-	chmod 0755 SysTest
+$(NAME): $(NAME).exe
+	cp $(NAME).exe $(NAME)
+	chmod 0755 $(NAME)
 
-systest.exe: systest.bin
+$(NAME).exe: $(NAME).bin
 	python ../base/mk_amiga_exe.py $< $@
 
-systest.adf: bootblock.bin systest.bin
+$(NAME).adf: bootblock.bin $(NAME).bin
 	python ../base/mk_adf.py $^ $@
 
 clean::
-	$(RM) *.adf *.exe *.zip SysTest
-	$(RM) -r systest-v*
+	$(RM) *.adf *.exe *.zip $(NAME)
+	$(RM) -r $(NAME)-v*

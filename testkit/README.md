@@ -1,11 +1,11 @@
-# SysTest: The Amiga system test suite
+# Amiga Test Kit: The Amiga system test suite
 
 ## Structure of the distributed ZIP file
 
-- **systest.adf**
+- **AmigaTestKit.adf**
   A bootable disk image of the test suite.
 
-- **SysTest**
+- **AmigaTestKit**
   A version runnable from the CLI or Workbench (with accompanying .info file)
 
 - **debug/**

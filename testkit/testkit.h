@@ -1,13 +1,15 @@
 /*
- * systest.h
+ * testkit.h
  * 
- * System Tests:
+ * Amiga Tests:
  *  - Memory
  *  - Keyboard
  *  - Floppy Drive
  *  - Joystick / Mouse
  *  - Audio
  *  - Video
+ *  - CIA Timers
+ *  - Serial / Parallel
  * 
  * Written & released by Keir Fraser <keir.xen@gmail.com>
  * 

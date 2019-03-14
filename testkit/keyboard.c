@@ -9,7 +9,7 @@
  * See the file COPYING for more details, or visit <http://unlicense.org>.
  */
 
-#include "systest.h"
+#include "testkit.h"
 
 /* Keyboard IRQ: Keyboard variables. */
 volatile uint8_t keycode_buffer, do_exit;

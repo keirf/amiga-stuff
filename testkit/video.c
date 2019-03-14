@@ -9,7 +9,7 @@
  * See the file COPYING for more details, or visit <http://unlicense.org>.
  */
 
-#include "systest.h"
+#include "testkit.h"
 
 void videocheck(void)
 {

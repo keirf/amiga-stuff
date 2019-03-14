@@ -20,7 +20,16 @@ all: depacker degzip
 # Test harness for inflate.S
 test_inflate: degzip test_inflate.o
 	$(CC) -o $@ $@.o $(LDFLAGS)
-	$(PYTHON) test_inflate.py *.[cSo] *.asm ../cracking/protections/* ../cracking/cracks/nzs/gnu_c/* ../systest/*
+	$(PYTHON) test_inflate.py *.[cSo] *.asm ../cracking/protections/* ../cracking/cracks/nzs/gnu_c/* ../testkit/*
+
+.PHONY: a
+a:
+	xdftool ao.adf unpack .
+	$(PYTHON) ./pack_exe.py atlantis1/atlantis foo
+	cp foo atlantis1/atlantis
+	rm -rf a.adf
+	xdftool a.adf pack atlantis1
+	rm -rf atlantis1* foo
 
 %.o: %.S
 	$(CC) -o $@ -c $< $(AFLAGS)

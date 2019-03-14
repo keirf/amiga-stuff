@@ -79,6 +79,6 @@ start:
 
         move.l  (sp)+,a0        /* a0 = payload data */
         move.l  (sp)+,a1        /* a1 = TDIOReq */
-        jmp     (a3)
+        jmp     (a0)
 
         .balign 4

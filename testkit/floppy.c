@@ -9,7 +9,7 @@
  * See the file COPYING for more details, or visit <http://unlicense.org>.
  */
 
-#include "systest.h"
+#include "testkit.h"
 
 unsigned int mfm_decode_track(void *mfmbuf, void *headers, void *data,
                               uint16_t mfm_bytes);

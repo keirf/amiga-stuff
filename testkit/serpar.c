@@ -19,7 +19,7 @@
  * See the file COPYING for more details, or visit <http://unlicense.org>.
  */
 
-#include "systest.h"
+#include "testkit.h"
 
 const static char progress_chars[] = "|/-\\";
 

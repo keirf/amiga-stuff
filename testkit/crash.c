@@ -9,7 +9,7 @@
  * See the file COPYING for more details, or visit <http://unlicense.org>.
  */
 
-#include "systest.h"
+#include "testkit.h"
 
 static uint16_t copper[] = {
     0x0100, 0x9200, /* bplcon0: 1 bitplane, hires */
@@ -112,7 +112,8 @@ static void crash(struct frame *f)
     /* Print a banner. */
     x = 4;
     y = 0;
-    sprintf(s, "SysTest v%s (build: %s %s)", version, build_date, build_time);
+    sprintf(s, "Amiga Test Kit v%s (build: %s %s)",
+            version, build_date, build_time);
     print(x, y, s);
 
     /* Calculate stack pointers. */

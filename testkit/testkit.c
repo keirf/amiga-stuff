@@ -1,7 +1,7 @@
 /*
- * systest.c
+ * testkit.c
  * 
- * System Tests:
+ * Amiga Tests:
  *  - Memory
  *  - Keyboard
  *  - Floppy Drive
@@ -17,7 +17,7 @@
  * See the file COPYING for more details, or visit <http://unlicense.org>.
  */
 
-#include "systest.h"
+#include "testkit.h"
 
 /* Write to INTREQ twice at end of ISR to prevent spurious re-entry on 
  * A4000 with faster processors (040/060). */
@@ -776,7 +776,7 @@ static void mainmenu(void)
     clear_whole_screen();
     keycode_buffer = 0;
 
-    sprintf(s, "SysTest v%s - by KAF <keir.xen@gmail.com>", version);
+    sprintf(s, "Amiga Test Kit v%s - by Keir Fraser", version);
     print_line(&r);
     r.y++;
     sprintf(s, "------------------------------------");
