@@ -1,7 +1,7 @@
 # Amiga-Stuff: Native & Cross-Dev Code & Tools for Amigas
 
 
-## Amiga Test Kit
+## Amiga Test Kit (formerly SysTest)
 
 ### Download the latest build of Amiga Test Kit [here (Github)](https://github.com/keirf/Amiga-Stuff/releases/download/testkit-v1.3/AmigaTestKit-v1.3.zip).
 
