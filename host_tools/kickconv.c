@@ -25,6 +25,14 @@ static uint16_t _swap(uint16_t x)
     return (x >> 8) | (x << 8);
 }
 
+static void swap(void *buf, int sz)
+{
+    int i;
+    uint16_t *p = buf;
+    for (i = 0; i < sz/2; i++, p++)
+        *p = _swap(*p);
+}
+
 static uint32_t checksum(void *dat, unsigned int len)
 {
     uint32_t csum = 0, *p = dat;
@@ -49,19 +57,20 @@ static void usage(int rc)
     printf("  -k, --key=FILE  Key file for encrypted ROM\n");
     printf("  -s, --swap      Swap endianess (little vs big endian)\n");
     printf("  -S, --split     Split into two 16-bit ROM files\n");
+    printf("  -m, --merge     Merge split ROM files into one\n");
     exit(rc);
 }
 
 int main(int argc, char **argv)
 {
-    int ch, fd, swap = 0, split = 0, fix_csum = 0;
-    int insz, i, j, is_encrypted;
+    int ch, fd, do_swap = 0, split = 0, fix_csum = 0;
+    int insz, i, j, is_encrypted = 0;
     uint8_t *buf, *outbuf[2], header[11];
     char *in, *out, *keyfile = NULL;
     uint32_t csum;
     enum { CD32_SWIZZLE = 1, CD32_DESWIZZLE = 2 } cd32_transform = 0;
 
-    const static char sopts[] = "hciIk:sS";
+    const static char sopts[] = "hciIk:sSm";
     const static struct option lopts[] = {
         { "help", 0, NULL, 'h' },
         { "csum", 0, NULL, 'c' },
@@ -70,6 +79,7 @@ int main(int argc, char **argv)
         { "key", 1, NULL, 'k' },
         { "swap", 0, NULL, 's' },
         { "split", 0, NULL, 'S' },
+        { "merge", 0, NULL, 'm' },
         { 0, 0, 0, 0 }
     };
 
@@ -91,10 +101,13 @@ int main(int argc, char **argv)
             keyfile = optarg;
             break;
         case 's':
-            swap = 1;
+            do_swap = 1;
             break;
         case 'S':
             split = 1;
+            break;
+        case 'm':
+            split = -1;
             break;
         default:
             usage(1);
@@ -107,27 +120,79 @@ int main(int argc, char **argv)
     in = argv[optind];
     out = argv[optind+1];
 
-    fd = open(in, O_RDONLY);
-    if (fd == -1)
-        err(1, "%s", in);
-    if ((insz = lseek(fd, 0, SEEK_END)) < 0)
-        err(1, NULL);
-    lseek(fd, 0, SEEK_SET);
-    if (insz < 8192)
-        errx(1, "Input file too short");
-    if (read(fd, header, sizeof(header)) != sizeof(header))
-        err(1, NULL);
-    is_encrypted = !strncmp((char *)header, "AMIROMTYPE1", sizeof(header));
-    if (is_encrypted) {
-        insz -= sizeof(header);
-    } else {
+    if (split == -1) { /* merge */
+        char inname[256];
+        int _sz;
+        uint16_t *a, *p;
+        uint8_t *_b;
+        snprintf(inname, sizeof(inname), "%s_hi", in);
+        fd = open(inname, O_RDONLY);
+        if (fd == -1)
+            err(1, "%s", in);
+        if ((insz = lseek(fd, 0, SEEK_END)) < 0)
+            err(1, NULL);
         lseek(fd, 0, SEEK_SET);
+        if ((_b = malloc(insz)) == NULL)
+            err(1, NULL);
+        if ((buf = malloc(2*insz)) == NULL)
+            err(1, NULL);
+        if (read(fd, _b, insz) != insz)
+            err(1, NULL);
+        close(fd);
+
+        a = (uint16_t *)_b;
+        p = (uint16_t *)buf;
+        for (i = 0; i < insz/2; i++) {
+            *p = *a++;
+            p += 2;
+        }
+
+        snprintf(inname, sizeof(inname), "%s_lo", in);
+        fd = open(inname, O_RDONLY);
+        if (fd == -1)
+            err(1, "%s", in);
+        if ((_sz = lseek(fd, 0, SEEK_END)) < 0)
+            err(1, NULL);
+        if (_sz != insz)
+            errx(1, "Hi/lo ROM pair must be same size");
+        lseek(fd, 0, SEEK_SET);
+        if (read(fd, _b, insz) != insz)
+            err(1, NULL);
+        close(fd);
+        
+        a = (uint16_t *)_b;
+        p = (uint16_t *)buf + 1;
+        for (i = 0; i < insz/2; i++) {
+            *p = *a++;
+            p += 2;
+        }
+
+        free(_b);
+        insz *= 2;
+
+    } else {
+        fd = open(in, O_RDONLY);
+        if (fd == -1)
+            err(1, "%s", in);
+        if ((insz = lseek(fd, 0, SEEK_END)) < 0)
+            err(1, NULL);
+        lseek(fd, 0, SEEK_SET);
+        if (insz < 8192)
+            errx(1, "Input file too short");
+        if (read(fd, header, sizeof(header)) != sizeof(header))
+            err(1, NULL);
+        is_encrypted = !strncmp((char *)header, "AMIROMTYPE1", sizeof(header));
+        if (is_encrypted) {
+            insz -= sizeof(header);
+        } else {
+            lseek(fd, 0, SEEK_SET);
+        }
+        if ((buf = malloc(insz)) == NULL)
+            err(1, NULL);
+        if (read(fd, buf, insz) != insz)
+            err(1, NULL);
+        close(fd);
     }
-    if ((buf = malloc(insz)) == NULL)
-        err(1, NULL);
-    if (read(fd, buf, insz) != insz)
-        err(1, NULL);
-    close(fd);
 
     if (is_encrypted && !keyfile)
         errx(1, "Must specify keyfile for encrypted ROM");
@@ -137,10 +202,10 @@ int main(int argc, char **argv)
         errx(1, "Kickstart image must be power-of-two sized");
 
     printf("Input: '%s'", in);
-    if (swap)
+    if (do_swap)
         printf("; Swap");
     if (split)
-        printf("; Split");
+        printf("; %s", (split == -1) ? "Merge" : "Split");
     if (keyfile)
         printf("; Decrypt(\"%s\")", keyfile);
     if (cd32_transform)
@@ -166,6 +231,9 @@ int main(int argc, char **argv)
             buf[i] ^= key[j];
         free(key);
     }
+
+    if (do_swap && (split == -1))
+        swap(buf, insz);
 
     csum = checksum(buf, insz);
     printf("ROM Checksum: %s", csum ? "BAD" : "OK");
@@ -193,13 +261,10 @@ int main(int argc, char **argv)
         buf = (uint8_t *)out;
     }
 
-    if (swap) {
-        uint16_t *p = (uint16_t *)buf;
-        for (i = 0; i < insz/2; i++, p++)
-            *p = _swap(*p);
-    }
+    if (do_swap && (split != -1))
+        swap(buf, insz);
 
-    if (split) {
+    if (split == 1) {
         char outname[256], *s = strrchr(out, '.');
         uint16_t *a, *b, *p;
         a = (uint16_t *)(outbuf[0] = malloc(insz));
