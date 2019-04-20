@@ -20,7 +20,8 @@ Note that `/path/to/install/bin` must be on your PATH both when building
 and using the cross compiler. For example:
 ```
 # mkdir -p $HOME/cross/bin
-# export PARTH=$PATH:$HOME/cross/bin
+# export PATH=$PATH:$HOME/cross/bin
+# ... --prefix=$HOME/cross ...
 ```
 
 To build Amiga Test Kit: `make testkit`. The ADF and distribution ZIP file
