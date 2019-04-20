@@ -16,8 +16,12 @@ not exhaustive toolchain build instructions!):
 # ../gcc-7.1.0/configure --prefix=/path/to/install --target=m68k-unknown-elf --enable-languages=c --disable-libssp
 ```
 
-Note that `/path/to/install` must be on your PATH both when building
-and using the cross compiler!
+Note that `/path/to/install/bin` must be on your PATH both when building
+and using the cross compiler. For example:
+```
+# mkdir -p $HOME/cross/bin
+# export PARTH=$PATH:$HOME/cross/bin
+```
 
 To build Amiga Test Kit: `make testkit`. The ADF and distribution ZIP file
 are now in the testkit/ folder.
