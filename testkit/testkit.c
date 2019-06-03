@@ -699,6 +699,9 @@ void print_line(const struct char_row *r)
             } else if (_m.c == 'C') {
                 sprintf(s, "Ctrl + L.Alt:");
                 _m.c = K_CTRL;
+            } else if (_m.c == 'H') {
+                sprintf(s, "Help:");
+                _m.c = K_HELP;
             }
 
             /* Print key-combo text. */
@@ -798,12 +801,17 @@ static void mainmenu(void)
     r.y++;
     sprintf(s, "build: %s %s", build_date, build_time);
     print_line(&r);
-    r.y++;
 
-    print_menu_nav_line();
+    r.y = 14;
+    sprintf(s, "$H System Reset$");
+    print_line(&r);
 
-    while ((i = keycode_buffer - K_F1) >= ARRAY_SIZE(mainmenu_option))
-        continue;
+    while ((i = keycode_buffer - K_F1) >= ARRAY_SIZE(mainmenu_option)) {
+        if (keycode_buffer == K_HELP) {
+            /* EAB, thread 78548 "Amiga hardware reset" */
+            asm volatile ( "lea (2).w,%a0; reset; jmp (%a0)" );
+        }
+    }
 
     clear_whole_screen();
     keycode_buffer = 0;

@@ -55,7 +55,8 @@ extern volatile uint8_t key_pressed[128];
 /* Keycodes used for menu navigation. */
 enum {
     K_ESC = 0x45, K_CTRL = 0x63, K_LALT = 0x64,
-    K_F1 = 0x50, K_F2, K_F3, K_F4, K_F5, K_F6, K_F7, K_F8, K_F9, K_F10
+    K_F1 = 0x50, K_F2, K_F3, K_F4, K_F5, K_F6, K_F7, K_F8, K_F9, K_F10,
+    K_HELP = 0x5f
 };
 
 
