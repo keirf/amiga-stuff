@@ -1,5 +1,5 @@
 NAME := AmigaTestKit
-VER := 1.3
+VER := 1.4
 
 OBJS += entry.o
 OBJS += cancellation.o
