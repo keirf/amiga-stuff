@@ -161,6 +161,10 @@ static uint16_t copper_2[] = {
 void ciaa_flag_IRQ(void);
 void disk_index_IRQ(void);
 uint8_t keyboard_IRQ(void);
+void ciaata_IRQ(void);
+void ciaatb_IRQ(void);
+void ciabta_IRQ(void);
+void ciabtb_IRQ(void);
 void ciaa_TOD_IRQ(void);
 void ciab_TOD_IRQ(void);
 
@@ -847,6 +851,12 @@ static void c_CIAA_IRQ(void)
     if (icr & CIAICR_TOD)
         ciaa_TOD_IRQ();
 
+    if (icr & CIAICR_TIMER_A)
+        ciaata_IRQ();
+
+    if (icr & CIAICR_TIMER_B)
+        ciaatb_IRQ();
+
     /* NB. Clear intreq.ciaa *after* reading/clearing ciaa.icr else we get a 
      * spurious extra interrupt, since intreq.ciaa latches the level of CIAA 
      * INT and hence would simply become set again immediately after we clear 
@@ -866,6 +876,12 @@ static void c_CIAB_IRQ(void)
 
     if (icr & CIAICR_TOD)
         ciab_TOD_IRQ();
+
+    if (icr & CIAICR_TIMER_A)
+        ciabta_IRQ();
+
+    if (icr & CIAICR_TIMER_B)
+        ciabtb_IRQ();
 
     /* NB. Clear intreq.ciab *after* reading/clearing ciab.icr else we get a 
      * spurious extra interrupt, since intreq.ciab latches the level of CIAB 
