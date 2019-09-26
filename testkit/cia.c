@@ -21,17 +21,150 @@ static void get_cia_times(uint16_t *times)
     times[3] = get_ciatime(ciab, tb);
 }
 
+static bool_t within_tolerance(uint32_t exp, uint32_t seen)
+{
+    uint32_t diff = seen > exp ? seen - exp : exp - seen;
+    return (exp <= 100) ? diff <= 1 : diff <= div32(exp, 100);
+}
+
+static volatile unsigned int TOD;
+
+void ciaa_TOD_IRQ(void)
+{
+    TOD++;
+}
+
+void ciab_TOD_IRQ(void)
+{
+    TOD++;
+}
+
+/* Inform user we are waiting on vblank IRQs. This is useful if a test 
+ * hangs due to hardware problems. */
+static void print_wait(struct char_row *r, unsigned int vbls)
+{
+    char *s = (char *)r->s;
+    sprintf(s, "Waiting %u vblank periods...", vbls);
+    print_line(r);
+}
+
+/* Test the TOD timer ticks at the expected rate. */
+static void test_TOD(
+    struct char_row *r,
+    volatile struct amiga_cia * const cia,
+    unsigned int tod_ticks_per_vbl,
+    char cia_ch)
+{
+    char *s = (char *)r->s;
+    unsigned int vbl_ticks = 16;
+    unsigned int tod_ticks = vbl_ticks * tod_ticks_per_vbl;
+    uint32_t start = 0x652341, end;
+
+    print_wait(r, vbl_ticks);
+
+    /* Wait for a vblank and reset the vblank counter. */
+    vblank_count = 0;
+    while (!vblank_count)
+        continue;
+    vblank_count = 0;
+
+    /* Set the TOD timer. */
+    cia->todhi = start >> 16;
+    cia->todmid = start >> 8;
+    cia->todlow = start;
+
+    /* Wait for required number of VBL periods. */
+    while (vblank_count < vbl_ticks)
+        continue;
+
+    /* Read final timer value. */
+    end = cia->todhi;
+    end <<= 8;
+    end |= cia->todmid;
+    end <<= 8;
+    end |= cia->todlow;
+
+    /* Subtract our initial settings. */
+    end -= start;
+    end &= 0xffffff;
+
+    /* Check that TOD ticked at expected rate. */
+    sprintf(s, "CIA%c TOD expect %u ticks: %u -> %s",
+            cia_ch, tod_ticks, end,
+            within_tolerance(tod_ticks, end) ? "OK" : "FAIL");
+    print_line(r);
+    r->y++;
+}
+
+/* Test the TOD alarm IRQ fires when it should. */
+static void test_TOD_IRQ(
+    struct char_row *r,
+    volatile struct amiga_cia * const cia,
+    unsigned int tod_ticks_per_vbl,
+    char cia_ch)
+{
+    char *s = (char *)r->s;
+    unsigned int vbl_ticks = 16;
+    unsigned int tod_ticks = vbl_ticks * tod_ticks_per_vbl;
+    uint32_t start = 0x775132, alarm = start + tod_ticks;
+
+    print_wait(r, vbl_ticks);
+
+    /* Wait for a vblank and reset IRQ counters. */
+    vblank_count = 0;
+    TOD = 0;
+    while (!vblank_count)
+        continue;
+    vblank_count = 0;
+
+    /* Set up TOD a little after the vertical blank. */
+    delay_ms(1);
+
+    /* Set the TOD counter. */
+    cia->todhi = start >> 16;
+    cia->todmid = start >> 8;
+    cia->todlow = start;
+
+    /* Set the TOD alarm. */
+    cia->crb |= CIACRB_ALARM;
+    cia->todhi = alarm >> 16;
+    cia->todmid = alarm >> 8;
+    cia->todlow = alarm;
+    cia->crb &= ~CIACRB_ALARM;
+
+    /* Wait for a TOD alarm interrupt.  */
+    cia->icr = CIAICR_SETCLR | CIAICR_TOD;
+    while ((vblank_count < (vbl_ticks + 5)) && !TOD)
+        continue;
+    cia->icr = CIAICR_TOD;
+
+    /* Did it happen? And at the expected time? */
+    if (TOD == 0) {
+        sprintf(s, "CIA%c TOD IRQ Failure!", cia_ch);
+    } else {
+        sprintf(s, "CIA%c TOD IRQ expected in %u VBLs: %u -> %s",
+                cia_ch, vbl_ticks, vblank_count,
+                within_tolerance(vbl_ticks, vblank_count) ? "OK" : "FAIL");
+    }
+
+    print_line(r);
+    r->y++;
+}
+
 static void cia_timer_test(void)
 {
     char s[80];
     struct char_row r = { .x = 12, .y = 0, .s = s };
     uint16_t i, times[2][4];
     uint32_t exp, tot[4] = { 0 };
+    unsigned int hsync_per_vbl = (vbl_hz == 50) ? 313 : 263;
 
     sprintf(s, "-- CIA Timer Test --");
     print_line(&r);
-    r.y += 3;
+    r.y += 2;
     r.x = 0;
+
+    print_wait(&r, 10);
 
     /* Get CIA timestamps at time of a VBL IRQ. */
     vblank_count = 0;
@@ -58,14 +191,21 @@ static void cia_timer_test(void)
      * one-percent tolerance (which is pretty generous). */
     for (i = 0; i < 4; i++) {
         static const char *name[] = { "ATA", "ATB", "BTA", "BTB" };
-        uint32_t diff = tot[i] > exp ? tot[i] - exp : exp - tot[i];
-        int in_tol = diff < div32(exp, 100);
+        bool_t in_tol = within_tolerance(exp, tot[i]);
         sprintf(s, "CIA%s %u -> %s", name[i], tot[i],
                 in_tol ? "OK (<1%, within tolerance)"
                 : "FAILED (>1%, out of tolerance)");
         print_line(&r);
         r.y++;
     }
+
+    /* Test the TOD timers. */
+    test_TOD(&r, ciaa, 1, 'A');
+    test_TOD(&r, ciab, hsync_per_vbl, 'B');
+
+    /* Test the TOD alarm IRQs. */
+    test_TOD_IRQ(&r, ciaa, 1, 'A');
+    test_TOD_IRQ(&r, ciab, hsync_per_vbl, 'B');
 
     while (!do_exit && (keycode_buffer != K_ESC))
         continue;
