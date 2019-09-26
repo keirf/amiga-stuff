@@ -113,20 +113,10 @@ static bool_t test_TOD_IRQ(
 
     print_wait(r, vbl_ticks);
 
-    /* Wait for a vblank and reset IRQ counters. */
-    vblank_count = 0;
-    TOD = 0;
-    while (!vblank_count)
-        continue;
-    vblank_count = 0;
-
-    /* Set up TOD a little after the vertical blank. */
-    delay_ms(1);
-
-    /* Set the TOD counter. */
-    cia->todhi = start >> 16;
-    cia->todmid = start >> 8;
-    cia->todlow = start;
+    /* Set TOD to zero, so it cannot prematurely trigger the alarm. */
+    cia->todhi = 0;
+    cia->todmid = 0;
+    cia->todlow = 0;
 
     /* Set the TOD alarm. */
     cia->crb |= CIACRB_ALARM;
@@ -134,9 +124,24 @@ static bool_t test_TOD_IRQ(
     cia->todmid = alarm >> 8;
     cia->todlow = alarm;
     cia->crb &= ~CIACRB_ALARM;
+    cia->icr = CIAICR_SETCLR | CIAICR_TOD;
+
+    /* Wait for a vblank and reset IRQ counters. */
+    vblank_count = 0;
+    while (!vblank_count)
+        continue;
+    vblank_count = 0;
+    TOD = 0;
+
+    /* Set up TOD a little after the vertical blank. */
+    delay_ms(1);
+
+    /* Set the TOD counter for real. */
+    cia->todhi = start >> 16;
+    cia->todmid = start >> 8;
+    cia->todlow = start;
 
     /* Wait for a TOD alarm interrupt.  */
-    cia->icr = CIAICR_SETCLR | CIAICR_TOD;
     while ((vblank_count < (vbl_ticks + 5)) && !TOD)
         continue;
     cia->icr = CIAICR_TOD;
@@ -173,16 +178,15 @@ static void cia_timer_test(void)
 
     print_wait(&r, 100);
 
-    for (i = 0; i < 4; i++)
-        TIMER[i] = 0;
-
-    /* Get CIA timestamps at time of a VBL IRQ. */
+    /* Get CIA timestamps and reset IRQ counters at time of a VBL IRQ. */
+    ciaa->icr = CIAICR_SETCLR | CIAICR_TIMER_A | CIAICR_TIMER_B;
+    ciab->icr = CIAICR_SETCLR | CIAICR_TIMER_A | CIAICR_TIMER_B;
     vblank_count = 0;
     do {
         get_cia_times(times[0]);
     } while (!vblank_count);
-    ciaa->icr = CIAICR_SETCLR | CIAICR_TIMER_A | CIAICR_TIMER_B;
-    ciab->icr = CIAICR_SETCLR | CIAICR_TIMER_A | CIAICR_TIMER_B;
+    for (i = 0; i < 4; i++)
+        TIMER[i] = 0;
 
     /* Wait for 10 more VBL periods and accumulate CIA ticks into 
      * an array of 32-bit counters (tot[]). */
@@ -197,9 +201,9 @@ static void cia_timer_test(void)
     ciab->icr = CIAICR_TIMER_A | CIAICR_TIMER_B;
 
     exp = div32(cpu_hz*10, vbl_hz);
-    exp_irq = (exp >> 16) + 1;
-    sprintf(s, "Timer ticks during 100 VBLs (Expect %u and %u IRQs):",
-            exp, exp_irq);
+    exp_irq = exp >> 16;
+    sprintf(s, "Expect %u Ticks and %u-%u IRQs during 100 VBLs:",
+            exp, exp_irq, exp_irq+1);
     print_line(&r);
     r.y++;
 
