@@ -80,6 +80,14 @@ const static char *day_week_str[] = {
     "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
 };
 
+/* A short delay is required for register writes to take effect (issue #11). */
+static void DELAY(void)
+{
+    uint16_t t_s = get_ciaatb();
+    while ((t_s - get_ciaatb()) < 2)
+        continue;
+}
+
 /* This function has to be careful: 
  * 1. We do not know whether we have a RP5C01 or MSM6242 chip, and they are 
  *    not register compatible. 
@@ -92,12 +100,14 @@ static enum bc_type detect_clock_at(uint32_t base)
     /* Clear all test/stop/reset flags, preserve MSM6242 24h/12h flag. */
     rp5c01->ctl_e = 0;
     rp5c01->ctl_f = rp5c01->ctl_f & 4;
+    DELAY();
     /* Check that flags really are cleared. If not, there's no clock chip. */
     if (((rp5c01->ctl_e & 0xf) != 0) || ((rp5c01->ctl_f & 0xb) != 0))
         return BC_NONE;
 
     /* Put RP5C01 into MODE 01 (MSM6242: set HOLD flag). */
     rp5c01->ctl_d = 1;
+    DELAY();
     if ((rp5c01->ctl_d & 0x9) != 1)
         return BC_NONE;
 
@@ -107,6 +117,7 @@ static enum bc_type detect_clock_at(uint32_t base)
         rp5c01->ctl_d = 0;
         delay_ms(1);
         rp5c01->ctl_d = 1;
+        DELAY();
     }
     /* BUSY can't still be set. Should only be set a few usec per second. */
     if ((rp5c01->ctl_d & 0xb) != 1) /* checks ADJ,BUSY,HOLD flags */
@@ -115,15 +126,18 @@ static enum bc_type detect_clock_at(uint32_t base)
     /* Write a non-existent register (in RP5C01 MODE 01) */
     t = rp5c01->yr10;
     rp5c01->yr10 = 5;
+    DELAY();
     if (((rp5c01->ctl_d & 0xf) == 1) && ((rp5c01->yr10 & 0xf) == 0)) {
         /* RP5C01? */
         rp5c01->ctl_d = 8; /* MODE 00, TIMER_EN */
+        DELAY();
         if ((rp5c01->ctl_d & 0xf) == 8)
             return BC_RP5C01;
     } else {
         /* MSM6242? */
         rp5c01->yr10 = t; /* restore day-of-week */
         rp5c01->ctl_d = 0; /* clear HOLD */
+        DELAY();
         if ((rp5c01->ctl_d & 0x9) == 0) /* check ADJ & HOLD are clear */
             return BC_MSM6242;
     }
@@ -148,18 +162,48 @@ static void detect_clock(struct bc *bc)
     }
 }
 
+static void msm6242_hold(volatile struct msm6242 *msm6242)
+{
+    unsigned int i = 10;
+    msm6242->ctl_d = 1; /* set HOLD */
+    DELAY();
+    while ((msm6242->ctl_d & 2) && --i) { /* wait 10ms for !BUSY */
+        msm6242->ctl_d = 0;
+        delay_ms(1);
+        msm6242->ctl_d = 1;
+        DELAY();
+    }
+}
+
+static void msm6242_release(volatile struct msm6242 *msm6242)
+{
+    DELAY();
+    msm6242->ctl_d = 0; /* clear HOLD */
+}
+
+static void rp5c01_hold(volatile struct rp5c01 *rp5c01)
+{
+    rp5c01->ctl_d = 0; /* stop timer */
+    DELAY();
+}
+
+static void rp5c01_release(volatile struct rp5c01 *rp5c01)
+{
+    DELAY();
+    rp5c01->ctl_d = 8; /* start timer */
+}
+
 /* Look for out-of-range register values indicating that the configured 
  * time/date is invalid and requires reset. This will often be the case 
  * when running a clock with no backup battery. */
 static int bc_time_is_bogus(struct bc *bc)
 {
     int good = 0;
-    uint8_t t;
 
     switch (bc->type) {
     case BC_RP5C01: {
         volatile struct rp5c01 *rp5c01 = (struct rp5c01 *)bc->base;
-        rp5c01->ctl_d = 0; /* stop timer */
+        rp5c01_hold(rp5c01);
         good = ((rp5c01->sec1 & 0xf) <= 9)
             && ((rp5c01->sec10 & 0xf) <= 5)
             && ((rp5c01->min1 & 0xf) <= 9)
@@ -169,18 +213,12 @@ static int bc_time_is_bogus(struct bc *bc)
             && ((rp5c01->day1 & 0xf) <= 9)
             && ((rp5c01->day10 & 0xf) <= 3)
             && ((rp5c01->yr1 & 0xf) <= 9);
-        rp5c01->ctl_d = 8; /* start timer */
+        rp5c01_release(rp5c01);
         break;
     }
     case BC_MSM6242: {
         volatile struct msm6242 *msm6242 = (struct msm6242 *)bc->base;
-        msm6242->ctl_d = 1; /* set HOLD */
-        t = 10;
-        while ((msm6242->ctl_d & 2) && --t) { /* wait 10ms for !BUSY */
-            msm6242->ctl_d = 0;
-            delay_ms(1);
-            msm6242->ctl_d = 1;
-        }
+        msm6242_hold(msm6242);
         good = ((msm6242->sec1 & 0xf) <= 9)
             && ((msm6242->sec10 & 0xf) <= 5)
             && ((msm6242->min1 & 0xf) <= 9)
@@ -190,7 +228,7 @@ static int bc_time_is_bogus(struct bc *bc)
             && ((msm6242->day1 & 0xf) <= 9)
             && ((msm6242->day10 & 0xf) <= 3)
             && ((msm6242->yr1 & 0xf) <= 9);
-        msm6242->ctl_d = 0; /* clear HOLD */
+        msm6242_release(msm6242);
         break;
     }
     default:
@@ -203,14 +241,14 @@ static int bc_time_is_bogus(struct bc *bc)
 static void bc_get_time(struct bc *bc, struct time *t)
 {
     uint8_t hr24;
-    unsigned int i;
 
     switch (bc->type) {
     case BC_RP5C01: {
         volatile struct rp5c01 *rp5c01 = (struct rp5c01 *)bc->base;
         rp5c01->ctl_d = 9;
+        DELAY();
         hr24 = rp5c01->mon10 & 1;
-        rp5c01->ctl_d = 0; /* stop timer */
+        rp5c01_hold(rp5c01);
         t->sec = ((rp5c01->sec10 & 0xf) * 10) + (rp5c01->sec1 & 0xf);
         t->min = ((rp5c01->min10 & 0xf) * 10) + (rp5c01->min1 & 0xf);
         if (hr24) {
@@ -224,19 +262,13 @@ static void bc_get_time(struct bc *bc, struct time *t)
         t->mon = ((rp5c01->mon10 & 0x1) * 10) + (rp5c01->mon1 & 0xf);
         t->year = ((rp5c01->yr10 & 0xf) * 10) + (rp5c01->yr1 & 0xf);
         /*day_week = rp5c01->day_of_week & 0xf;*/
-        rp5c01->ctl_d = 8; /* start timer */
+        rp5c01_release(rp5c01);
         break;
     }
     case BC_MSM6242: {
         volatile struct msm6242 *msm6242 = (struct msm6242 *)bc->base;
         hr24 = !!(msm6242->ctl_f & 4);
-        msm6242->ctl_d = 1; /* set HOLD */
-        i = 10;
-        while ((msm6242->ctl_d & 2) && --i) { /* wait 10ms for !BUSY */
-            msm6242->ctl_d = 0;
-            delay_ms(1);
-            msm6242->ctl_d = 1;
-        }
+        msm6242_hold(msm6242);
         t->sec = ((msm6242->sec10 & 0xf) * 10) + (msm6242->sec1 & 0xf);
         t->min = ((msm6242->min10 & 0xf) * 10) + (msm6242->min1 & 0xf);
         if (hr24) {
@@ -250,7 +282,7 @@ static void bc_get_time(struct bc *bc, struct time *t)
         t->mon = ((msm6242->mon10 & 0x1) * 10) + (msm6242->mon1 & 0xf);
         t->year = ((msm6242->yr10 & 0xf) * 10) + (msm6242->yr1 & 0xf);
         /*day_week = msm6242->day_of_week & 0xf;*/
-        msm6242->ctl_d = 0; /* clear HOLD */
+        msm6242_release(msm6242);
         break;
     }
     default:
@@ -304,8 +336,10 @@ static void bc_set_time(struct bc *bc, struct time *t)
     case BC_RP5C01: {
         volatile struct rp5c01 *rp5c01 = (struct rp5c01 *)bc->base;
         rp5c01->ctl_d = 9; /* stop timer, mode 01 */
+        DELAY();
         rp5c01->mon10 = 1; /* set 24h mode */
-        rp5c01->ctl_d = 0; /* stop timer, mode 00 */
+        DELAY();
+        rp5c01_hold(rp5c01);
         /* Jan 1 00:00:00 2016 */
         rp5c01->sec10 = t->sec / 10;
         rp5c01->sec1 = t->sec % 10;
@@ -320,19 +354,12 @@ static void bc_set_time(struct bc *bc, struct time *t)
         rp5c01->day10 = t->mday / 10;
         rp5c01->day1 = t->mday % 10;
         rp5c01->day_of_week = day_week;
-        rp5c01->ctl_d = 8; /* start timer */
+        rp5c01_release(rp5c01);
         break;
     }
     case BC_MSM6242: {
         volatile struct msm6242 *msm6242 = (struct msm6242 *)bc->base;
-        uint8_t i;
-        msm6242->ctl_d = 1; /* set HOLD */
-        i = 10;
-        while ((msm6242->ctl_d & 2) && --i) { /* wait 10ms for !BUSY */
-            msm6242->ctl_d = 0;
-            delay_ms(1);
-            msm6242->ctl_d = 1;
-        }
+        msm6242_hold(msm6242);
         msm6242->ctl_f = 4; /* set 24h mode */
         msm6242->sec10 = t->sec / 10;
         msm6242->sec1 = t->sec % 10;
@@ -348,7 +375,7 @@ static void bc_set_time(struct bc *bc, struct time *t)
         msm6242->day10 = t->mday / 10;
         msm6242->day1 = t->mday % 10;
         msm6242->day_of_week = day_week;
-        msm6242->ctl_d = 0; /* clear HOLD */
+        msm6242_release(msm6242);
         break;
     }
     default:
