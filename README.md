@@ -3,7 +3,7 @@
 
 ## Amiga Test Kit (formerly SysTest)
 
-### Download the latest build of Amiga Test Kit [here (Github)](https://github.com/keirf/Amiga-Stuff/releases/download/testkit-v1.4/AmigaTestKit-v1.4.zip).
+### Download the latest build of Amiga Test Kit [here (Github)](https://github.com/keirf/Amiga-Stuff/releases/download/testkit-v1.5/AmigaTestKit-v1.5.zip).
 
 ### Build From Source
 
