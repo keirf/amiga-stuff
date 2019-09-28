@@ -221,7 +221,7 @@ static uint32_t drive_id(unsigned int drv)
 static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
 {
     char *s = (char *)r->s;
-    uint8_t motors = 0, pra, old_pra, key = 0;
+    uint8_t motors = 0, pra, old_pra, prb, old_prb, key = 0;
     unsigned int i, old_disk_index_count;
     uint32_t rdy_delay, mtr_time, key_time, mtr_timeout;
     int rdy_changed;
@@ -277,6 +277,7 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
         r->y -= 3;
 
         old_pra = ciaa->pra;
+        old_prb = ciab->prb;
         mtr_time = get_time();
         rdy_delay = rdy_changed = 0;
         old_disk_index_count = disk_index_count = 0;
@@ -284,7 +285,9 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
         key = 1; /* force print */
 
         while (!do_exit) {
-            if (((pra = ciaa->pra) != old_pra) || key) {
+            pra = ciaa->pra;
+            prb = ciab->prb;
+            if ((pra != old_pra) || key) {
                 rdy_changed = !!((old_pra ^ pra) & CIAAPRA_RDY);
                 if (rdy_changed)
                     rdy_delay = get_time() - mtr_time;
@@ -300,6 +303,14 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
                         ~pra & CIAAPRA_RDY  ? "RDY" : "");
                 print_line(r);
                 old_pra = pra;
+            }
+            if ((prb != old_prb) || key) {
+                r->y += 4;
+                sprintf(s, "$7 STEP=%u$  $8 DIR=%u$",
+                        !!(prb & CIABPRB_STEP), !!(prb & CIABPRB_DIR));
+                print_line(r);
+                r->y -= 4;
+                old_prb = prb;
             }
             if ((old_disk_index_count != disk_index_count)
                 || rdy_changed || key) {
@@ -343,6 +354,12 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
                 rdy_delay = 0;
             } else if (key == 0x55) { /* F6 */
                 seek_track((cur_cyl == 0) ? 2 : 0);
+                key = 0; /* don't force print */
+            } else if (key == 0x56) { /* F7 */
+                ciab->prb ^= CIABPRB_STEP;
+                key = 0; /* don't force print */
+            } else if (key == 0x57) { /* F8 */
+                ciab->prb ^= CIABPRB_DIR;
                 key = 0; /* don't force print */
             } else if (key == K_ESC) { /* ESC */
                 break;
