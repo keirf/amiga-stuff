@@ -11,6 +11,8 @@
 
 #include "testkit.h"
 
+static int delay_sec;
+
 static uint32_t lb(uint32_t _lb)
 {
     /* Round down to 64kB boundary. */
@@ -249,6 +251,19 @@ static void print_memory_test_type(struct test_memory_args *args)
     if (!(args->subround & 1)) {
         wait_bos();
         print_line(r);
+    } else if (delay_sec) {
+        int i, j;
+        r->y++;
+        for (i = 0; i < delay_sec; i++) {
+            sprintf(s, "Delay %u...", delay_sec-i);
+            wait_bos();
+            print_line(r);
+            for (j = 0; j < 10; j++) {
+                delay_ms(100);
+                if (do_exit || (keycode_buffer == K_ESC))
+                    return;
+            }
+        }
     }
 }
 
@@ -565,7 +580,7 @@ static uint32_t edit_address(
     return _a;
 }
 
-static void kickstart_test_one_region(struct char_row *r, unsigned int i)
+static void test_one_region(struct char_row *r, const struct mem_region *mr)
 {
     struct test_memory_args tm_args;
     char *s = (char *)r->s;
@@ -574,9 +589,11 @@ static void kickstart_test_one_region(struct char_row *r, unsigned int i)
 
     /* Calculate inclusive range [a,b] with limits expanded to 64kB alignment 
      * (Kickstart sometimes steals RAM from the limits). */
-    a = lb(mem_region[i].lower);
-    b = ub(mem_region[i].upper) - 1;
+    a = lb(mr->lower);
+    b = ub(mr->upper) - 1;
 
+restart:
+    keycode_buffer = 0;
     clear_whole_screen();
     print_menu_nav_line();
 
@@ -588,10 +605,8 @@ static void kickstart_test_one_region(struct char_row *r, unsigned int i)
     do {
         r->x = 2;
         r->y = 2;
-        sprintf(s, "%08x - %08x  %s  %3u.%u MB",
-                a, b, mem_region[i].attr & 2 ? "Chip" :
-                (a >= 0x00c00000) && (a < 0x00d00000) ? "Slow" : "Fast",
-                (b-a+1) >> 20, ((b-a+1)>>19)&1 ? 5 : 0);
+        sprintf(s, "%08x - %08x  %3u.%u MB",
+                a, b, (b-a+1) >> 20, ((b-a+1)>>19)&1 ? 5 : 0);
         print_line(r);
 
         r->x = 4;
@@ -655,6 +670,9 @@ static void kickstart_test_one_region(struct char_row *r, unsigned int i)
         memory_test_next_subround(&tm_args);
     }
 
+    if (!do_exit)
+        goto restart;
+
 out:
     keycode_buffer = 0;
 }
@@ -716,7 +734,7 @@ restart:
             case K_F1 ... K_F8:
                 a = base + key - K_F1;
                 if (a < nr_mem_regions) {
-                    kickstart_test_one_region(&r, a);
+                    test_one_region(&r, &mem_region[a]);
                     goto restart;
                 }
                 break;
@@ -836,7 +854,17 @@ void memcheck(void)
         sprintf(s, "$3 Direct Memory Scan (Ignores Kickstart)$");
         print_line(&r);
         r.y++;
+        sprintf(s, "$4 Test Custom Range$");
+        print_line(&r);
+        r.y += 2;
+        sprintf(s, "Pause between Fill & Check: %us", delay_sec);
+        print_line(&r);
+        r.y++;        
+        sprintf(s, "$5 Decrease$  $6 Increase$");
+        print_line(&r);
+        r.y++;
 
+    next_key:
         do {
             while (!(key = keycode_buffer) && !do_exit)
                 continue;
@@ -844,7 +872,7 @@ void memcheck(void)
 
             if (do_exit || (key == K_ESC))
                 goto out;
-        } while ((key < K_F1) || (key > K_F3));
+        } while ((key < K_F1) || (key > K_F6));
 
         switch (key) {
         case K_F1:
@@ -862,6 +890,25 @@ void memcheck(void)
         case K_F3:
             memcheck_direct_scan();
             break;
+        case K_F4: {
+            struct mem_region mr = { .upper = 1 };
+            test_one_region(&r, &mr);
+            clear_whole_screen();
+            break;
+        }
+        case K_F5:
+            if (delay_sec != 0)
+                delay_sec--;
+        redraw_pause:
+            sprintf(s, "Pause between Fill & Check: %us", delay_sec);
+            r.y = 10;
+            wait_bos();
+            print_line(&r);
+            goto next_key;
+        case K_F6:
+            if (delay_sec < 99)
+                delay_sec++;
+            goto redraw_pause;
         }
     }
 
