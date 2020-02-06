@@ -5,7 +5,22 @@
 
 ### Download the latest build of Amiga Test Kit [here (Github)](https://github.com/keirf/Amiga-Stuff/releases/download/testkit-v1.5/AmigaTestKit-v1.5.zip).
 
-### Build From Source
+### Build From Source (Docker)
+
+A Docker image has kindly been [supplied (Docker
+Hub)](https://hub.docker.com/r/rjnorthrow/atk). You can run it as
+follows to generate the latest Amiga Test Kit zip file in your current
+directory:
+```
+# docker run -v $(pwd):/output --rm -ti rjnorthrow/atk
+```
+
+*COMMIT* and *MAKE_OPTS* may be set in the environment to build a particular version of Amiga Test Kit, and to specify extra build parameters:
+```
+# docker run -e COMMIT=testkit-v1.3 -e MAKE_OPTS=-j4 -v $(pwd):/output --rm -ti rjnorthrow/atk
+```
+
+### Build From Source (Manual Method)
 
 Requires a GCC cross-compiler toolchain targetting
 `m68k-unknown-elf`. I recommend binutils-2.28 and gcc-7.1.0, built
