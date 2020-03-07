@@ -84,7 +84,7 @@ const static char *day_week_str[] = {
 static void DELAY(void)
 {
     uint16_t t_s = get_ciaatb();
-    while ((t_s - get_ciaatb()) < 2)
+    while ((uint16_t)(t_s - get_ciaatb()) < 2)
         continue;
 }
 
