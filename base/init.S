@@ -83,24 +83,26 @@
         andi.b  #0x87,(a5)
         ori.b   #0x78,(a5)
 
-        /* Initialise CPU state */
+        /* Force supervisor mode */
         lea.l   .priv(pc),a0
         move.l  a0,0x20(a4)
 .priv:  move.w  #0x2700,sr      /* SR = 0x2700 (supervisor mode, no irqs) */
-        lea.l   .skip(pc),a0
-        move.l  a0,(0x10).w
-        dc.l    0x4e7b0801      /* movec.l d0,vbr  (VBR  = 0) */
-        dc.l    0x4e7b0002      /* movec.l d0,cacr (CACR = 0) */
+
+        /* Skip faulting instruction on Illegal and Line F exceptions */
+        lea.l   trap_skip(pc),a0
+        move.l  a0,(0x10).w     /* Illegal */
+        move.l  a0,(0x2c).w     /* Line F */
+
+        /* Disable caches (Note: d0.l = 0) */
+        dc.l    0x4e7b0801      /* movec.l d0,vbr  */
+        dc.l    0xf4784e71      /* cpusha dc       */
+        dc.l    0x4e7b0002      /* movec.l d0,cacr */
+        dc.l    0x4e7b0808      /* movec.l d0,pcr  */
 
         /* Disable 68851/030 MMU */
-        lea     .skip_030_mmu(pc),a0
-        move.l  (0x2c).w,d1     /* Save Line F exception handler */
-        move.l  a0,(0x2c).w     /* New handler */
-.pmoves:dc.l    0xf0004000      /* pmove d0,tc  - 68851 and 68030 */
+        dc.l    0xf0004000      /* pmove d0,tc  - 68851 and 68030 */
         dc.l    0xf0000800      /* pmove d0,tt0 - 68030 specific */
         dc.l    0xf0000c00      /* pmove d0,tt1 - 68030 specific  */
-.skip_030_mmu:
-        move.l  d1,(0x2c).w     /* Restore Line F exception handler */
 
         /* Disable 040/060 MMU */
         dc.l    0x4e7b0003      /* movec.l d0,tc */
@@ -109,7 +111,9 @@
         dc.l    0x4e7b0006      /* movec.l d0,dtt0 */
         dc.l    0x4e7b0007      /* movec.l d0,dtt1 */
 
-.skip:  lea.l   (SUPER_SP).l,sp /* SSP */
+        /* Initialise stack pointers.
+         * *** DO NOT USE THE STACK UNTIL AFTER WE ARE RELOCATED!! *** */
+        lea.l   (SUPER_SP).l,sp /* SSP */
         lea.l   (USER_SP).l,a0
         move.l  a0,usp          /* USP */
 
@@ -122,27 +126,27 @@
         move.l  #_end,d1        /* d1 = end of destination */
         cmp.l   d1,d0           /* Does the destination overlap with us? */
         jcc     1f
+
         /* It does overlap so make a temp. copy immediately beyond us.
          * This is safe because we are so low in memory there is guaranteed
          * to be enough memory beyond us to copy into. If we were high enough
          * in memory for this to be a problem we would not be overlapping
          * with the final destination in the first place. */
-        move.l  a0,d1
-        add.l   #_end-start,d1  /* d1 = temp. location (current end loc.) */
-        jbsr    copy
-        move.l  d1,a0           /* a0 = temp. location */
-        jmp     1f-start(a0)
-1:      /* Main copy to final relocation point */
-        move.l  #main,-(sp)     /* jump to final destination after the copy */
-        move.l  #start,d1       /* d1 = destination */
+        move.l  a0,a1
+        add.l   #_end-start,a1  /* a1 = temp. location (current end loc.) */
+        lea.l   1f-start(a1),a2 /* jump to label 1f after the copy */
+        jra     copy
 
+1:      /* Main copy to final relocation point */
+        lea.l   (start).l,a1    /* a1 = destination */
+        lea.l   main-start(a1),a2 /* jump to destination after the copy */
+        
 copy:   lea.l   start(pc),a0    /* a0 = current location */
-        move.l  d1,a1           /* a1 = destination */
         move.l  #_end-start,d0
         lsr.l   #2,d0
 1:      move.l  (a0)+,(a1)+
         dbf     d0,1b
-        rts
+        jmp     (a2)
 
 main:   move.w  #0x2000,sr      /* allow CPU interrupts now that we are */
                                 /* definitely executing clear of the stack */
@@ -150,4 +154,8 @@ main:   move.w  #0x2000,sr      /* allow CPU interrupts now that we are */
         jmp     (cstart).l
 
 getvbr: dc.l    0x4e7ac801      /* movec.l vbr,a4 */
+        rte
+
+trap_skip:
+        addq.l  #4,2(sp)
         rte
