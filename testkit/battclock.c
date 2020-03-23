@@ -227,7 +227,8 @@ static int bc_time_is_bogus(struct bc *bc)
             && ((msm6242->hr10 & 0xf) <= 3)
             && ((msm6242->day1 & 0xf) <= 9)
             && ((msm6242->day10 & 0xf) <= 3)
-            && ((msm6242->yr1 & 0xf) <= 9);
+            && ((msm6242->yr1 & 0xf) <= 9)
+            && ((msm6242->ctl_f & 0xb) == 0); /* REST, STOP, TEST = 0 */
         msm6242_release(msm6242);
         break;
     }
@@ -359,8 +360,11 @@ static void bc_set_time(struct bc *bc, struct time *t)
     }
     case BC_MSM6242: {
         volatile struct msm6242 *msm6242 = (struct msm6242 *)bc->base;
+        msm6242->ctl_f = 1; /* REST */
+        DELAY();
         msm6242_hold(msm6242);
-        msm6242->ctl_f = 4; /* set 24h mode */
+        msm6242->ctl_f = 5; /* set 24h mode */
+        DELAY();
         msm6242->sec10 = t->sec / 10;
         msm6242->sec1 = t->sec % 10;
         msm6242->min10 = t->min / 10;
@@ -376,6 +380,8 @@ static void bc_set_time(struct bc *bc, struct time *t)
         msm6242->day1 = t->mday % 10;
         msm6242->day_of_week = day_week;
         msm6242_release(msm6242);
+        msm6242->ctl_f = 4; /* !REST */
+        DELAY();
         break;
     }
     default:
