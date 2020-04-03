@@ -150,11 +150,6 @@ static void detect_clock(struct bc *bc)
     uint32_t bases[] = { 0xdc0000, 0xd80000 };
     unsigned int i, nr = ARRAY_SIZE(bases);
 
-    /* AGA systems never have RTC at 0xD80000 (only early A2000). Indeed A4000 
-     * asserts a Bus Error on accesses in the region 0xD00000-0xDFFFFF. */
-    if (chipset_type == CHIPSET_aga)
-        nr--;
-
     for (i = 0; i < nr; i++) {
         bc->type = detect_clock_at(bc->base = bases[i]);
         if (bc->type != BC_NONE)

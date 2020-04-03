@@ -1081,6 +1081,14 @@ void cstart(void)
     wait_bos();
     cust->dmacon = DMA_SETCLR | DMA_BPLEN | DMA_SPREN;
 
+    /* Fat Gary "Bus Timeout Mode" (TIMEOUT): Bit 7 of DE0000. 
+     *  =0: silent bus timeout (power on default)
+     *  =1: #BERR on timeout (set by later Kickstarts) */
+    *(volatile uint8_t *)0xde0000 = 0;
+    /* Fat Gary "Bus Timeout Enable" (TOENB): Bit 7 of DE0001. 
+     *  =0: timeout enabled (power on default) */
+    *(volatile uint8_t *)0xde0001 = 0;
+
     for (;;)
         mainmenu();
 }

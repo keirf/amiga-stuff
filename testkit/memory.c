@@ -361,11 +361,6 @@ static void memcheck_direct_scan(void)
     for (i = 20; i < 24; i++)
         aliased_slots |= (1u << i);
 
-    /* AGA systems never have expansion memory at 0xD00000. Indeed A4000 
-     * asserts a Bus Error on accesses in that region. */
-    if (chipset_type == CHIPSET_aga)
-        aliased_slots |= 1u << 27;
-
     /* 0xC00000-0xD7FFFF: If slow memory is absent then custom registers alias
      * here. We detect this by writing to what would be INTENA and checking 
      * for changes to what would be INTENAR. If we see no change then we are 
