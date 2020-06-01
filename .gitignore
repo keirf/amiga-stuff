@@ -8,6 +8,8 @@
 *.orig
 *.rej
 *.exe
+*.tmp
+*.gz
 *.zip
 degzip
 kickconv

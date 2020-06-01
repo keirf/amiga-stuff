@@ -19,38 +19,45 @@ def checksum(bb, sum=0):
     return sum
 
 def main(argv):
-    bb_f = open(argv[1], "rb")
-    pl_f = open(argv[2], "rb")
-    out_f = open(argv[3], "wb")
-    bb_dat = bb_f.read()
-    pl_dat = pl_f.read()
+    with open(argv[1], "rb") as f:
+        bb_dat = f.read()
+    with open(argv[2], "rb") as f:
+        pl_dat = f.read()
 
-    # Construct bootblock header. We will splice in the checksum later.
-    header = struct.pack(">4sLLLL",
-                         b'DOS\0',                    # Bootblock signature
-                         0,                           # Checksum (placeholder)
-                         880,                         # Root block
-                         0x60060000,                  # BRA.B +6
-                         (len(pl_dat) + 511) & ~511)  # Payload length, padded
-                         
+    bb_len = len(bb_dat) + 4
+    assert (bb_len & 3) == 0
     
-    # Compute checksum over header, bootblock, and first 512 bytes of payload.
-    sum = checksum(pl_dat[:512], checksum(bb_dat, checksum(header)))
-    sum ^= 0xFFFFFFFF
+    _, decompressed_length, _, leeway = struct.unpack(">2I2H", pl_dat[:12])
+    pl_dat = pl_dat[12:-2]
+    pl_len = len(pl_dat)
+    
+    # Leeway must account for the padding at end of last block loaded.
+    leeway += -(bb_len + pl_len) & 511
+
+    # Length of data to load from disk (multiple of 512-byte blocks).
+    load_len = (bb_len + pl_len + 511) & ~511
+
+    # Amount of memory to allocate in the loader for unpacked payload.
+    alloc_len = max(load_len, decompressed_length) + leeway
+    alloc_len += -alloc_len & 3
+    
+    bb_dat += struct.pack(">2I", alloc_len-load_len, load_len)
+    print(" BB + Compressed = %u + %u = %u"
+          % (bb_len, pl_len, bb_len + pl_len))
+    print(" Load - Compressed = %u - %u = %u"
+          % (load_len, pl_len, load_len - pl_len))
+    print(" Alloc - Decompressed = %u - %u = %u"
+          % (alloc_len, decompressed_length, alloc_len - decompressed_length))
+    print(" == %u Tracks ==" % ((load_len + 5631) // 5632))
+    
     # Splice the computed checksum into the header
-    header = header[:4] + struct.pack(">L", sum) + header[8:]
-    # Write out the header and bootblock code
-    out_f.write(header)
-    out_f.write(bb_dat)
-    # Pad bootblock to 512 bytes
-    for x in range((512-len(bb_dat)-len(header))//4):
-        out_f.write(struct.pack(">L", 0))
-    # Write the payload from sector 1 onwards
-    out_f.write(pl_dat)
-    # If destination is an ADF, pad image to 880kB
-    if "adf" in argv[3]:
-        for x in range((901120-len(pl_dat)-512)//4):
-            out_f.write(struct.pack(">L", 0))
+    sum = checksum(bb_dat[:1024]) ^ 0xFFFFFFFF
+    bb_dat = bb_dat[:4] + struct.pack(">L", sum) + bb_dat[8:]
+
+    image = bb_dat + pl_dat
+    image += bytes(901120 - len(image))
+    with open(argv[3], "wb") as f:
+        f.write(image)
 
 if __name__ == "__main__":
     main(sys.argv)

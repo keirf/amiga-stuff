@@ -39,15 +39,20 @@ $(NAME)-v$(VER).zip: $(NAME).adf $(NAME) $(NAME).info README.md $(NAME).elf
 	zip -r $@ $(NAME)-v$(VER)
 
 $(NAME): $(NAME).exe
-	cp $(NAME).exe $(NAME)
-	chmod 0755 $(NAME)
+	cp $< $@
+	chmod 0755 $@
 
 $(NAME).exe: $(NAME).bin
-	python ../base/mk_amiga_exe.py $< $@
+	$(PYTHON) ../base/mk_amiga_exe.py $< $@
+	$(PYTHON) ../inflate/pack_exe.py $@ $@.tmp
+	mv $@.tmp $@
 
 $(NAME).adf: bootblock.bin $(NAME).bin
-	python ../base/mk_adf.py $^ $@
+	gzip -fk9 $(NAME).bin
+	../inflate/degzip -H $(NAME).bin.gz $(NAME).bin.tmp
+	$(PYTHON) ../base/mk_adf.py bootblock.bin $(NAME).bin.tmp $@
+	$(RM) $(NAME).bin.tmp
 
 clean::
-	$(RM) *.adf *.exe *.zip $(NAME)
+	$(RM) *.adf *.exe *.zip $(NAME) *.tmp *.gz
 	$(RM) -r $(NAME)-v*

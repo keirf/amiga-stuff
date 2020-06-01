@@ -33,52 +33,105 @@
 #define MEMF_CHIP   2
 #define MEMF_FAST   4
 
-/* Hunk IDs in Amiga load file */
-#define HUNK_HEADER   0x3F3
-#define HUNK_CODE     0x3E9
-#define HUNK_DATA     0x3EA
-#define HUNK_BSS      0x3EB
-#define HUNK_RELOC32  0x3EC
-#define HUNK_END      0x3F2
+#define pl_load_off  0
+#define pl_load_len  4
+#define pl_data      8
 
-/* Payload length (rounded up to sector boundary) is prepended along with
- * standard bootblock header by a build script. */
-#define load_len start-4
-        
         .text
 start:
+        /* Bootblock header */
+        .asciz  "DOS"
+        dc.l    0, 880
+        
         /* Save trackdisk ioreq for later use */
         move.l  a1,-(sp)
 
-        /* Allocate chip memory for the data we're loading */
-        move.l  load_len(pc),d0
+        /* Allocate chip memory for full bootblock. */
+        move.l  #2048,d0
         moveq   #MEMF_PUBLIC|MEMF_CHIP,d1
         jsr     Exec_AllocMem(a6)
         move.l  d0,-(sp)
-        jne     .load
-        addq.l  #8,sp
-        moveq   #-1,d0
-        rts
+        jeq     no_mem
+
+        /* Load full bootblock, retry on failure. */
+        move.l  4(sp),a1
+1:      move.l  (sp),io_Data(a1)
+        move.l  #2048,io_Length(a1)
+        clr.l   io_Offset(a1)
+        move.w  #CMD_READ,io_Command(a1)
+        jsr     Exec_DoIO(a6)
+        move.l  4(sp),a1
+        tst.b   io_Error(a1)
+        jne     1b
+
+        jbsr    cache_clear
+        move.l  (sp)+,a0
+        lea     1f-start(a0),a0
+        jmp     (a0)
+1:
+        
+        /* Allocate chip memory for the data we're loading */
+        move.l  pl+pl_load_off(pc),d0
+        add.l   pl+pl_load_len(pc),d0
+        moveq   #MEMF_PUBLIC|MEMF_CHIP,d1
+        jsr     Exec_AllocMem(a6)
+        move.l  d0,-(sp)
+        jeq     no_mem
 
         /* Load data, retry on failure */
-.load:  move.l  4(sp),a1
-.retry: move.l  (sp),io_Data(a1)
-        move.l  load_len(pc),io_Length(a1)
-        move.l  #512,io_Offset(a1)
+        move.l  4(sp),a1
+.retry: move.l  (sp),d0
+        add.l   pl+pl_load_off(pc),d0
+        move.l  d0,io_Data(a1)
+        move.l  pl+pl_load_len(pc),io_Length(a1)
+        clr.l   io_Offset(a1)
         move.w  #CMD_READ,io_Command(a1)
         jsr     Exec_DoIO(a6)
         move.l  4(sp),a1
         tst.b   io_Error(a1)
         jne     .retry
 
-        /* We have loaded code from disk: Flush caches if possible */
-        cmp.w   #37,LibBase_Version(a6) /* exec.lib_version >= 37? */
-        jcs     .nocache
-        jsr     Exec_CacheClearU(a6)
-.nocache:
+        /* Allocate memory for inflate temporary storage. */
+        move.l  #3*1024,d0
+        moveq   #MEMF_PUBLIC,d1
+        jsr     Exec_AllocMem(a6)
+        move.l  d0,-(sp)
+        jeq     no_mem
+        
+        move.l  (sp),a6
+        lea     3*1024(a6),a6
+        move.l  4(sp),d0
+        move.l  d0,a4
+        add.l   pl+pl_load_off(pc),d0
+        move.l  d0,a5
+        lea     pl+pl_data-start(a5),a5
+        jbsr    inflate
+
+        /* Free inflate temporary storage. */
+        move.l  (sp)+,a1
+        move.l  #3*1024,d0
+        move.l  (4).w,a6
+        jsr     Exec_FreeMem(a6)
+
+        jbsr    cache_clear
 
         move.l  (sp)+,a0        /* a0 = payload data */
         move.l  (sp)+,a1        /* a1 = TDIOReq */
         jmp     (a0)
 
+cache_clear:
+        /* We have loaded code from disk: Flush caches if possible */
+        cmp.w   #37,LibBase_Version(a6) /* exec.lib_version >= 37? */
+        jcs     1f
+        jsr     Exec_CacheClearU(a6)
+1:      rts
+
+no_mem:
+        move.w  #0xf00,0xdff180
+        jra     no_mem
+        
+#define OPT_STORAGE_OFFSTACK 1
+#include "../inflate/inflate.S"
+
         .balign 4
+pl:

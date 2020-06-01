@@ -8,7 +8,10 @@ include ../base/Rules.mk
 all: overscan.adf
 
 overscan.adf: bootblock.bin overscan.bin
-	python ../base/mk_adf.py $^ $@
+	gzip -fk9 overscan.bin
+	../inflate/degzip -H overscan.bin.gz overscan.tmp
+	$(PYTHON) ../base/mk_adf.py bootblock.bin overscan.tmp $@
+	$(RM) overscan.tmp
 
 clean::
-	$(RM) *.adf
+	$(RM) *.adf *.exe *.zip $(NAME) *.tmp *.gz
