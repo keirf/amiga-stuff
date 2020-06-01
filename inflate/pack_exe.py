@@ -227,7 +227,6 @@ def generate_final_hunk():
     (packed, crc, leeway) = pack(raw)
     if len(raw) < len(packed)+MIN_COMPRESSION:
         # Not worth compressing, so don't bother.
-        print("Depacker: %u stored" % (alloc))
         hunk = depacker + bytes(4) + raw # 'bytes(4)' means not packed
     else:
         # Compress everything except the depacker itself (and the
