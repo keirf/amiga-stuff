@@ -117,40 +117,59 @@
         lea.l   (USER_SP).l,a0
         move.l  a0,usp          /* USP */
 
-        /* Check whether current location and final destination overlap.
+        /* Check whether our init code overlaps with its final destination.
          * Since the final destination is as low as possible in memory, this
          * can only occur by the end of the destination running into the start
          * of the current location. */
         lea.l   start(pc),a0
         move.l  a0,d0           /* d0 = current location */
-        move.l  #_end,d1        /* d1 = end of destination */
+        move.l  #estart,d1      /* d1 = end of destination */
         cmp.l   d1,d0           /* Does the destination overlap with us? */
-        jcc     1f
+        jcc     2f
 
-        /* It does overlap so make a temp. copy immediately beyond us.
+        /* It does overlap so shuffle the entire payload upwards.
          * This is safe because we are so low in memory there is guaranteed
          * to be enough memory beyond us to copy into. If we were high enough
          * in memory for this to be a problem we would not be overlapping
-         * with the final destination in the first place. */
-        move.l  a0,a1
-        add.l   #_end-start,a1  /* a1 = temp. location (current end loc.) */
-        lea.l   1f-start(a1),a2 /* jump to label 1f after the copy */
-        jra     copy
-
-1:      /* Main copy to final relocation point */
-        lea.l   (start).l,a1    /* a1 = destination */
-        lea.l   main-start(a1),a2 /* jump to destination after the copy */
-        
-copy:   lea.l   start(pc),a0    /* a0 = current location */
-        move.l  #_end-start,d0
+         * with the final destination in the first place. We copy backwards
+         * because the shuffle destination overlaps with us. */
+        lea.l   estart(pc),a1   /* a1 = destination */
+        move.l  #_sbss-start,d0 /* d0 = #bytes to copy */
+        add.l   d0,a0
+        add.l   d0,a1
         lsr.l   #2,d0
+        subq.l  #1,d0
+1:      move.l  -(a0),-(a1)     /* backwards copy */
+        dbf     d0,1b
+        move.l  a1,a0           /* our dest is the next copy's source */
+        jmp     2f-start(a1)
+
+2:      /* Copy the init code only to final destination. We will copy the rest
+         * of the payload using a further copy loop, executing from the final
+         * destination. */
+        move.l  #start,a1
+        lea.l   2f-start(a1),a2  /* a2 = jump target */
+        move.l  #estart-start,d0 /* d0 = #bytes = init code only */
+        lsr.l   #2,d0
+        subq.l  #1,d0
 1:      move.l  (a0)+,(a1)+
         dbf     d0,1b
         jmp     (a2)
+        
+2:      /* NOW EXECUTING INIT CODE AT THE FINAL DESTINATION.
+         * We now copy the rest of the payload. Copy pointers are already
+         * initialised for us. Calculate new length and do the copy. */
+        move.l  #_sbss-estart,d0
+        lsr.l   #2,d0
+        subq.l  #1,d0
+1:      move.l  (a0)+,(a1)+
+        dbf     d0,1b
 
-main:   move.w  #0x2000,sr      /* allow CPU interrupts now that we are */
-                                /* definitely executing clear of the stack */
+        /* Allow CPU interrupts now that we are definitely executing clear
+         * of the stack. */
+        move.w  #0x2000,sr
 
+        /* Jump to C code. */
         jmp     (cstart).l
 
 getvbr: dc.l    0x4e7ac801      /* movec.l vbr,a4 */
@@ -159,3 +178,6 @@ getvbr: dc.l    0x4e7ac801      /* movec.l vbr,a4 */
 trap_skip:
         addq.l  #4,2(sp)
         rte
+
+        .balign 4
+estart:
