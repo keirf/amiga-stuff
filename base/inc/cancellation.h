@@ -20,16 +20,14 @@ static inline int cancellation_is_running(struct cancellation *c)
     return c->sp != NULL;
 }
 
-/* During interrupt processing: Points to current 'user'/non-interrupt context.
- * (ie. the context saved by the first/outermost interrupt, if we are nesting
- * interrupt invocations). */
-extern struct c_exception_frame *user_frame;
-
 /* Execute (*fn)(arg) in a wrapped cancellable environment. */
 int call_cancellable_fn(struct cancellation *c, int (*fn)(void *), void *arg);
 
-/* From IRQ content: stop running fn() and immediately return -1. */
-void cancel_call(struct cancellation *c);
+/* From IRQ content: stop running fn() and immediately return -1. 
+ * Returns 0 if the fn() either was not running, or was running but is now
+ * succesfully cancelled. Returns -1 if the fn is running but cannot be 
+ * cancelled by the caller. */
+int cancel_call(struct cancellation *c, struct c_exception_frame *frame);
 
 /*
  * Local variables:

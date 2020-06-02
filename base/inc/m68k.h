@@ -53,3 +53,13 @@ struct c_exception_frame {
     uint16_t sr;
     uint32_t pc;
 };
+
+#define SR_TMASK  0xc000
+#define SR_SUPER  0x2000
+#define SR_MASTER 0x1000
+#define SR_IMASK  0x0700
+#define CCR_X     0x10
+#define CCR_N     0x08
+#define CCR_Z     0x04
+#define CCR_V     0x02
+#define CCR_C     0x01

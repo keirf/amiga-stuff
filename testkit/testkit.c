@@ -39,16 +39,15 @@
 } while (0)
 
 #define IRQ(name)                                                          \
-static void c_##name(void) attribute_used;                                 \
+static void c_##name(struct c_exception_frame *frame) attribute_used;      \
 void name(void);                                                           \
 asm (                                                                      \
 #name":                             \n"                                    \
 "    movem.l %d0-%d1/%a0-%a1,-(%sp) \n" /* Save a c_exception_frame */     \
-"    move.b  16(%sp),%d0            \n" /* D0 = SR[15:8] */                \
-"    and.b   #0x20,%d0              \n" /* D0 = SR.SUPERVISOR */           \
-"    jne     1f                     \n" /* SR.SUPERVISOR == 0? */          \
-"    move.l  %sp,user_frame         \n" /* If so ours is the user_frame */ \
-"1:  jbsr    c_"#name"              \n"                                    \
+"    move.l  %sp,%a0                \n"                                    \
+"    move.l  %a0,-(%sp)             \n"                                    \
+"    jbsr    c_"#name"              \n"                                    \
+"    addq.l  #4,%sp                 \n"                                    \
 "    movem.l (%sp)+,%d0-%d1/%a0-%a1 \n"                                    \
 "    rte                            \n"                                    \
 )
@@ -879,7 +878,7 @@ static void mainmenu(void)
 }
 
 IRQ(CIAA_IRQ);
-static void c_CIAA_IRQ(void)
+static void c_CIAA_IRQ(struct c_exception_frame *frame)
 {
     uint8_t key, icr = ciaa->icr;
 
@@ -914,7 +913,7 @@ static void c_CIAA_IRQ(void)
 }
 
 IRQ(CIAB_IRQ);
-static void c_CIAB_IRQ(void)
+static void c_CIAB_IRQ(struct c_exception_frame *frame)
 {
     uint8_t icr = ciab->icr;
 
@@ -941,7 +940,7 @@ static void c_CIAB_IRQ(void)
 
 IRQ(VBLANK_IRQ);
 static uint16_t vblank_joydat, mouse_x, mouse_y;
-static void c_VBLANK_IRQ(void)
+static void c_VBLANK_IRQ(struct c_exception_frame *frame)
 {
     uint16_t joydat, hstart, vstart, vstop;
     uint16_t cur16 = get_ciaatb();
@@ -973,7 +972,7 @@ static void c_VBLANK_IRQ(void)
 }
 
 IRQ(SOFT_IRQ);
-static void c_SOFT_IRQ(void)
+static void c_SOFT_IRQ(struct c_exception_frame *frame)
 {
     static uint16_t prev_lmb;
     uint16_t lmb, i, x, y;
@@ -1034,7 +1033,7 @@ static void c_SOFT_IRQ(void)
 
     /* Perform an asynchronous function cancellation if so instructed. */
     if (do_cancel)
-        cancel_call(&test_cancellation);
+        cancel_call(&test_cancellation, frame);
 
     IRQ_RESET(INT_SOFT);
 }

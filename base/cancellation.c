@@ -31,24 +31,25 @@ asm (
 
 void do_cancel(void);
 
-struct c_exception_frame *user_frame;
-
-void cancel_call(struct cancellation *c)
+int cancel_call(struct cancellation *c, struct c_exception_frame *frame)
 {
-    struct c_exception_frame *frame;
-
     if (c->sp == NULL)
-        return;
+        return 0;
+
+    /* If the caller is nested in supervisor mode, it cannot cancel. */
+    if (frame->sr & SR_SUPER)
+        return -1;
 
     /* Modify return frame: Jump to cancellation exit path of
      * call_cancellable_fn() with original SP in D0. */
-    frame = user_frame;
     frame->d0 = (uint32_t)c->sp;
     frame->pc = (uint32_t)do_cancel;
-    frame->sr &= 0x2000; /* Preserve Supervisor mode; clear everything else */
+    frame->sr = 0; /* Clear SR */
 
     /* Do this work at most once per invocation of call_cancellable_fn. */
     c->sp = NULL;
+
+    return 0;
 }
 
 /*
