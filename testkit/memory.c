@@ -11,6 +11,10 @@
 
 #include "testkit.h"
 
+/* sprintf helpers */
+#define mb_whole(x) ((x) >> 20)
+#define mb_frac(x) (mul32((x)>>4, 100) >> 16)
+
 static int delay_sec;
 
 static uint32_t lb(uint32_t _lb)
@@ -437,14 +441,14 @@ static void memcheck_direct_scan(void)
     }
     tot_chunks = chip_chunks + fast_chunks + slow_chunks;
 
-    sprintf(s, "** %u.%u MB Total Memory Detected **",
-            tot_chunks >> 1, (tot_chunks & 1) ? 5 : 0);
+    sprintf(s, "** %u.%02u MB Total Memory Detected **",
+            mb_whole(tot_chunks<<19), mb_frac(tot_chunks<<19));
     print_line(&r);
     r.y++;
-    sprintf(s, "(Chip %u.%u MB -- Fast %u.%u MB -- Slow %u.%u MB)",
-            chip_chunks >> 1, (chip_chunks & 1) ? 5 : 0,
-            fast_chunks >> 1, (fast_chunks & 1) ? 5 : 0,
-            slow_chunks >> 1, (slow_chunks & 1) ? 5 : 0);
+    sprintf(s, "(Chip %u.%02u MB -- Fast %u.%02u MB -- Slow %u.%02u MB)",
+            mb_whole(chip_chunks<<19), mb_frac(chip_chunks<<19),
+            mb_whole(fast_chunks<<19), mb_frac(fast_chunks<<19),
+            mb_whole(slow_chunks<<19), mb_frac(slow_chunks<<19));
     print_line(&r);
     r.y++;
     if (holes) {
@@ -600,8 +604,8 @@ restart:
     do {
         r->x = 2;
         r->y = 2;
-        sprintf(s, "%08x - %08x  %3u.%u MB",
-                a, b, (b-a+1) >> 20, ((b-a+1)>>19)&1 ? 5 : 0);
+        sprintf(s, "%08x - %08x  %3u.%02u MB",
+                a, b, mb_whole(b-a+1), mb_frac(b-a+1));
         print_line(r);
 
         r->x = 4;
@@ -702,11 +706,11 @@ restart:
         for (i = base; (i < nr_mem_regions) && (i < base+8); i++) {
             a = lb(mem_region[i].lower);
             b = ub(mem_region[i].upper);
-            sprintf(s, "$%u %2u  %08x - %08x  %s  %3u.%u MB$",
+            sprintf(s, "$%u %2u  %08x - %08x  %s  %3u.%02u MB$",
                     i-base+1, i, a, b-1,
                     mem_region[i].attr & 2 ? "Chip" :
                     (a >= 0x00c00000) && (a < 0x00d00000) ? "Slow" : "Fast",
-                    (b-a) >> 20, ((b-a)>>19)&1 ? 5 : 0);
+                    mb_whole(b-a), mb_frac(b-a));
             print_line(&r);
             r.y++;
         }
@@ -828,14 +832,14 @@ void memcheck(void)
         }
         tot = chip + fast + slow;
 
-        sprintf(s, "** %u.%u MB Total Memory Detected **",
-                tot >> 20, (tot>>19)&1 ? 5 : 0);
+        sprintf(s, "** %u.%02u MB Total Memory Detected **",
+                mb_whole(tot), mb_frac(tot));
         print_line(&r);
         r.y++;
-        sprintf(s, "(Chip %u.%u MB -- Fast %u.%u MB -- Slow %u.%u MB)",
-                chip >> 20, (chip>>19)&1 ? 5 : 0,
-                fast >> 20, (fast>>19)&1 ? 5 : 0,
-                slow >> 20, (slow>>19)&1 ? 5 : 0);
+        sprintf(s, "(Chip %u.%02u MB -- Fast %u.%02u MB -- Slow %u.%02u MB)",
+                mb_whole(chip), mb_frac(chip),
+                mb_whole(fast), mb_frac(fast),
+                mb_whole(slow), mb_frac(slow));
         print_line(&r);
         r.y += 2;
 
