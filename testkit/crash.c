@@ -38,6 +38,20 @@ asm (
 "    jbsr    crash                  \n"
 );
 
+/* Special unrecoverable-fault shim handlers for 68000 only. See below. */
+void address_fault_68000(void);
+asm (
+"address_fault_68000:               \n"
+"    addq.l  #8,%sp                 \n" /* discard top of stack */
+"    dc.w    0x4ef9,0,0             \n" /* jump to main handler */
+);
+void bus_fault_68000(void);
+asm (
+"bus_fault_68000:                   \n"
+"    addq.l  #8,%sp                 \n" /* discard top of stack */
+"    dc.w    0x4ef9,0,0             \n" /* jump to main handler */
+);
+
 /* Per-vector entry points, 2 words per vector: BSR.w <target>.
  * The first 3 words are a common JMP target: JMP <common>.l */
 static uint16_t vectors[2*256];
@@ -50,6 +64,27 @@ struct frame {
     uint16_t sr;
     uint32_t pc;
 };
+
+/* Fix up one 68000 unrecoverable fault handler. */
+static void fixup_68000(void *new_fn, volatile uint32_t *vec)
+{
+    uint32_t old_fn = *vec;
+    /* Search for the JMP instruction in the shim handler, and patch it. */
+    uint16_t *p = new_fn;
+    while (*p != 0x4ef9) p++;
+    *(uint32_t *)(p+1) = old_fn;
+    /* Install our shim handler. */
+    *vec = (uint32_t)new_fn;
+}
+
+/* 68000 (only) has weird stack formats for unrecoverable faults. These cause 
+ * us to print garbage in our crash handler. Fix this by inserting shim 
+ * handlers which discard the extra stuff at the top of the stack. */
+void fixup_68000_unrecoverable_faults(void)
+{
+    fixup_68000(address_fault_68000, &m68k_vec->address_error.x);
+    fixup_68000(bus_fault_68000, &m68k_vec->bus_error.x);
+}
 
 void init_crash_handler(void)
 {

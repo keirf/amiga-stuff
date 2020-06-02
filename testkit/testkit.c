@@ -93,7 +93,7 @@ uint8_t chipset_type;
 uint8_t cpu_model; /* 680[x]0 */
 
 /* PAL/NTSC and implied CPU frequency. */
-static uint8_t is_pal;
+uint8_t is_pal;
 unsigned int cpu_hz;
 #define PAL_HZ 7093790
 #define NTSC_HZ 7159090
@@ -1030,6 +1030,29 @@ static void c_SOFT_IRQ(struct c_exception_frame *frame)
     IRQ_RESET(INT_SOFT);
 }
 
+static void cia_init(volatile struct amiga_cia * const cia, uint8_t icrf)
+{
+    /* Enable only the requested interrupts. */
+    cia->icr = (uint8_t)~CIAICR_SETCLR;
+    cia->icr = CIAICR_SETCLR | icrf;
+ 
+    /* Start all CIA timers in continuous mode. */
+    cia->talo = cia->tahi = cia->tblo = cia->tbhi = 0xff;
+    cia->cra = cia->crb = CIACRA_LOAD | CIACRA_START;
+}
+
+void ciaa_init(void)
+{
+    /* CIAA ICR: We only care about keyboard. */
+    cia_init(ciaa, CIAICR_SERIAL);
+}
+
+void ciab_init(void)
+{
+    /* CIAB ICR: We only care about FLAG line (disk index). */    
+    cia_init(ciab, CIAICR_FLAG);
+}
+
 void cstart(void)
 {
     uint16_t i, j;
@@ -1041,13 +1064,8 @@ void cstart(void)
     /* Set keyboard serial line to input mode. */
     ciaa->cra &= ~CIACRA_SPMODE;
 
-    /* Set up CIAA ICR. We only care about keyboard. */
-    ciaa->icr = (uint8_t)~CIAICR_SETCLR;
-    ciaa->icr = CIAICR_SETCLR | CIAICR_SERIAL;
-
-    /* Set up CIAB ICR. We only care about FLAG line (disk index). */
-    ciab->icr = (uint8_t)~CIAICR_SETCLR;
-    ciab->icr = CIAICR_SETCLR | CIAICR_FLAG;
+    ciaa_init();
+    ciab_init();
 
     /* Enable blitter DMA. */
     cust->dmacon = DMA_SETCLR | DMA_BLTEN;
@@ -1094,18 +1112,14 @@ void cstart(void)
 
     vblank_joydat = cust->joy0dat;
 
-    /* Start all CIA timers in continuous mode. */
-    ciaa->talo = ciaa->tahi = ciab->talo = ciab->tahi = 0xff;
-    ciaa->tblo = ciaa->tbhi = ciab->tblo = ciab->tbhi = 0xff;
-    ciaa->cra = ciab->cra = CIACRA_LOAD | CIACRA_START;
-    ciaa->crb = ciab->crb = CIACRB_LOAD | CIACRB_START;
-
     wait_bos();
     cust->dmacon = DMA_SETCLR | DMA_COPEN | DMA_DSKEN;
     cust->intena = (INT_SETCLR | INT_CIAA | INT_CIAB | INT_VBLANK | INT_SOFT);
 
     /* Detect our hardware environment. */
     cpu_model = detect_cpu_model();
+    if (cpu_model == 0)
+        fixup_68000_unrecoverable_faults();
     chipset_type = detect_chipset_type();
     vbl_hz = detect_vbl_hz();
     is_pal = detect_pal_chipset();
