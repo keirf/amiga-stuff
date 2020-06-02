@@ -355,9 +355,9 @@ static uint8_t detect_vbl_hz(void)
     return (ticks > 130000) ? 50 : 60;
 }
 
-int _priv_call(int (*fn)(void *), void *arg);
+int priv_call(int (*fn)(void *), void *arg);
 asm (
-    "_priv_call:\n"
+    "priv_call:\n"
     "    lea    (0x20).w,%a1   \n" /* a0 = 0x20 (privilege_violation) */
     "    move.l (%a1),%d0      \n" /* d0 = old privilege_violation vector */
     "    lea    (1f).l,%a0     \n"
@@ -374,14 +374,6 @@ asm (
     "    rte                   \n"
     "1:  rts                   \n"
     );
-
-static int priv_call(int (*fn)(void *), void *arg)
-{
-    /* Cancellation logic depends on user code running in user mode. */
-    assert(!cancellation_is_running(&test_cancellation));
-
-    return _priv_call(fn, arg);
-}
 
 static int _detect_cpu_model(void *_pmodel)
 {
