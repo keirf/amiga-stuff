@@ -166,8 +166,8 @@
         dbf     d0,1b
 
         /* Allow CPU interrupts now that we are definitely executing clear
-         * of the stack. */
-        move.w  #0x2000,sr
+         * of the stack, and return to user mode. */
+        move.w  #0x0000,sr
 
         /* Jump to C code. */
         jmp     (cstart).l

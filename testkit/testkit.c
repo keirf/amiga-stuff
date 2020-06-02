@@ -45,8 +45,8 @@ asm (                                                                      \
 #name":                             \n"                                    \
 "    movem.l %d0-%d1/%a0-%a1,-(%sp) \n" /* Save a c_exception_frame */     \
 "    move.b  16(%sp),%d0            \n" /* D0 = SR[15:8] */                \
-"    and.b   #7,%d0                 \n" /* D0 = SR.IRQ_MASK */             \
-"    jne     1f                     \n" /* SR.IRQ_MASK == 0? */            \
+"    and.b   #0x20,%d0              \n" /* D0 = SR.SUPERVISOR */           \
+"    jne     1f                     \n" /* SR.SUPERVISOR == 0? */          \
 "    move.l  %sp,user_frame         \n" /* If so ours is the user_frame */ \
 "1:  jbsr    c_"#name"              \n"                                    \
 "    movem.l (%sp)+,%d0-%d1/%a0-%a1 \n"                                    \
@@ -356,9 +356,38 @@ static uint8_t detect_vbl_hz(void)
     return (ticks > 130000) ? 50 : 60;
 }
 
-static uint8_t detect_cpu_model(void)
+int _priv_call(int (*fn)(void *), void *arg);
+asm (
+    "_priv_call:\n"
+    "    lea    (0x20).w,%a1   \n" /* a0 = 0x20 (privilege_violation) */
+    "    move.l (%a1),%d0      \n" /* d0 = old privilege_violation vector */
+    "    lea    (1f).l,%a0     \n"
+    "    move.l %a0,(%a1)      \n"
+    "1:  ori.w  #0x2000,%sr    \n"
+    "    move.l %d0,(%a1)      \n" /* restore privilege_violation vector */
+    "    move.l %usp,%a0       \n"
+    "    move.l 4(%a0),%a1     \n"
+    "    move.l 8(%a0),-(%sp)  \n"
+    "    jsr    (%a1)          \n"
+    "    addq.l #4,%sp         \n"
+    "    lea    (1f).l,%a0     \n"
+    "    move.l %a0,2(%sp)     \n" /* fix up return-to-user %pc */
+    "    rte                   \n"
+    "1:  rts                   \n"
+    );
+
+static int priv_call(int (*fn)(void *), void *arg)
+{
+    /* Cancellation logic depends on user code running in user mode. */
+    assert(!cancellation_is_running(&test_cancellation));
+
+    return _priv_call(fn, arg);
+}
+
+static int _detect_cpu_model(void *_pmodel)
 {
     uint32_t model;
+    uint8_t *pmodel = _pmodel;
 
     /* Attempt to access control registers which are supported only in 
      * increasingly small subsets of the model range. */
@@ -396,7 +425,27 @@ static uint8_t detect_cpu_model(void)
         model = cacr ? 3 : 2;
     }
 
-    return (uint8_t)model;
+    *pmodel = (uint8_t)model;
+    return 0;
+}
+
+static uint8_t detect_cpu_model(void)
+{
+    uint8_t model;
+    priv_call(_detect_cpu_model, &model);
+    return model;
+}
+
+static void system_reset(void)
+{
+    int _system_reset(void *unused)
+    {
+        /* EAB, thread 78548 "Amiga hardware reset" */
+        asm volatile ( "lea (2).w,%a0; reset; jmp (%a0)" );
+        return 0;
+    }
+
+    priv_call(_system_reset, NULL);
 }
 
 /* Wait for blitter idle. */
@@ -813,10 +862,8 @@ static void mainmenu(void)
     print_line(&r);
 
     while ((i = keycode_buffer - K_F1) >= ARRAY_SIZE(mainmenu_option)) {
-        if (keycode_buffer == K_HELP) {
-            /* EAB, thread 78548 "Amiga hardware reset" */
-            asm volatile ( "lea (2).w,%a0; reset; jmp (%a0)" );
-        }
+        if (keycode_buffer == K_HELP)
+            system_reset();
     }
 
     clear_whole_screen();
