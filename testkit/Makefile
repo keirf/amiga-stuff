@@ -49,7 +49,7 @@ $(NAME).exe: $(NAME).bin
 	mv $@.tmp $@
 
 $(NAME).adf: bootblock.bin $(NAME).bin
-	gzip -fk9 $(NAME).bin
+	$(GZIP) $(NAME).bin
 	../inflate/degzip -H $(NAME).bin.gz $(NAME).bin.tmp
 	$(PYTHON) ../base/mk_adf.py bootblock.bin $(NAME).bin.tmp $@
 	$(RM) $(NAME).bin.tmp

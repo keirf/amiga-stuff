@@ -39,6 +39,10 @@ memname = {
 # Minimum number of bytes that compression must save.
 MIN_COMPRESSION = 8
 
+# Command for creating gzip files.
+GZIP = "zopfli"
+#GZIP = "gzip -fk9"
+
 # Prefix for intermediate (temporary) files.
 PREFIX = '_pack'
 
@@ -97,7 +101,7 @@ def pack(raw):
     # Compress to a DEFLATE stream.
     with open(PREFIX, 'wb') as f:
         f.write(raw)
-    os.system('gzip -fk9 ' + PREFIX)
+    os.system(GZIP + ' ' + PREFIX)
     os.system(scriptdir + 'degzip -H ' + PREFIX + '.gz ' + PREFIX + '.raw'
               ' >/dev/null')
     with open(PREFIX+'.raw', 'rb') as f:

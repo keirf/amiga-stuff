@@ -12,12 +12,12 @@ Hub)](https://hub.docker.com/r/rjnorthrow/atk). You can run it as
 follows to generate the latest Amiga Test Kit zip file in your current
 directory:
 ```
-# docker run -v $(pwd):/output --rm -ti rjnorthrow/atk
+docker run -v $(pwd):/output --rm -ti rjnorthrow/atk
 ```
 
 *COMMIT* and *MAKE_OPTS* may be set in the environment to build a particular version of Amiga Test Kit, and to specify extra build parameters:
 ```
-# docker run -e COMMIT=testkit-v1.3 -e MAKE_OPTS=-j4 -v $(pwd):/output --rm -ti rjnorthrow/atk
+docker run -e COMMIT=testkit-v1.3 -e MAKE_OPTS=-j4 -v $(pwd):/output --rm -ti rjnorthrow/atk
 ```
 
 ### Build From Source (Manual Method)
@@ -27,16 +27,22 @@ Requires a GCC cross-compiler toolchain targetting
 with the following configuration lines on a Linux host or VM (note these are
 not exhaustive toolchain build instructions!):
 ```
-# ../binutils-2.28/configure --prefix=/path/to/install --target=m68k-unknown-elf
-# ../gcc-7.1.0/configure --prefix=/path/to/install --target=m68k-unknown-elf --enable-languages=c --disable-libssp
+../binutils-2.28/configure --prefix=/path/to/install --target=m68k-unknown-elf
+../gcc-7.1.0/configure --prefix=/path/to/install --target=m68k-unknown-elf --enable-languages=c --disable-libssp
 ```
 
 Note that `/path/to/install/bin` must be on your PATH both when building
 and using the cross compiler. For example:
 ```
-# mkdir -p $HOME/cross/bin
-# export PATH=$PATH:$HOME/cross/bin
-# ... --prefix=$HOME/cross ...
+mkdir -p $HOME/cross/bin
+export PATH=$PATH:$HOME/cross/bin
+... --prefix=$HOME/cross ...
+```
+
+The build also depends on Google's Zopfli (a gzip replacement). This can
+be installed in Ubuntu Linux as follows:
+```
+sudo apt install zopfli
 ```
 
 To build Amiga Test Kit: `make testkit`. The ADF and distribution ZIP file

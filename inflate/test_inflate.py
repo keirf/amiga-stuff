@@ -10,6 +10,10 @@
 import crcmod.predefined
 import struct, sys, os
 
+# Command for creating gzip files.
+GZIP = "zopfli -c"
+#GZIP = "gzip -c9"
+
 HUNK_HEADER = 0x3f3
 HUNK_CODE   = 0x3e9
 HUNK_END    = 0x3f2
@@ -37,7 +41,7 @@ def test(name):
         crc16.update(f.read())
 
     # _test_1: Gzipped file
-    os.system('gzip -c9 ' + PREFIX + '0 >' + PREFIX + '1')
+    os.system(GZIP + ' ' + PREFIX + '0 >' + PREFIX + '1')
 
     # _test_2: DEFLATE stream + custom header/footer
     os.system('degzip -H ' + PREFIX + '1 ' + PREFIX + '2')
