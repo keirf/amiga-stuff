@@ -17,6 +17,7 @@ OBJS += mfm.o
 OBJS += serpar.o
 OBJS += testkit.o
 OBJS += video.o
+OBJS += ptplayer/ptplayer.o
 
 include ../base/Rules.mk
 
@@ -55,4 +56,4 @@ $(NAME).adf: bootblock.bin $(NAME).bin
 
 clean::
 	$(RM) *.adf *.exe *.zip $(NAME) *.tmp *.gz
-	$(RM) -r $(NAME)-v*
+	$(RM) -r $(NAME)-v* ptplayer/*.o

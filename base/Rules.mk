@@ -58,6 +58,10 @@ HOSTCFLAGS += -MMD -MF .$(@F).d
 	@echo AS $@
 	$(CC) $(AFLAGS) -c $< -o $@
 
+%.o: %.asm
+	@echo VASM $@
+	vasmm68k_mot -Felf $< -o $@
+
 %.elf: $(OBJS) ../base/amiga.ld Makefile
 	@echo LD $@
 	$(CC) $(LDFLAGS) $(OBJS) -o $@
