@@ -47,40 +47,18 @@ start:
         /* Save trackdisk ioreq for later use */
         move.l  a1,-(sp)
 
-        /* Allocate chip memory for full bootblock. */
-        move.l  #2048,d0
-        moveq   #MEMF_PUBLIC|MEMF_CHIP,d1
-        jsr     Exec_AllocMem(a6)
-        move.l  d0,-(sp)
-        jeq     no_mem
-
-        /* Load full bootblock, retry on failure. */
-        move.l  4(sp),a1
-1:      move.l  (sp),io_Data(a1)
-        move.l  #2048,io_Length(a1)
-        clr.l   io_Offset(a1)
-        move.w  #CMD_READ,io_Command(a1)
-        jsr     Exec_DoIO(a6)
-        move.l  4(sp),a1
-        tst.b   io_Error(a1)
-        jne     1b
-
-        jbsr    cache_clear
-        move.l  (sp)+,a0
-        lea     1f-start(a0),a0
-        jmp     (a0)
-1:
-        
         /* Allocate chip memory for the data we're loading */
         move.l  pl+pl_load_off(pc),d0
         add.l   pl+pl_load_len(pc),d0
         moveq   #MEMF_PUBLIC|MEMF_CHIP,d1
         jsr     Exec_AllocMem(a6)
         move.l  d0,-(sp)
-        jeq     no_mem
+        jne     1f
+2:      move.w  #0xf00,0xdff180
+        jra     2b
 
         /* Load data, retry on failure */
-        move.l  4(sp),a1
+1:      move.l  4(sp),a1
 .retry: move.l  (sp),d0
         add.l   pl+pl_load_off(pc),d0
         move.l  d0,io_Data(a1)
@@ -97,47 +75,24 @@ start:
         move.w  #TD_MOTOR,io_Command(a1)
         jsr     Exec_DoIO(a6)
 
-        /* Allocate memory for inflate temporary storage. */
-        move.l  #3*1024,d0
-        moveq   #MEMF_PUBLIC,d1
-        jsr     Exec_AllocMem(a6)
-        move.l  d0,-(sp)
-        jeq     no_mem
-        
-        move.l  (sp),a6
-        lea     3*1024(a6),a6
-        move.l  4(sp),d0
-        move.l  d0,a4
-        add.l   pl+pl_load_off(pc),d0
-        move.l  d0,a5
-        lea     pl+pl_data-start(a5),a5
-        jbsr    inflate
+        move.l  (sp),a1
+        lea.l   pl+pl_data-start(a1),a0
+        add.l   pl+pl_load_off(pc),a0
+        sub.l   a2,a2
+        move.l  #0,0x6feee
+        jbsr    ShrinklerDecompress
 
-        /* Free inflate temporary storage. */
-        move.l  (sp)+,a1
-        move.l  #3*1024,d0
-        move.l  (4).w,a6
-        jsr     Exec_FreeMem(a6)
-
-        jbsr    cache_clear
-
-        move.l  (sp)+,a0        /* a0 = payload data */
-        move.l  (sp)+,a1        /* a1 = TDIOReq */
-        jmp     (a0)
-
-cache_clear:
         /* We have loaded code from disk: Flush caches if possible */
         cmp.w   #37,LibBase_Version(a6) /* exec.lib_version >= 37? */
         jcs     1f
         jsr     Exec_CacheClearU(a6)
-1:      rts
 
-no_mem:
-        move.w  #0xf00,0xdff180
-        jra     no_mem
-        
-#define OPT_STORAGE_OFFSTACK 1
-#include "../inflate/inflate.S"
+1:      move.l  (sp)+,a0        /* a0 = payload data */
+        move.l  (sp)+,a1        /* a1 = TDIOReq */
+        jmp     (a0)
+
+ShrinklerDecompress:
+        .incbin "shrinkler.bin"
 
         .balign 4
 pl:

@@ -7,6 +7,7 @@ TOOL_PREFIX = m68k-unknown-elf-
 CC = $(TOOL_PREFIX)gcc
 OBJCOPY = $(TOOL_PREFIX)objcopy
 PYTHON = python3
+SHRINKLER = Shrinkler
 GZIP = zopfli
 #GZIP = gzip -fk9
 
@@ -60,7 +61,11 @@ HOSTCFLAGS += -MMD -MF .$(@F).d
 	@echo AS $@
 	$(CC) $(AFLAGS) -c $< -o $@
 
-%.o: %.asm
+%.o: %.asm Makefile
+	@echo VASM $@
+	vasmm68k_mot -Felf $< -o $@
+
+%.o: ../base/%.asm Makefile
 	@echo VASM $@
 	vasmm68k_mot -Felf $< -o $@
 
@@ -73,6 +78,13 @@ HOSTCFLAGS += -MMD -MF .$(@F).d
 	@echo OBJCOPY $@
 	$(OBJCOPY) -O binary $< $@
 	@chmod a-x $@
+
+shrinkler.bin: shrinkler.o
+	@echo OBJCOPY $@
+	$(OBJCOPY) -O binary $< $@
+	@chmod a-x $@
+
+bootblock.o: shrinkler.bin
 
 bootblock.bin: bootblock.o
 	$(OBJCOPY) -O binary $< $@
