@@ -20,6 +20,7 @@
 
 /* IORequest.io_Command values */
 #define CMD_READ   2
+#define TD_MOTOR   9
 
 /* struct IORequest offsets */
 #define io_Command 0x1c
@@ -90,6 +91,11 @@ start:
         move.l  4(sp),a1
         tst.b   io_Error(a1)
         jne     .retry
+
+        /* Motor off. */
+        clr.l   io_Length(a1)
+        move.w  #TD_MOTOR,io_Command(a1)
+        jsr     Exec_DoIO(a6)
 
         /* Allocate memory for inflate temporary storage. */
         move.l  #3*1024,d0
