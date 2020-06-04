@@ -90,7 +90,7 @@ const static uint16_t dummy_sprite[] = {
 /* Chipset and CPU. */
 static const char *chipset_name[] = { "OCS", "ECS", "AGA", "???" };
 uint8_t chipset_type;
-uint8_t cpu_model; /* 680[x]0 */
+struct cpu cpu;
 
 /* PAL/NTSC and implied CPU frequency. */
 uint8_t is_pal;
@@ -375,10 +375,10 @@ asm (
     "1:  rts                   \n"
     );
 
-static int _detect_cpu_model(void *_pmodel)
+static int _detect_cpu_model(void *_c)
 {
     uint32_t model;
-    uint8_t *pmodel = _pmodel;
+    struct cpu *c = _c;
 
     /* Attempt to access control registers which are supported only in 
      * increasingly small subsets of the model range. */
@@ -416,15 +416,30 @@ static int _detect_cpu_model(void *_pmodel)
         model = cacr ? 3 : 2;
     }
 
-    *pmodel = (uint8_t)model;
+    /* 68060: Retrieve PCR. */
+    if (model == 6) {
+        asm volatile (
+            "dc.l   0x4e7a0808 ; " /* movec %pcr,%d0 */
+            "move.l %%d0,%0    ; "
+            : "=d" (c->pcr) : : "d0" );
+    }
+
+    c->model = (uint8_t)model;
     return 0;
 }
 
-static uint8_t detect_cpu_model(void)
+static void detect_cpu_model(struct cpu *c)
 {
-    uint8_t model;
-    priv_call(_detect_cpu_model, &model);
-    return model;
+    priv_call(_detect_cpu_model, c);
+    if (c->model == 6) {
+        /* "68060 Rev 6", "68EC060 Rev 3", etc. */
+        uint8_t rev = (uint8_t)(c->pcr >> 8);
+        sprintf(c->name, "68%s060 Rev %x",
+                (rev == 3) ? "EC" : (rev == 4) ? "LC" : "", rev);
+    } else {
+        /* "68000", "68020", etc. */
+        sprintf(c->name, "680%u0", c->model);
+    }
 }
 
 static void system_reset(void)
@@ -802,6 +817,20 @@ void print_text_box(unsigned int x, unsigned int y, const char *s)
     }
 }
 
+/* Pad a string to @width chars, using @c repeated on either side. */
+static void centre_string(char *s, int width, char c)
+{
+    int l = strlen(s);
+    int fill = (width - l) >> 1;
+    if (l >= width)
+        return;
+    memmove(s+fill, s, l);
+    memset(s, c, fill);
+    l += fill;
+    memset(s+l, c, width-l);
+    s[width] = '\0';
+}
+
 static void mainmenu(void)
 {
     const static struct {
@@ -828,7 +857,8 @@ static void mainmenu(void)
     sprintf(s, "Amiga Test Kit v%s - by Keir Fraser", version);
     print_line(&r);
     r.y++;
-    sprintf(s, "------------------------------------");
+    s[0] = '\0';
+    centre_string(s, 36, '-');
     print_line(&r);
     r.y++;
     for (i = 0; i < ARRAY_SIZE(mainmenu_option); i++) {
@@ -836,10 +866,11 @@ static void mainmenu(void)
         print_line(&r);
         r.y++;
     }
-    sprintf(s, "------ 680%u0 - %s/%s - %uHz -----%c",
-            cpu_model, chipset_name[chipset_type],
-            is_pal ? "PAL" : "NTSC",
-            vbl_hz, is_pal ? '-' : ' ');
+
+    sprintf(s, " %s - %s/%s - %uHz ",
+            cpu.name, chipset_name[chipset_type],
+            is_pal ? "PAL" : "NTSC", vbl_hz);
+    centre_string(s, 36, '-');
     print_line(&r);
     r.y++;
     sprintf(s, "https://github.com/keirf/Amiga-Stuff");
@@ -1117,8 +1148,8 @@ void cstart(void)
     cust->intena = (INT_SETCLR | INT_CIAA | INT_CIAB | INT_VBLANK | INT_SOFT);
 
     /* Detect our hardware environment. */
-    cpu_model = detect_cpu_model();
-    if (cpu_model == 0)
+    detect_cpu_model(&cpu);
+    if (cpu.model == 0)
         fixup_68000_unrecoverable_faults();
     chipset_type = detect_chipset_type();
     vbl_hz = detect_vbl_hz();

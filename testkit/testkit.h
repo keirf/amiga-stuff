@@ -41,7 +41,12 @@ static volatile struct amiga_cia * const ciab =
 #define CHIPSET_aga 2
 #define CHIPSET_unknown 3
 extern uint8_t chipset_type;
-extern uint8_t cpu_model; /* 680[x]0 */
+struct cpu {
+    char name[31];
+    uint8_t model; /* 680[x]0 */
+    uint32_t pcr;  /* 68060 only */
+};
+extern struct cpu cpu;
 
 
 /*******************
