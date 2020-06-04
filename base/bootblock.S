@@ -34,96 +34,87 @@
 #define MEMF_CHIP   2
 #define MEMF_FAST   4
 
-#define pl_load_off  0
-#define pl_load_len  4
-#define pl_data      8
-
         .text
 start:
         /* Bootblock header */
         .asciz  "DOS"
         dc.l    0, 880
+        bra.b   1f
+pl_load_off: dc.l 0
+pl_load_len: dc.l 0
         
-        /* Save trackdisk ioreq for later use */
+1:      /* Save trackdisk ioreq for later use */
         move.l  a1,-(sp)
 
-        /* Allocate chip memory for full bootblock. */
-        move.l  #2048,d0
+        /* Allocate memory for the data we're loading from trackdisk. */
+        move.l  pl_load_off(pc),d0
+        add.l   pl_load_len(pc),d0
         moveq   #MEMF_PUBLIC|MEMF_CHIP,d1
-        jsr     Exec_AllocMem(a6)
+        cmp.w   #37,LibBase_Version(a6)
+        jcs     1f
+        moveq   #MEMF_PUBLIC,d1  /* exec >= 37: don;t need to load into chip */
+1:      jsr     Exec_AllocMem(a6)
+        move.l  (sp),a1
         move.l  d0,-(sp)
-        jeq     no_mem
+        jeq     error
 
-        /* Load full bootblock, retry on failure. */
-        move.l  4(sp),a1
-1:      move.l  (sp),io_Data(a1)
-        move.l  #2048,io_Length(a1)
-        clr.l   io_Offset(a1)
-        move.w  #CMD_READ,io_Command(a1)
-        jsr     Exec_DoIO(a6)
-        move.l  4(sp),a1
-        tst.b   io_Error(a1)
-        jne     1b
-
-        jbsr    cache_clear
-        move.l  (sp)+,a0
-        lea     1f-start(a0),a0
-        jmp     (a0)
-1:
-        
-        /* Allocate chip memory for the data we're loading */
-        move.l  pl+pl_load_off(pc),d0
-        add.l   pl+pl_load_len(pc),d0
-        moveq   #MEMF_PUBLIC|MEMF_CHIP,d1
-        jsr     Exec_AllocMem(a6)
-        move.l  d0,-(sp)
-        jeq     no_mem
-
-        /* Load data, retry on failure */
-        move.l  4(sp),a1
-.retry: move.l  (sp),d0
-        add.l   pl+pl_load_off(pc),d0
+        /* Load data. */
+        moveq   #3-1,d2 /* max three attempts */
+1:      move.l  (sp),d0
+        add.l   pl_load_off(pc),d0
         move.l  d0,io_Data(a1)
-        move.l  pl+pl_load_len(pc),io_Length(a1)
+        move.l  pl_load_len(pc),io_Length(a1)
         clr.l   io_Offset(a1)
         move.w  #CMD_READ,io_Command(a1)
         jsr     Exec_DoIO(a6)
         move.l  4(sp),a1
         tst.b   io_Error(a1)
-        jne     .retry
+        dbeq    d2,1b
+        jne     error
 
-        /* Motor off. */
-        clr.l   io_Length(a1)
-        move.w  #TD_MOTOR,io_Command(a1)
-        jsr     Exec_DoIO(a6)
+        jbsr    motor_off
 
-        /* Allocate memory for inflate temporary storage. */
-        move.l  #3*1024,d0
+        /* Allocate chip memory for full bootblock. */
+        move.l  #pl_data-start,d0
         moveq   #MEMF_PUBLIC,d1
         jsr     Exec_AllocMem(a6)
+        move.l  4(sp),a1
         move.l  d0,-(sp)
-        jeq     no_mem
-        
-        move.l  (sp),a6
-        lea     3*1024(a6),a6
-        move.l  4(sp),d0
-        move.l  d0,a4
-        add.l   pl+pl_load_off(pc),d0
-        move.l  d0,a5
-        lea     pl+pl_data-start(a5),a5
-        jbsr    inflate
+        jeq     error
 
-        /* Free inflate temporary storage. */
-        move.l  (sp)+,a1
-        move.l  #3*1024,d0
-        move.l  (4).w,a6
-        jsr     Exec_FreeMem(a6)
+        /* Copy full bootblock to allocated area. */
+        move.l  (sp),a1
+        move.l  4(sp),a0
+        add.l   pl_load_off(pc),a0
+        move.l  #pl_data-start,d0
+        lsr.l   #2,d0
+        subq.l  #1,d0
+1:      move.l  (a0)+,(a1)+
+        dbf     d0,1b
 
+        /* Call into the full bootblock to perform inflate. */
         jbsr    cache_clear
+        move.l  (sp)+,a0
+        jsr     1f-start(a0)
 
+        /* On return we jump at the inflated payload. */
         move.l  (sp)+,a0        /* a0 = payload data */
         move.l  (sp)+,a1        /* a1 = TDIOReq */
         jmp     (a0)
+
+1:      /* Inflate. */
+        move.l  4(sp),a4        /* a4 = dest */
+        lea     pl_data-start(a4),a5
+        add.l   pl_load_off(pc),a5 /* a5 = src */
+        jbsr    inflate
+
+        jbsr    cache_clear
+
+        /* Free full bootblock and return to caller. */
+        lea     start(pc),a1
+        move.l  #pl_data-start,d0
+        move.l  (4).w,a6
+        jmp     Exec_FreeMem(a6)
 
 cache_clear:
         /* We have loaded code from disk: Flush caches if possible */
@@ -132,12 +123,16 @@ cache_clear:
         jsr     Exec_CacheClearU(a6)
 1:      rts
 
-no_mem:
-        move.w  #0xf00,0xdff180
-        jra     no_mem
+motor_off:
+        clr.l   io_Length(a1)
+        move.w  #TD_MOTOR,io_Command(a1)
+        jmp     Exec_DoIO(a6)
         
-#define OPT_STORAGE_OFFSTACK 1
+error:  jbsr    motor_off
+1:      move.w  #0xf00,0xdff180
+        jra     1b
+        
 #include "../inflate/inflate.S"
 
         .balign 4
-pl:
+pl_data:
