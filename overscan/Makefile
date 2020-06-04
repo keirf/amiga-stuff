@@ -4,7 +4,6 @@ OBJS += overscan.o
 
 include ../base/Rules.mk
 
-.PHONY: all
 all: overscan.adf
 
 overscan.adf: bootblock.bin overscan.bin

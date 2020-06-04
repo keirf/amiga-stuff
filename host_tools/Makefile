@@ -2,7 +2,6 @@ include ../base/Rules.mk
 
 TARGETS := hunk_loader kickconv
 
-.PHONY: all
 all: $(TARGETS)
 
 %: %.c

@@ -40,7 +40,7 @@ HOSTCFLAGS += -MMD -MF .$(@F).d
 
 .DEFAULT_GOAL := all
 
-.PHONY: clean
+.PHONY: all clean
 
 .SECONDARY:
 

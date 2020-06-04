@@ -24,7 +24,6 @@ include ../base/Rules.mk
 # build.o must be refreshed on every build
 .PHONY: build.c
 
-.PHONY: all
 all: $(NAME)-v$(VER).zip
 
 build.o: CFLAGS += -DVER="\"$(VER)\""

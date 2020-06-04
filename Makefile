@@ -1,11 +1,14 @@
 include base/Rules.mk
 
-SUBDIRS := base host_tools overscan testkit inflate
+SUBDIRS := base inflate host_tools overscan testkit inflate
 
-.PHONY: all $(SUBDIRS)
+.PHONY: $(SUBDIRS)
+
 all: $(SUBDIRS)
 
-host_tools overscan testkit:
+overscan testkit: inflate
+
+$(SUBDIRS):
 	$(MAKE) -C $@ all
 
 clean::
