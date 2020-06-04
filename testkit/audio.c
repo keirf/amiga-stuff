@@ -14,10 +14,11 @@
 
 extern uint8_t mod[];
 
-static void mod_start(void)
+static void mod_start(uint8_t channels)
 {
     mt_install_cia(is_pal);
     mt_init(mod, 0);
+    mt_disablemask(~channels);
     _mt_Enable = 1;
 }
 
@@ -85,14 +86,14 @@ void audiocheck(void)
     sprintf(s, "$4 Channel 3/L$  -  ON");
     print_line(&r);
     r.y++;
-    sprintf(s, "$5 Sound      $  -  MOD Player");
+    sprintf(s, "$5 Sound      $  -  Music");
     print_line(&r);
     r.y++;
     sprintf(s, "$6 L.P. Filter$  -  OFF");
     print_line(&r);
     r.y += 3;
     r.x -= 3;
-    sprintf(s, "\"CDA\" Test MOD by Magnus Djurberg");
+    sprintf(s, "Music: \"Spice It Up\" by Jester/Sanity");
     print_line(&r);
     r.y++;
     sprintf(s, "Protracker Play Routine by Frank Wille");
@@ -101,7 +102,7 @@ void audiocheck(void)
     /* period = cpu_hz / (2 * nr_samples * frequency) */
     period = div32(div32(div32(cpu_hz, 2), nr_500hz_samples), 500/*Hz*/);
 
-    mod_start();
+    mod_start(channels);
 
     for (;;) {
         while (!(key = keycode_buffer) && !do_exit)
@@ -131,8 +132,8 @@ void audiocheck(void)
                 sound = 0;
             switch (sound) {
             case SOUND_mod:
-                mod_start();
-                print_text_box(28, 6, "MOD Player  ");
+                mod_start(channels);
+                print_text_box(28, 6, "Music       ");
                 break;
             case SOUND_low:
                 for (i = 0; i < 4; i++) {
@@ -170,7 +171,7 @@ void audiocheck(void)
 }
 
 asm (
-"    .data                        \n"
-"mod: .incbin \"ptplayer/cda.mod\"\n"
-"    .text                        \n"
+"    .data                          \n"
+"mod: .incbin \"ptplayer/spice.mod\"\n"
+"    .text                          \n"
 );
