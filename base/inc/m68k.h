@@ -27,7 +27,8 @@ struct m68k_vector_table {
     m68k_vector_t trace;
     m68k_vector_t a_line;
     m68k_vector_t f_line;
-    m68k_vector_t _rsvd0[2];
+    m68k_vector_t _rsvd0[1];
+    m68k_vector_t coprocessor_protocol_violation;
     m68k_vector_t format_error;
     m68k_vector_t uninitialised_interrupt;
     m68k_vector_t _rsvd1[8];

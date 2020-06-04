@@ -88,10 +88,14 @@
         move.l  a0,0x20(a4)
 .priv:  move.w  #0x2700,sr      /* SR = 0x2700 (supervisor mode, no irqs) */
 
+        /* d0.l = (sp).l = 0 */
+        move.l  d0,-(sp)
+        
         /* Skip faulting instruction on Illegal and Line F exceptions */
         lea.l   trap_skip(pc),a0
         move.l  a0,(0x10).w     /* Illegal */
         move.l  a0,(0x2c).w     /* Line F */
+        move.l  a0,(0x34).w     /* Coprocessor Protocol Violation */
 
         /* Disable caches (Note: d0.l = 0) */
         dc.l    0x4e7b0801      /* movec.l d0,vbr  */
@@ -99,12 +103,12 @@
         dc.l    0x4e7b0002      /* movec.l d0,cacr */
         dc.l    0x4e7b0808      /* movec.l d0,pcr  */
 
-        /* Disable 68851/030 MMU */
-        dc.l    0xf0004000      /* pmove d0,tc  - 68851 and 68030 */
-        dc.l    0xf0000800      /* pmove d0,tt0 - 68030 specific */
-        dc.l    0xf0000c00      /* pmove d0,tt1 - 68030 specific  */
+        /* Disable 68851/030 MMU (Note: (sp).l = 0) */
+        dc.l    0xf0174000      /* pmove (sp),tc  - 68851 and 68030 */
+        dc.l    0xf0170800      /* pmove (sp),tt0 - 68030 specific */
+        dc.l    0xf0170c00      /* pmove (sp),tt1 - 68030 specific  */
 
-        /* Disable 040/060 MMU */
+        /* Disable 040/060 MMU (Note: d0.l = 0) */
         dc.l    0x4e7b0003      /* movec.l d0,tc */
         dc.l    0x4e7b0004      /* movec.l d0,itt0 */
         dc.l    0x4e7b0005      /* movec.l d0,itt1 */
