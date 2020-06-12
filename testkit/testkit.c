@@ -434,8 +434,10 @@ static void detect_cpu_model(struct cpu *c)
     if (c->model == 6) {
         /* "68060 Rev 6", "68EC060 Rev 3", etc. */
         uint8_t rev = (uint8_t)(c->pcr >> 8);
-        sprintf(c->name, "68%s060 Rev %x",
-                (rev == 3) ? "EC" : (rev == 4) ? "LC" : "", rev);
+        bool_t no_fpu = (c->pcr >> 16) & 1;
+        sprintf(c->name, "68060%s Rev %x",
+                no_fpu ? " LC/EC" : "",
+                rev);
     } else {
         /* "68000", "68020", etc. */
         sprintf(c->name, "680%u0", c->model);
@@ -849,16 +851,17 @@ static void mainmenu(void)
 
     uint8_t i;
     char s[80];
-    struct char_row r = { .x = 4, .y = 0, .s = s };
+    struct char_row r = { .x = 0, .y = 0, .s = s };
 
     clear_whole_screen();
     keycode_buffer = 0;
 
     sprintf(s, "Amiga Test Kit v%s - by Keir Fraser", version);
+    centre_string(s, 44, ' ');
     print_line(&r);
     r.y++;
     s[0] = '\0';
-    centre_string(s, 36, '-');
+    centre_string(s, 44, '-');
     print_line(&r);
     r.y++;
     for (i = 0; i < ARRAY_SIZE(mainmenu_option); i++) {
@@ -870,7 +873,7 @@ static void mainmenu(void)
     sprintf(s, " %s - %s/%s - %uHz ",
             cpu.name, chipset_name[chipset_type],
             is_pal ? "PAL" : "NTSC", vbl_hz);
-    centre_string(s, 36, '-');
+    centre_string(s, 44, '-');
     print_line(&r);
     r.y++;
     sprintf(s, "https://github.com/keirf/Amiga-Stuff");
