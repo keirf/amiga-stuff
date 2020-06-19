@@ -13,6 +13,7 @@
 #include "ptplayer/wrapper.c"
 
 extern uint8_t mod[];
+enum { SOUND_mod, SOUND_low, SOUND_high, SOUND_max };
 
 static void mod_start(uint8_t channels)
 {
@@ -37,6 +38,15 @@ static void tone_stop(void)
     cust->dmacon = DMA_AUDxEN; /* dma off */
 }
 
+static void tone_toggle(uint8_t sound, uint8_t channels, unsigned int i)
+{
+    if (!(channels & (1u << i)))
+        cust->aud[i].vol = 0;
+    else if (sound != SOUND_mod)
+        cust->aud[i].vol = 64;
+    print_text_box(29, 2+i, channels & (1u<<i) ? "N " : "FF");
+}
+
 void audiocheck(void)
 {
     char s[80];
@@ -46,7 +56,6 @@ void audiocheck(void)
     const unsigned int nr_10khz_samples = 2;
     int8_t *aud_500hz = allocmem(nr_500hz_samples);
     int8_t *aud_10khz = allocmem(nr_10khz_samples);
-    enum { SOUND_mod, SOUND_low, SOUND_high, SOUND_max };
     uint8_t key, channels = 0xf, sound = SOUND_mod;
     uint32_t period;
     unsigned int i;
@@ -91,7 +100,10 @@ void audiocheck(void)
     r.y++;
     sprintf(s, "$6 L.P. Filter$  -  OFF");
     print_line(&r);
-    r.y += 3;
+    r.y++;
+    sprintf(s, "$7 All Channels On/Off$");
+    print_line(&r);
+    r.y += 2;
     r.x -= 3;
     sprintf(s, "Music: \"Spice It Up\" by Jester/Sanity");
     print_line(&r);
@@ -118,11 +130,7 @@ void audiocheck(void)
             /* F1-F4: Switch channel 0-3 */
             channels ^= 1u << key;
             mt_disablemask(~channels);
-            if (!(channels & (1u << key)))
-                cust->aud[key].vol = 0;
-            else if (sound != SOUND_mod)
-                cust->aud[key].vol = 64;
-            print_text_box(29, 2+key, channels & (1u<<key) ? "N " : "FF");
+            tone_toggle(sound, channels, key);
         } else if (key == 4) {
             /* F5: Sound */
             if (sound == SOUND_mod)
@@ -160,6 +168,12 @@ void audiocheck(void)
             /* F6: Low Pass Filter */
             ciaa->pra ^= CIAAPRA_LED;
             print_text_box(29, 7, (ciaa->pra & CIAAPRA_LED) ? "FF" : "N ");
+        } else if (key == 6) {
+            /* F7: All Channels On/Off */
+            channels = channels ? 0 : 0xf;
+            mt_disablemask(~channels);
+            for (i = 0; i < 4; i++)
+                tone_toggle(sound, channels, i);
         }
     }
 
