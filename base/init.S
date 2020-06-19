@@ -88,9 +88,6 @@
         move.l  a0,0x20(a4)
 .priv:  move.w  #0x2700,sr      /* SR = 0x2700 (supervisor mode, no irqs) */
 
-        /* d0.l = (sp).l = 0 */
-        move.l  d0,-(sp)
-        
         /* Skip faulting instruction on Illegal and Line F exceptions */
         lea.l   trap_skip(pc),a0
         move.l  a0,(0x10).w     /* Illegal */
@@ -99,14 +96,17 @@
 
         /* Disable caches (Note: d0.l = 0) */
         dc.l    0x4e7b0801      /* movec.l d0,vbr  */
-        dc.l    0xf4784e71      /* cpusha dc       */
-        dc.l    0x4e7b0002      /* movec.l d0,cacr */
+        tst.b   d0              /* set CCR.ZF */
+        dc.l    0x4e7a1004      /* movec.l itt0,d1 */ /* 68040+ only */
+        jne     1f              /* Skip CPUSHA if MOVEC ITT0 failed  */
+        dc.l    0xf4784e71      /* cpusha dc       */ /* 68040+ only */
+1:      dc.l    0x4e7b0002      /* movec.l d0,cacr */
         dc.l    0x4e7b0808      /* movec.l d0,pcr  */
 
-        /* Disable 68851/030 MMU (Note: (sp).l = 0) */
+        /* Disable 68851/030 MMU */
+        dc.l    0xf0174200      /* pmove tc,(sp) - 68851 and 68030 */
+        clr.b   (sp)            /* clear TC.{E,SRE,FCL} */
         dc.l    0xf0174000      /* pmove (sp),tc  - 68851 and 68030 */
-        dc.l    0xf0170800      /* pmove (sp),tt0 - 68030 specific */
-        dc.l    0xf0170c00      /* pmove (sp),tt1 - 68030 specific  */
 
         /* Disable 040/060 MMU (Note: d0.l = 0) */
         dc.l    0x4e7b0003      /* movec.l d0,tc */
@@ -180,7 +180,8 @@ getvbr: dc.l    0x4e7ac801      /* movec.l vbr,a4 */
         rte
 
 trap_skip:
-        addq.l  #4,2(sp)
+        and.w   #~4,(sp)        /* clear CCR_ZF */
+        addq.l  #4,2(sp)        /* skip faulting instruction */
         rte
 
         .balign 4
