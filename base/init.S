@@ -92,23 +92,36 @@
         lea.l   trap_skip(pc),a0
         move.l  a0,(0x10).w     /* Illegal */
         move.l  a0,(0x2c).w     /* Line F */
-        move.l  a0,(0x34).w     /* Coprocessor Protocol Violation */
 
         /* Disable caches (Note: d0.l = 0) */
         dc.l    0x4e7b0801      /* movec.l d0,vbr  */
         tst.b   d0              /* set CCR.ZF */
         dc.l    0x4e7a1004      /* movec.l itt0,d1 */ /* 68040+ only */
-        jne     1f              /* Skip CPUSHA if MOVEC ITT0 failed  */
-        dc.l    0xf4784e71      /* cpusha dc       */ /* 68040+ only */
-1:      dc.l    0x4e7b0002      /* movec.l d0,cacr */
-        dc.l    0x4e7b0808      /* movec.l d0,pcr  */
+        jeq     .040            /* CCR.ZF iff 040/060 */
 
-        /* Disable 68851/030 MMU */
-        dc.l    0xf0174200      /* pmove tc,(sp) - 68851 and 68030 */
+        /* Disable 020/030 caches */
+        tst.b   d0              /* set CCR.ZF */
+        dc.l    0x4e7b0002      /* movec.l d0,cacr */
+        jne     .done           /* CCR.ZF iff 020/030: Bail on 000/010 */
+
+        /* Detect 020 vs 030: Does CACR implement bit 9? */
+        move.l  #1<<9,d1
+        dc.l    0x4e7b1002      /* movec.l d1,cacr */
+        dc.l    0x4e7a1002      /* movec.l cacr,d1 */
+        tst.w   d1              /* d1=0 iff running on 68020 */
+        jeq     .done           /* Bail if 68020 */
+
+.030:   /* Disable 030 MMU */
+        dc.l    0xf0174200      /* pmove tc,(sp) */
         clr.b   (sp)            /* clear TC.{E,SRE,FCL} */
-        dc.l    0xf0174000      /* pmove (sp),tc  - 68851 and 68030 */
+        dc.l    0xf0174000      /* pmove (sp),tc */
+        jra     .done
 
-        /* Disable 040/060 MMU (Note: d0.l = 0) */
+.040:   /* Disable 040/060 caches and superscalar dispatch */
+        dc.l    0xf4784e71      /* cpusha dc       */ /* 68040+ only */
+        dc.l    0x4e7b0002      /* movec.l d0,cacr */
+        dc.l    0x4e7b0808      /* movec.l d0,pcr  */ /* 68060 only */
+        /* Disable 040/060 MMU */
         dc.l    0x4e7b0003      /* movec.l d0,tc */
         dc.l    0x4e7b0004      /* movec.l d0,itt0 */
         dc.l    0x4e7b0005      /* movec.l d0,itt1 */
@@ -117,7 +130,7 @@
 
         /* Initialise stack pointers.
          * *** DO NOT USE THE STACK UNTIL AFTER WE ARE RELOCATED!! *** */
-        lea.l   (SUPER_SP).l,sp /* SSP */
+.done:  lea.l   (SUPER_SP).l,sp /* SSP */
         lea.l   (USER_SP).l,a0
         move.l  a0,usp          /* USP */
 
