@@ -118,8 +118,11 @@
         jra     .done
 
 .040:   /* Disable 040/060 caches and superscalar dispatch */
+        dc.l    0x4e7a1002      /* movec.l cacr,d1 */
+        tst.l   d1              /* Bit 31 set? (68040+ Data Cache Enabled) */
+        jpl     1f              /* Skip CPUSHA if not */
         dc.l    0xf4784e71      /* cpusha dc       */ /* 68040+ only */
-        dc.l    0x4e7b0002      /* movec.l d0,cacr */
+1:      dc.l    0x4e7b0002      /* movec.l d0,cacr */
         dc.l    0x4e7b0808      /* movec.l d0,pcr  */ /* 68060 only */
         /* Disable 040/060 MMU */
         dc.l    0x4e7b0003      /* movec.l d0,tc */
