@@ -39,6 +39,7 @@ static uint32_t ub(uint32_t _ub)
     return ub;
 }
 
+/* 32-bit sequence of length 2^32-1 (all 32-bit values except zero). */
 static inline __attribute__((always_inline)) uint32_t lfsr(uint32_t x)
 {
     asm volatile (
