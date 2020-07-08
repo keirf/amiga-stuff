@@ -328,9 +328,40 @@ static uint8_t detect_chipset_type(void)
     return type;
 }
 
+static uint32_t detect_ntsc_8361(void)
+{
+    uint32_t t, thresh;
+
+    /* Count CIA ticks for 1/10 second. */
+    unsigned int vbl_count = vbl_hz/10+1;
+    vblank_count = 0;
+    while (!vblank_count)
+        continue;
+    t = get_time();
+    while (vblank_count < vbl_count)
+        continue;
+    t = get_time() - t;
+
+    /* Threshold is halfway between the ideal PAL and NTSC tick counts. 
+     * Divide by 10 because E Clock is CPU_HZ/10. 
+     * Divide by 10 again because we measured for 1/10 second. */
+    thresh = (PAL_HZ + NTSC_HZ) / 200;
+
+    /* Return TRUE if NTSC. */
+    return t > thresh;
+}
+
 static uint8_t detect_pal_chipset(void)
 {
-    return !(cust->vposr & (1u<<12));
+    uint8_t agnusid = (cust->vposr >> 8) & 0x7f;
+
+    if (agnusid != 0)
+        return !(agnusid & (1u<<4));
+
+    /* NTSC 8361 "Thin Agnus" can misreport ID as 0x00 instead of 0x10. 
+     * This causes it to be misdetected as a PAL-frequency system. 
+     * Perform a secondary check based on CIA tick frequency. */
+    return !detect_ntsc_8361();
 }
 
 static uint8_t detect_vbl_hz(void)
