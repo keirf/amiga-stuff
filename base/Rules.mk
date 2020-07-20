@@ -1,6 +1,6 @@
 # GNU Make cross-dev build rules
 # Tested cross-dev setups (gcc/binutils) (*=recommended):
-#  4.9.2/2.24, 5.3.0/2.26, 7.1.0/2.28*
+#  4.9.2/2.24, 5.3.0/2.26, 7.1.0/2.28, 9.3.0/2.34*
 # Target is m68k-unknown-elf
 
 TOOL_PREFIX = m68k-unknown-elf-
