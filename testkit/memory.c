@@ -396,7 +396,7 @@ static void memcheck_direct_scan(void)
     for (i = 0; i < 27; i++) {
         if (aliased_slots & (1u << i))
             continue;
-        p = (volatile uint16_t *)s + (i << 18);
+        p = (volatile uint16_t *)&s[0] + (i << 18);
         p[0] = 0x5555;
         p[1<<17] = 0xaaaa;
         if ((p[0] != 0x5555) || (p[1<<17] != 0xaaaa)) {
