@@ -756,6 +756,157 @@ out:
     keycode_buffer = 0;
 }
 
+static void drive_cal_map(unsigned int drv, struct char_row *r)
+{
+    char *s = (char *)r->s;
+    int8_t map[12];
+    char map_line[2];
+    void *mfmbuf, *data;
+    struct sec_header *headers;
+    unsigned int i, mfm_bytes = 13100, nr_secs;
+    int done = 0;
+    uint8_t key, head, cyl = 0;
+    int8_t good;
+    uint16_t xstart = 144, xpos = xstart;
+    uint8_t  ystart = 70,  ypos = ystart;
+    
+    r->x = r->y = 0;
+    sprintf(s, "-- DF%u: Disk Alignment Map --", drv);
+    print_line(r);
+    r->y += 2;
+
+    mfmbuf = allocmem(mfm_bytes);
+    headers = allocmem(12 * sizeof(*headers));
+    data = allocmem(12 * 512);
+
+    drive_select(drv, 1);
+    drive_check_ready(r);
+    seek_cyl0();
+
+    if (cur_cyl < 0) {
+        sprintf(s, "No Track 0: Drive Not Present?");
+        print_line(r);
+        goto out;
+    }
+
+    if (~ciaa->pra & CIAAPRA_CHNG) {
+        seek_track(2);
+        if (~ciaa->pra & CIAAPRA_CHNG) {
+            sprintf(s, "DSKCHG: No Disk In Drive?");
+            print_line(r);
+            goto out;
+        }
+    }
+
+    /* Start the test proper. Print option keys and instructions. */
+
+    r->y--;
+    sprintf(s, "$1 Start$");
+    print_line(r);
+    r->y += 2;
+    r->x += 4;
+    sprintf(s, "------ Upper ------ | ------ Lower ------");
+    print_line(r);
+    r->y++;
+    
+    cyl = 80;
+    seek_cyl0();
+    seek_track(0);
+    head = 0;
+    wait_bos();
+
+    for (;;) {
+        key = keycode_buffer;
+        done = (do_exit || (key == K_ESC));
+        if (done)
+            goto out;
+        if (key) {
+            keycode_buffer = 0;
+            if (K_F1 == key) {
+                r->x = 0;
+                xpos = xstart;
+                ypos = ystart;
+                clear_rect(xpos-4,ypos-1,21*16+4,8*10+1,(1<<1)|(1<<2));
+                r->y = 5;
+                wait_bos();
+                seek_track(80);
+                seek_cyl0();
+                seek_track(0);
+                cyl = 0;
+                head = 0;
+            }
+        }
+        if (80 != cyl)
+        {
+            if ((0 == (cyl%10) && (!head)))
+            {
+                sprintf(s, "%2u :",cyl);
+                print_label(xstart-40, ypos, 1, s);
+            }
+            seek_track(cyl*2);
+            /* Read and decode a full track of data. */
+            ciab->prb |= CIABPRB_SIDE;
+            if (head)
+                ciab->prb &= ~CIABPRB_SIDE;
+            memset(mfmbuf, 0, mfm_bytes);
+            disk_read_track(mfmbuf, mfm_bytes);
+            disk_wait_dma();
+            nr_secs = mfm_decode_track(mfmbuf, headers, data, mfm_bytes);
+            /* Default sector map is all X's (all sectors missing). */
+            for (i = 0; i < 11; i++)
+                map[i] = -1;
+            /* Parse the sector headers, extract cyl# of each good sector. */
+            while (nr_secs--) {
+                struct sec_header *h = &headers[nr_secs];
+                if ((h->format == 0xff) && !h->data_csum && (h->sec < 11))
+                    map[h->sec] = (((h->trk>>1) > cyl) ? +1 :
+                                   ((h->trk>>1) < cyl) ? -1 : 0);
+            }
+            /* Count the number of valid (for this cylinder) sectors found. */
+            good = 0;
+            for (i = 0; i < 11; i++) {
+                good += map[i];
+            }
+
+            /* Update current track reading. */
+            if (0 > good)
+            {
+                map_line[0]='a'+good;   /* just to show its less -> use bg color? */
+            } else if (0 < good)
+            {
+                map_line[0]='A'+good;   /* just to show its more -> use bg color? */
+            } else {
+                map_line[0]='0';
+                draw_rect(xpos+head*176-3, ypos-1, 14, 10, (1<<2), 1); /* green bg */
+            }
+
+            map_line[1]=0;
+            print_label(xpos+head*176, ypos, 1, map_line);
+
+            wait_bos();
+            if (head)
+            {
+                ++cyl;
+                xpos += 16;
+                if (0 == (cyl%10))
+                {
+                    xpos = xstart;
+                    ypos += 10;
+                }
+            }
+            head ^= 1;
+        }
+    }
+
+out:
+    drive_select(drv, 0);
+    drive_deselect();
+
+    while (!done)
+        done = (do_exit || keycode_buffer == K_ESC);
+    keycode_buffer = 0;
+}
+
 void floppycheck(void)
 {
     char s[80];
@@ -805,7 +956,10 @@ void floppycheck(void)
         r.y++;
         sprintf(s, "$8 Head Calibration Test$");
         print_line(&r);
-        r.y -= 5;
+        r.y++;
+        sprintf(s, "$9 Drive Alignment Map$");
+        print_line(&r);
+        r.y -= 6;
 
         while (!do_exit) {
             /* Grab a key */
@@ -817,7 +971,7 @@ void floppycheck(void)
                 do_exit = 1;
             /* Check for keys F1-F8 only */
             key -= K_F1; /* Offsets from F1 */
-            if (key >= 8)
+            if (key >= 9)
                 continue;
             /* F5-F8: handled outside this loop */
             if (key > 3)
@@ -832,7 +986,7 @@ void floppycheck(void)
             break;
 
         alloc_s = start_allocheap_arena();
-        clear_text_rows(r.y, 6);
+        clear_text_rows(r.y, 7);
         _r = r;
 
         switch (key) {
@@ -851,6 +1005,12 @@ void floppycheck(void)
         case 7: /* F8 */
             clear_text_rows(0, r.y);
             drive_cal_test(drv, &_r);
+            clear_text_rows(0, r.y);
+            draw_floppy_ids = 1;
+            break;
+        case 8: /* F9 */
+            clear_text_rows(0, r.y);
+            drive_cal_map(drv, &_r);
             clear_text_rows(0, r.y);
             draw_floppy_ids = 1;
             break;
