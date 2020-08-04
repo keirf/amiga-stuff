@@ -120,6 +120,9 @@ unsigned int cpu_hz;
 /* Regardless of intrinsic PAL/NTSC-ness, display may be 50 or 60Hz. */
 uint8_t vbl_hz;
 
+/* Kickstart version */
+uint32_t kickversion;
+
 /* VBL IRQ: 16- and 32-bit timestamps, and VBL counter. */
 static volatile uint32_t stamp32;
 static volatile uint16_t stamp16;
@@ -494,6 +497,14 @@ static void detect_cpu_model(struct cpu *c)
         sprintf(c->name, "680%u0", c->model);
     }
 }
+
+static uint32_t detect_kick_version(void)
+{
+    uint16_t kick_major = (kickmem->rom_version_major) & 0xffff;
+    uint16_t kick_minor = (kickmem->rom_version_minor) & 0xffff;
+    return ((kick_major<<16) | (kick_minor));
+}
+
 
 static void system_reset(void)
 {
@@ -921,9 +932,9 @@ static void mainmenu(void)
         r.y++;
     }
 
-    sprintf(s, " %s - %s/%s - %uHz ",
+    sprintf(s, " %s - %s/%s - %uHz - Kick %2d.%03d ",
             cpu.name, chipset_name[chipset_type],
-            is_pal ? "PAL" : "NTSC", vbl_hz);
+            is_pal ? "PAL" : "NTSC", vbl_hz, (kickversion>>16), (kickversion & 0xFFFF));
     centre_string(s, 44, '-');
     print_line(&r);
     r.y++;
@@ -1217,6 +1228,7 @@ void cstart(void)
     vbl_hz = detect_vbl_hz();
     is_pal = detect_pal_chipset();
     cpu_hz = is_pal ? PAL_HZ : NTSC_HZ;
+    kickversion = detect_kick_version();
 
     sort(mem_region, nr_mem_regions, sizeof(mem_region[0]), mem_region_cmp);
 

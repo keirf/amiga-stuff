@@ -30,7 +30,8 @@ static volatile struct amiga_cia * const ciaa =
     (struct amiga_cia *)0x0bfe001;
 static volatile struct amiga_cia * const ciab =
     (struct amiga_cia *)0x0bfd000;
-
+static volatile struct amiga_kickstart * const kickmem =
+    (struct amiga_kickstart *)0x00f80000;
 
 /*******************
  * SYSTEM CONFIGURATION

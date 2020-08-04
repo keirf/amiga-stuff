@@ -18,6 +18,7 @@
 #include "m68k.h"
 #include "amiga_hw.h"
 #include "cancellation.h"
+#include "kickmem.h"
 
 /*
  * Local variables:
