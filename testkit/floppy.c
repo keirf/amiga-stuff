@@ -421,7 +421,7 @@ static void drive_read_test(unsigned int drv, struct char_row *r)
     char *s = (char *)r->s;
     void *mfmbuf, *data;
     struct sec_header *headers;
-    unsigned int mfm_bytes = 13100, nr_secs;
+    unsigned int mfm_bytes = 13100, nr_secs, nr_valid;
     int done = 0, retries;
     uint8_t trk = 0;
     uint16_t valid_map;
@@ -486,22 +486,24 @@ static void drive_read_test(unsigned int drv, struct char_row *r)
             disk_read_track(mfmbuf, mfm_bytes);
             disk_wait_dma();
             nr_secs = mfm_decode_track(mfmbuf, headers, data, mfm_bytes);
-            valid_map = s[0] = 0;
+            valid_map = nr_valid = s[0] = 0;
             while (nr_secs--) {
                 struct sec_header *h = &headers[nr_secs];
                 if ((h->format == 0xff) && !h->data_csum && (h->sec < 11)) {
-                    if (h->trk > trk)
+                    if (h->trk > trk) {
                         s[0] = '+';
-                    else if (h->trk < trk)
+                    } else if (h->trk < trk) {
                         s[0] = '-';
-                    else
+                    } else if (!(valid_map & 1u<<h->sec)) {
                         valid_map |= 1u<<h->sec;
+                        nr_valid++;
+                    }
                 }
             }
-            s[0] = s[0] ?: (valid_map != 0x7ff) ? 'X' : '0';
+            s[0] = s[0] ?: "BA9876543210"[nr_valid];
             s[1] = '\0';
             clear_rect(xpos+(trk&1)*176-3, ypos-1, 14, 10, 7);
-            fill_rect(xpos+(trk&1)*176-3, ypos-1, 14, 10,
+            fill_rect(xpos+(trk&1)*176-3, ypos-1, 14, 9,
                       s[0] == '0' ? GREEN : RED);
             print_label(xpos+(trk&1)*176, ypos, 1, s);
         } while ((s[0] != '0') && (retries++ < 3));
