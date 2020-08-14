@@ -12,13 +12,18 @@ Hub)](https://hub.docker.com/r/rjnorthrow/atk). You can run it as
 follows to generate the latest Amiga Test Kit zip file in your current
 directory:
 ```
-docker run -v $(pwd):/output --rm -ti rjnorthrow/atk
+docker run -v $(pwd):/output --rm -ti rjnorthrow/atk:latest
 ```
 
-*COMMIT* and *MAKE_OPTS* may be set in the environment to build a particular version of Amiga Test Kit, and to specify extra build parameters:
+*COMMIT*, *MAKE_OPTS* and *atk version (v1.7, v1.10, latest)* may be
+ set in the environment to build a particular version of Amiga Test
+ Kit, and to specify extra build parameters:
 ```
-docker run -e COMMIT=testkit-v1.3 -e MAKE_OPTS=-j4 -v $(pwd):/output --rm -ti rjnorthrow/atk
+docker run -e COMMIT=testkit-v1.3 -e MAKE_OPTS=-j4 -v $(pwd):/output --rm -ti rjnorthrow/atk:v1.7
 ```
+
+For versions up to 1.7, use `rjnorthrow/atk:v1.7`. For versions 1.8 up to 1.10,
+use `rjnorthrow/atk:v1.10`.
 
 ### Build From Source (Manual Method)
 
