@@ -130,13 +130,14 @@ static kick_pair_t kickstart_versions[] = {
     {36,"1.4 beta"},{37,"2.0x"},    {38,""},
     {39,"3.0"},     {40,"3.1"},     {42,"3.2"},
     {43,"3.1patch"},{44,"3.5"},     {45,"3.9"},
-    {46,"3.1.4"},   {50,"4.x MOS1"},{51,"4.x MOS2"},
+    {46,"3.1.4"},   {50,"MorphOS1"},{51,"MorphOS2"},
     {52,"4.0"},     {53,"4.1"}};
 static kick_pair_t kickstart_subversions[] = {
     {37175,"2.04"}, {37299,"2.05"}};
 
-char kickstart_unknown[20]={0};
+const char kickstart_unknown_text[] = {"unknown"};
 char *kickversion_text;
+uint32_t kickversion_number;
 
 /* VBL IRQ: 16- and 32-bit timestamps, and VBL counter. */
 static volatile uint32_t stamp32;
@@ -513,10 +514,10 @@ static void detect_cpu_model(struct cpu *c)
     }
 }
 
-static char* detect_kick_version(void)
+static char* detect_kick_version(uint32_t &ver_number)
 {
     uint8_t i=0, j=0;
-    char* kick_text = NULL;
+    char* kick_text = kickstart_unknown_text;
     uint16_t kick_major = (kickmem->rom_version_major) & 0xffff;
     uint16_t kick_minor = (kickmem->rom_version_minor) & 0xffff;
 
@@ -538,11 +539,7 @@ static char* detect_kick_version(void)
             break;
         }
     }
-    if (NULL == kick_text)
-    {
-        sprintf(kickstart_unknown, "unknown (%2d.%03d)", kick_major, kick_minor);
-        kick_text = kickstart_unknown;
-    }
+    ver_number = (kick_major<<16)|(kick_minor);
     return kick_text;
 }
 
@@ -979,7 +976,7 @@ static void mainmenu(void)
     centre_string(s, 44, '-');
     print_line(&r);
     r.y++;
-    sprintf(s, " Kickstart %s ", kickversion_text);
+    sprintf(s, " Kickstart %s (%2d.%03d) ", kickversion_text, (kickversion_number>>16), (kickversion_number&0xFFFF));
     centre_string(s, 44, '-');
     print_line(&r);
     r.y++;
@@ -1273,7 +1270,7 @@ void cstart(void)
     vbl_hz = detect_vbl_hz();
     is_pal = detect_pal_chipset();
     cpu_hz = is_pal ? PAL_HZ : NTSC_HZ;
-    kickversion_text = detect_kick_version();
+    kickversion_text = detect_kick_version(kickversion_number);
 
     sort(mem_region, nr_mem_regions, sizeof(mem_region[0]), mem_region_cmp);
 
