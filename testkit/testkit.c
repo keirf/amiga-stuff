@@ -514,10 +514,10 @@ static void detect_cpu_model(struct cpu *c)
     }
 }
 
-static char* detect_kick_version(uint32_t &ver_number)
+static char* detect_kick_version(uint32_t *ver_number)
 {
     uint8_t i=0, j=0;
-    char* kick_text = kickstart_unknown_text;
+    char *kick_text = (char *)kickstart_unknown_text;
     uint16_t kick_major = (kickmem->rom_version_major) & 0xffff;
     uint16_t kick_minor = (kickmem->rom_version_minor) & 0xffff;
 
@@ -539,7 +539,7 @@ static char* detect_kick_version(uint32_t &ver_number)
             break;
         }
     }
-    ver_number = (kick_major<<16)|(kick_minor);
+    *ver_number = (kick_major<<16)|(kick_minor);
     return kick_text;
 }
 
@@ -1270,7 +1270,7 @@ void cstart(void)
     vbl_hz = detect_vbl_hz();
     is_pal = detect_pal_chipset();
     cpu_hz = is_pal ? PAL_HZ : NTSC_HZ;
-    kickversion_text = detect_kick_version(kickversion_number);
+    kickversion_text = detect_kick_version(&kickversion_number);
 
     sort(mem_region, nr_mem_regions, sizeof(mem_region[0]), mem_region_cmp);
 
