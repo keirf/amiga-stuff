@@ -458,8 +458,8 @@ static void drive_read_test(unsigned int drv, struct char_row *r)
         }
     }
 
-    r->y += 1;
-    r->x += 4;
+    r->y = 4;
+    r->x = 4;
     sprintf(s, "------ Lower ------ | ------ Upper ------");
     print_line(r);
     r->y++;
