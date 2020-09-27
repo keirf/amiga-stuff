@@ -247,25 +247,28 @@ mt_TimerAInt:
 	lea	mt_data(pc),a4
 	endc
 
-	; clear EXTER interrupt flag
-	move.w	#$2000,INTREQ(a6)
-
 	; check and clear CIAB interrupt flags
-	btst	#0,CIAB+CIAICR
+	move.b	CIAB+CIAICR,d0
+	btst	#1,d0
 	beq	.2
+	tst.b	mt_TimBRpt(a4)
+	bne	.3
+	bsr	mt_TimerBdmaon
+	bra	.2
+.3:     bsr	mt_TimerBsetrep
+.2:	btst	#0,d0
+	beq	.1
 
 	; it was a TA interrupt, do music when enabled
 	tst.b	mt_Enable(a4)
 	beq	.1
 
-	bsr	_mt_music		; music with sfx inserted
-	movem.l	(sp)+,d0-d7/a0-a6
-	nop
-	rte
+	bsr	_mt_music
 
-.1:	
-.2:	movem.l	(sp)+,d0-d7/a0-a6
-	nop
+.1:	; clear EXTER interrupt flag
+	move.w	#$2000,INTREQ(a6)
+	move.w	#$2000,INTREQ(a6)
+	movem.l	(sp)+,d0-d7/a0-a6
 	rte
 
 
@@ -273,25 +276,13 @@ mt_TimerAInt:
 mt_TimerBdmaon:
 ; One-shot TimerB interrupt to enable audio DMA after 496 ticks.
 
-	; clear EXTER interrupt flag
-	move.w	#$2000,CUSTOM+INTREQ
-
-	; check and clear CIAB interrupt flags
-	btst	#1,CIAB+CIAICR
-	beq	.1
-
 	; it was a TB interrupt, restart timer to set repeat, enable DMA
 	move.b	#$19,CIAB+CIACRB
-	move.w	mt_dmaon(pc),CUSTOM+DMACON
+	move.w	mt_dmaon(pc),DMACON(a6)
 
 	; set level 6 interrupt to mt_TimerBsetrep
-	move.l	a0,-(sp)
-	pea	mt_TimerBsetrep(pc)
-	move.l	mt_Lev6Int(pc),a0
-	move.l	(sp)+,(a0)
-	move.l	(sp)+,a0
-.1:	nop
-	rte
+	st	mt_TimBRpt(a4)
+	rts
 
 mt_dmaon:
 	dc.w	$8000
@@ -301,54 +292,18 @@ mt_dmaon:
 mt_TimerBsetrep:
 ; One-shot TimerB interrupt to set repeat samples after another 496 ticks.
 
-	move.l	a6,-(sp)
-	lea	CUSTOM+INTREQ,a6
-
-	; check and clear CIAB interrupt flags
-	btst	#1,CIAB+CIAICR
-	beq	.1
-
-	; clear EXTER and possible audio interrupt flags
-	move.l	a4,-(sp)
-	move.l	d0,a4
-	moveq	#$2000>>7,d0		; EXTER-flag
-	or.b	mt_dmaon+1(pc),d0
-	lsl.w	#7,d0
-	move.w	d0,(a6)
-	move.l	a4,d0
-
 	; it was a TB interrupt, set repeat sample pointers and lengths
-	ifd	SDATA
-	lea	_LinkerDB,a4
-	else
-	lea	mt_data(pc),a4
-	endc
-	move.l	mt_chan1+n_loopstart(a4),AUD0LC-INTREQ(a6)
-	move.w	mt_chan1+n_replen(a4),AUD0LEN-INTREQ(a6)
-	move.l	mt_chan2+n_loopstart(a4),AUD1LC-INTREQ(a6)
-	move.w	mt_chan2+n_replen(a4),AUD1LEN-INTREQ(a6)
-	move.l	mt_chan3+n_loopstart(a4),AUD2LC-INTREQ(a6)
-	move.w	mt_chan3+n_replen(a4),AUD2LEN-INTREQ(a6)
-	move.l	mt_chan4+n_loopstart(a4),AUD3LC-INTREQ(a6)
-	move.w	mt_chan4+n_replen(a4),AUD3LEN-INTREQ(a6)
+	move.l	mt_chan1+n_loopstart(a4),AUD0LC(a6)
+	move.w	mt_chan1+n_replen(a4),AUD0LEN(a6)
+	move.l	mt_chan2+n_loopstart(a4),AUD1LC(a6)
+	move.w	mt_chan2+n_replen(a4),AUD1LEN(a6)
+	move.l	mt_chan3+n_loopstart(a4),AUD2LC(a6)
+	move.w	mt_chan3+n_replen(a4),AUD2LEN(a6)
+	move.l	mt_chan4+n_loopstart(a4),AUD3LC(a6)
+	move.w	mt_chan4+n_replen(a4),AUD3LEN(a6)
 
-	; restore TimerA music interrupt vector
-	move.l	mt_Lev6Int(pc),a4
-	lea	mt_TimerAInt(pc),a6
-	move.l	a6,(a4)
-
-	move.l	(sp)+,a4
-	move.l	(sp)+,a6
-	nop
-	rte
-
-	; just clear EXTER interrupt flag and return
-.1:	move.w	#$2000,(a6)
-	move.w	#$2000,(a6)
-
-	move.l	(sp)+,a6
-	nop
-	rte
+	clr.b   mt_TimBRpt(a4)
+	rts
 
 
 ;---------------------------------------------------------------------------
@@ -453,6 +408,7 @@ mt_reset:
 	clr.b	mt_SilCntValid(a4)
 	clr.b	mt_E8Trigger(a4)
 	clr.b	mt_SongEnd(a4)
+	clr.b	mt_TimBRpt(a4)
 
 	ifnd	SDATA
 	move.l	(sp)+,a4
@@ -566,9 +522,7 @@ no_new_note:
 	move.b	mt_dmaon+1(pc),d0
 	beq	same_pattern
 
-	move.l	mt_Lev6Int(pc),a0
-	lea	mt_TimerBdmaon(pc),a1
-	move.l	a1,(a0)
+	clr.b	mt_TimBRpt(a4)
 	move.b	#$19,CIAB+CIACRB	; load/start timer B, one-shot
 	bra	same_pattern
 
@@ -605,9 +559,7 @@ settb_step:
 	move.b	mt_dmaon+1(pc),d0
 	beq	pattern_step
 
-	move.l	mt_Lev6Int(pc),a0
-	lea	mt_TimerBdmaon(pc),a1
-	move.l	a1,(a0)
+	clr.b	mt_TimBRpt(a4)
 	move.b	#$19,CIAB+CIACRB	; load/start timer B, one-shot
 
 pattern_step:
@@ -1974,6 +1926,8 @@ mt_PattDelTime2:
 	ds.b	1
 mt_SilCntValid:
 	ds.b	1
+mt_TimBRpt:
+	ds.b	1
 
 	xdef	_mt_Enable
 _mt_Enable:
@@ -2013,6 +1967,7 @@ mt_SongPos	rs.b	1
 mt_PattDelTime	rs.b	1
 mt_PattDelTime2	rs.b	1
 mt_SilCntValid	rs.b	1
+mt_TimBRpt	rs.b	1
 mt_Enable	rs.b	1		; exported as _mt_Enable
 mt_E8Trigger	rs.b	1		; exported as _mt_E8Trigger
 mt_SongEnd	rs.b	1		; exported as _mt_SongEnd
