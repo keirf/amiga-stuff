@@ -11,6 +11,37 @@
 
 #include "testkit.h"
 
+const static char * const _exc_str[] = {
+    [ 2] = "Bus Error",
+    [ 3] = "Address Error",
+    [ 4] = "Illegal Instruction",
+    [ 5] = "Zero Divide",
+    [ 6] = "CHK/CHK2",
+    [ 7] = "TRAPcc",
+    [ 8] = "Privilege Violation",
+    [ 9] = "Trace",
+    [10] = "Line A",
+    [11] = "Line F",
+    [13] = "Coprocessor Protocol Violation",
+    [14] = "Format Error",
+    [15] = "Uninitialised Interrupt",
+    [24] = "Spurious Interrupt",
+    [25] = "Level 1 IRQ",
+    [26] = "Level 2 IRQ",
+    [27] = "Level 3 IRQ",
+    [28] = "Level 4 IRQ",
+    [29] = "Level 5 IRQ",
+    [30] = "Level 6 IRQ",
+    [31] = "NMI",
+};
+
+static const char * const exc_str(unsigned int exc_nr)
+{
+    if ((exc_nr >= ARRAY_SIZE(_exc_str)) || (_exc_str[exc_nr] == NULL))
+        return "Unknown";
+    return _exc_str[exc_nr];
+}
+
 static uint16_t copper[] = {
     0x0100, 0x9200, /* bplcon0: 1 bitplane, hires */
     0x0180, 0x0000, /* col00, black */
@@ -177,7 +208,8 @@ static void crash(struct frame *f)
 
     /* Print the exception stack frame. */
     y += 2;
-    sprintf(s, "Exception #%02x at PC %08x%s:", exc_nr, f->pc, src);
+    sprintf(s, "Exception #%02x (%u: %s) at PC %08x%s:",
+            exc_nr, exc_nr, exc_str(exc_nr), f->pc, src);
     print(x, y, s);
     x += 2;
     y++;
