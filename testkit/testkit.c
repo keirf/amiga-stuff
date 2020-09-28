@@ -38,19 +38,57 @@
     cust->intena = __x;                         \
 } while (0)
 
-#define IRQ(name)                                                          \
-static void c_##name(struct c_exception_frame *frame) attribute_used;      \
-void name(void);                                                           \
-asm (                                                                      \
-#name":                             \n"                                    \
-"    movem.l %d0-%d1/%a0-%a1,-(%sp) \n" /* Save a c_exception_frame */     \
-"    move.l  %sp,%a0                \n"                                    \
-"    move.l  %a0,-(%sp)             \n"                                    \
-"    jbsr    c_"#name"              \n"                                    \
-"    addq.l  #4,%sp                 \n"                                    \
-"    movem.l (%sp)+,%d0-%d1/%a0-%a1 \n"                                    \
-"    rte                            \n"                                    \
-)
+#define _IRQ(name, _lvl, _mask)                                         \
+static void c_##name(struct c_exception_frame *frame) attribute_used;   \
+static void c_spurious_IRQ##_lvl(void) attribute_used;                  \
+void name(void);                                                        \
+asm (                                                                   \
+#name":                             \n"                                 \
+"    movem.l %d0-%d1/%a0-%a1,-(%sp) \n" /* Save a c_exception_frame */  \
+"    move.l  %sp,%a0                \n"                                 \
+"    move.l  %a0,-(%sp)             \n"                                 \
+"    move.w  (0xdff01c).l,%d0       \n" /* intenar */                   \
+"    btst    #14,%d0                \n" /* master enable? */            \
+"    jeq     1f                     \n"                                 \
+"    and.w   (0xdff01e).l,%d0       \n" /* intreqr */                   \
+"    and.w   #"#_mask",%d0          \n" /* specific interrupts? */      \
+"    jeq     1f                     \n"                                 \
+"    jbsr    c_"#name"              \n"                                 \
+"2:  addq.l  #4,%sp                 \n"                                 \
+"    movem.l (%sp)+,%d0-%d1/%a0-%a1 \n"                                 \
+"    rte                            \n"                                 \
+"1:  jbsr    c_spurious_IRQ"#_lvl"  \n"                                 \
+"    jra     2b                     \n"                                 \
+);                                                                      \
+static void c_spurious_IRQ##_lvl(void)                                  \
+{                                                                       \
+    uint8_t cnt;                                                        \
+    asm volatile (                                                      \
+        "move.b (%1),%0; addq.b #1,(%1)"                                \
+        : "=d" (cnt) : "a" (&spurious_autovector_count[_lvl]));         \
+    if (cnt >= 16)                                                      \
+        m68k_vec->level##_lvl##_autovector.p = crash_autovector[_lvl];  \
+}
+
+#define IRQ(name, _lvl, _mask) _IRQ(name, _lvl, _mask)
+
+#define UNUSED_IRQ(_lvl)                                                \
+IRQ(LEVEL##_lvl##_IRQ, _lvl, 0);                                        \
+static void c_LEVEL##_lvl##_IRQ(struct c_exception_frame *frame)        \
+{ /* unused */ }
+
+/* Autovector handling. */
+static void *crash_autovector[8]; /* fallback (crash) handlers */
+static uint8_t spurious_autovector_count[8]; /* per-vbl counts */
+volatile uint32_t spurious_autovector_total;
+
+IRQ(SOFT_IRQ,   1, INT_SOFT);
+IRQ(CIAA_IRQ,   2, INT_CIAA);
+IRQ(VBLANK_IRQ, 3, INT_VBLANK);
+UNUSED_IRQ(     4);
+UNUSED_IRQ(     5);
+IRQ(CIAB_IRQ,   6, INT_CIAB);
+UNUSED_IRQ(     7);
 
 /* Initialised by init.S */
 struct mem_region mem_region[16] __attribute__((__section__(".data")));
@@ -100,11 +138,6 @@ unsigned int cpu_hz;
 
 /* Regardless of intrinsic PAL/NTSC-ness, display may be 50 or 60Hz. */
 uint8_t vbl_hz;
-
-/* Autovector handling. */
-static void *crash_autovector[8]; /* fallback (crash) handlers */
-static uint8_t unexpected_autovector_count[8]; /* per-vbl counts */
-static volatile uint32_t unexpected_autovector_total;
 
 /* VBL IRQ: 16- and 32-bit timestamps, and VBL counter. */
 static volatile uint32_t stamp32;
@@ -888,7 +921,6 @@ static void mainmenu(void)
     uint8_t i;
     char s[80];
     struct char_row r = { .x = 0, .y = 0, .s = s };
-    unsigned int _unexpected_autovector_total = 0;
 
     clear_whole_screen();
     keycode_buffer = 0;
@@ -927,14 +959,6 @@ static void mainmenu(void)
     while ((i = keycode_buffer - K_F1) >= ARRAY_SIZE(mainmenu_option)) {
         if (keycode_buffer == K_HELP)
             system_reset();
-        if (_unexpected_autovector_total != unexpected_autovector_total) {
-            _unexpected_autovector_total = unexpected_autovector_total;
-            sprintf(s, " %u Unexpected IRQs/NMIs ",
-                    _unexpected_autovector_total);
-            centre_string(s, 44, '*');
-            wait_bos();
-            print_line(&r);
-        }
     }
 
     clear_whole_screen();
@@ -949,7 +973,6 @@ static void mainmenu(void)
     keycode_buffer = 0;
 }
 
-IRQ(CIAA_IRQ);
 static void c_CIAA_IRQ(struct c_exception_frame *frame)
 {
     uint8_t key, icr = ciaa->icr;
@@ -984,7 +1007,6 @@ static void c_CIAA_IRQ(struct c_exception_frame *frame)
     IRQ_RESET(INT_CIAA);
 }
 
-IRQ(CIAB_IRQ);
 static void c_CIAB_IRQ(struct c_exception_frame *frame)
 {
     uint8_t icr = ciab->icr;
@@ -1010,7 +1032,6 @@ static void c_CIAB_IRQ(struct c_exception_frame *frame)
     IRQ_RESET(INT_CIAB);
 }
 
-IRQ(VBLANK_IRQ);
 static uint16_t vblank_joydat, mouse_x, mouse_y;
 static void c_VBLANK_IRQ(struct c_exception_frame *frame)
 {
@@ -1043,26 +1064,20 @@ static void c_VBLANK_IRQ(struct c_exception_frame *frame)
     IRQ_RESET(INT_VBLANK);
 }
 
-IRQ(SOFT_IRQ);
 static void c_SOFT_IRQ(struct c_exception_frame *frame)
 {
     static uint16_t prev_lmb;
     uint16_t lmb, i, x, y;
     struct menu_option *am, *m;
 
-    /* Shouldn't happen but just in case we race IRQ_DISABLE() bail immediately
-     * and leave the interrupt pending in INTREQ. */
-    if (!(cust->intenar & INT_SOFT))
-        return;
-
-    /* Clear the unexpected autovector counts. This allows a certain maximum
+    /* Clear the spurious autovector counts. This allows a certain maximum
      * number of autovector interrupts per vertical blanking period. 
      * We maintain an aggregate total to report to the user. */
-    for (i = x = 0; i < sizeof(unexpected_autovector_count); i++) {
-        x += unexpected_autovector_count[i];
-        unexpected_autovector_count[i] = 0;
+    for (i = x = 0; i < sizeof(spurious_autovector_count); i++) {
+        x += spurious_autovector_count[i];
+        spurious_autovector_count[i] = 0;
     }
-    unexpected_autovector_total += x;
+    spurious_autovector_total += x;
 
     m = NULL;
     am = active_menu_option;
@@ -1118,21 +1133,6 @@ static void c_SOFT_IRQ(struct c_exception_frame *frame)
 
     IRQ_RESET(INT_SOFT);
 }
-
-#define UNEXPECTED_AUTOVECTOR(n)                                        \
-IRQ(LEVEL##n##_IRQ);                                                    \
-static void c_LEVEL##n##_IRQ(struct c_exception_frame *frame)           \
-{                                                                       \
-    uint8_t cnt;                                                        \
-    asm volatile (                                                      \
-        "move.b (%1),%0; addq.b #1,(%1)"                                \
-        : "=d" (cnt) : "a" (&unexpected_autovector_count[n]));          \
-    if (cnt >= 16)                                                      \
-        m68k_vec->level##n##_autovector.p = crash_autovector[n];        \
-}
-UNEXPECTED_AUTOVECTOR(4)
-UNEXPECTED_AUTOVECTOR(5)
-UNEXPECTED_AUTOVECTOR(7)
 
 static void cia_init(volatile struct amiga_cia * const cia, uint8_t icrf)
 {

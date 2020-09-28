@@ -50,6 +50,13 @@ extern struct cpu cpu;
 
 
 /*******************
+ * INTERRUPTS
+ */
+
+extern volatile uint32_t spurious_autovector_total;
+
+
+/*******************
  * KEYBOARD
  */
 

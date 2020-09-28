@@ -463,6 +463,7 @@ void ciacheck(void)
     struct char_row r = { .s = s };
     uint8_t key = 0;
     uint16_t lisaid, aliceid;
+    unsigned int _spurious_autovector_total = 0;
 
     print_menu_nav_line();
 
@@ -495,18 +496,27 @@ void ciacheck(void)
         aliceid = (cust->vposr >> 8) & 0x7f;
         sprintf(s, "Agnus/Alice: %04x", aliceid);
         print_line(&r);
-        r.y++;
         if (/* Detect AGA Alice IDs: 0x22, 0x23, 0x32, 0x33. */
             ((aliceid & 0x6e) == 0x22)
             /* In which case LisaID bits 3,8,9 should be zero. */
             && !!(lisaid & 0x304)) {
             sprintf(s, "WARNING: AGA Alice with bad Lisa ID");
+            r.y++;
             print_line(&r);
         }
 
+        r.y += 2;
+
         do {
-            while (!do_exit && !(key = keycode_buffer))
-                continue;
+            while (!do_exit && !(key = keycode_buffer)) {
+                if (_spurious_autovector_total == spurious_autovector_total)
+                    continue;
+                _spurious_autovector_total = spurious_autovector_total;
+                sprintf(s, "Spurious IRQs/NMIs: %u",
+                        _spurious_autovector_total);
+                wait_bos();
+                print_line(&r);
+            }
             keycode_buffer = 0;
             if (key == K_ESC)
                 do_exit = 1;
