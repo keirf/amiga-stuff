@@ -5,7 +5,7 @@
  *  - Memory
  *  - Keyboard
  *  - Floppy Drive
- *  - Joystick / Mouse
+ *  - Controller Ports
  *  - Audio
  *  - Video
  *  - CIA Timers
@@ -911,7 +911,7 @@ static void mainmenu(void)
         { memcheck,      "Memory" },
         { kbdcheck,      "Keyboard" },
         { floppycheck,   "Floppy Drive" },
-        { joymousecheck, "Mouse, Joystick, Gamepad" },
+        { joymousecheck, "Controller Ports" },
         { audiocheck,    "Audio" },
         { videocheck,    "Video" },
         { ciacheck,      "CIA, Chipset, Batt.Clock" },
