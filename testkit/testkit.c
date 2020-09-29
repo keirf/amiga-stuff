@@ -1032,6 +1032,7 @@ static void c_CIAB_IRQ(struct c_exception_frame *frame)
     IRQ_RESET(INT_CIAB);
 }
 
+volatile uint16_t potgo, potdat[2];
 static uint16_t vblank_joydat, mouse_x, mouse_y;
 static void c_VBLANK_IRQ(struct c_exception_frame *frame)
 {
@@ -1057,6 +1058,11 @@ static void c_VBLANK_IRQ(struct c_exception_frame *frame)
     vstop = vstart + 11;
     pointer_sprite[0] = (vstart<<8)|(hstart>>1);
     pointer_sprite[1] = (vstop<<8)|((vstart>>8)<<2)|((vstop>>8)<<1)|(hstart&1);
+
+    /* Update analog controller positions. */
+    potdat[0] = cust->pot0dat;
+    potdat[1] = cust->pot1dat;
+    cust->potgo = potgo | 1;
 
     /* Defer menu-option handling to lowest-priority interrupt group. */
     cust->intreq = INT_SETCLR | INT_SOFT;

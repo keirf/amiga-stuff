@@ -50,6 +50,14 @@ extern struct cpu cpu;
 
 
 /*******************
+ * ANALOG CONTROLLERS
+ */
+
+extern volatile uint16_t potgo;
+extern volatile uint16_t potdat[2];
+
+
+/*******************
  * INTERRUPTS
  */
 
