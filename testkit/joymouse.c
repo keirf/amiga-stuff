@@ -215,7 +215,8 @@ void joymousecheck(void)
     uint8_t key, nr_box = 0;
     unsigned int port, i, j;
     const struct button *box = NULL;
-    const static char *names[] = { "Mouse", "Joystick", "Gamepad", "Analog" };
+    const static char *names[] = {
+        "Mouse", "Joystick", "CD32 Pad", "Analog" };
     enum { T_MOUSE, T_JOYSTICK, T_GAMEPAD, T_ANALOG };
     struct {
         uint8_t changed, type;
