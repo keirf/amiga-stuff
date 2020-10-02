@@ -19,25 +19,6 @@
 
 #include "testkit.h"
 
-/* Write to INTREQ twice at end of ISR to prevent spurious re-entry on 
- * A4000 with faster processors (040/060). */
-#define IRQ_RESET(x) do {                       \
-    uint16_t __x = (x);                         \
-    cust->intreq = __x;                         \
-    cust->intreq = __x;                         \
-} while (0)
-/* Similarly for disabling an IRQ, write INTENA twice to be sure that an 
- * interrupt won't creep in after the IRQ_DISABLE(). */
-#define IRQ_DISABLE(x) do {                     \
-    uint16_t __x = (x);                         \
-    cust->intena = __x;                         \
-    cust->intena = __x;                         \
-} while (0)
-#define IRQ_ENABLE(x) do {                      \
-    uint16_t __x = INT_SETCLR | (x);            \
-    cust->intena = __x;                         \
-} while (0)
-
 #define _IRQ(name, _lvl, _mask)                                         \
 static void c_##name(struct c_exception_frame *frame) attribute_used;   \
 static void c_spurious_IRQ##_lvl(void) attribute_used;                  \
@@ -201,6 +182,7 @@ uint8_t keyboard_IRQ(void);
 void ciaata_IRQ(void);
 void ciaatb_IRQ(void);
 void ciabta_IRQ(void);
+void joymouse_ciabta_IRQ(void);
 void ciabtb_IRQ(void);
 void ciaa_TOD_IRQ(void);
 void ciab_TOD_IRQ(void);
@@ -1017,8 +999,10 @@ static void c_CIAB_IRQ(struct c_exception_frame *frame)
     if (icr & CIAICR_TOD)
         ciab_TOD_IRQ();
 
-    if (icr & CIAICR_TIMER_A)
+    if (icr & CIAICR_TIMER_A) {
         ciabta_IRQ();
+        joymouse_ciabta_IRQ();
+    }
 
     if (icr & CIAICR_TIMER_B)
         ciabtb_IRQ();
@@ -1032,7 +1016,6 @@ static void c_CIAB_IRQ(struct c_exception_frame *frame)
     IRQ_RESET(INT_CIAB);
 }
 
-volatile uint16_t potgo, potdat[2];
 static uint16_t vblank_joydat, mouse_x, mouse_y;
 static void c_VBLANK_IRQ(struct c_exception_frame *frame)
 {
@@ -1058,11 +1041,6 @@ static void c_VBLANK_IRQ(struct c_exception_frame *frame)
     vstop = vstart + 11;
     pointer_sprite[0] = (vstart<<8)|(hstart>>1);
     pointer_sprite[1] = (vstop<<8)|((vstart>>8)<<2)|((vstop>>8)<<1)|(hstart&1);
-
-    /* Update analog controller positions. */
-    potdat[0] = cust->pot0dat;
-    potdat[1] = cust->pot1dat;
-    cust->potgo = potgo | 1;
 
     /* Defer menu-option handling to lowest-priority interrupt group. */
     cust->intreq = INT_SETCLR | INT_SOFT;

@@ -50,16 +50,27 @@ extern struct cpu cpu;
 
 
 /*******************
- * ANALOG CONTROLLERS
- */
-
-extern volatile uint16_t potgo;
-extern volatile uint16_t potdat[2];
-
-
-/*******************
  * INTERRUPTS
  */
+
+/* Write to INTREQ twice at end of ISR to prevent spurious re-entry on 
+ * A4000 with faster processors (040/060). */
+#define IRQ_RESET(x) do {                       \
+    uint16_t __x = (x);                         \
+    cust->intreq = __x;                         \
+    cust->intreq = __x;                         \
+} while (0)
+/* Similarly for disabling an IRQ, write INTENA twice to be sure that an 
+ * interrupt won't creep in after the IRQ_DISABLE(). */
+#define IRQ_DISABLE(x) do {                     \
+    uint16_t __x = (x);                         \
+    cust->intena = __x;                         \
+    cust->intena = __x;                         \
+} while (0)
+#define IRQ_ENABLE(x) do {                      \
+    uint16_t __x = INT_SETCLR | (x);            \
+    cust->intena = __x;                         \
+} while (0)
 
 extern volatile uint32_t spurious_autovector_total;
 

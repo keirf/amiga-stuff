@@ -94,23 +94,94 @@ const static uint16_t copper_joymouse[] = {
     0xffff, 0xfffe,
 };
 
+struct coord { int x, y; };
+
+static void potdat_update(uint16_t dat, uint16_t prev_dat, struct coord *c)
+{
+    c->x += (uint8_t)(dat - prev_dat);
+    c->y += (uint8_t)((dat>>8) - (prev_dat>>8));
+}
+
+static volatile uint16_t potgo = 0xff00;
+static struct coord pot_coord[2];
+void joymouse_ciabta_IRQ(void)
+{
+    static struct {
+        int count;
+        struct coord coord[2];
+        uint16_t potdat[2];
+    } priv;
+
+    uint16_t potdat[2], _potgo;
+    int i, same = 0;
+
+    /* If neither port is in analog mode, bail immediately. */
+    if ((_potgo = potgo) == 0xff00)
+        return;
+
+    /* Update analog controller positions. */
+    potdat[0] = cust->pot0dat;
+    potdat[1] = cust->pot1dat;
+    for (i = 0; i < 2; i++) {
+        if ((potdat[i] == priv.potdat[i]) || (_potgo & (0x0f00 << (i<<2)))) {
+            /* Counter has stopped, or this port is not in analog mode. */
+            same++;
+        } else {
+            /* Port is in analog mode and counter is still incrementing. */
+            potdat_update(potdat[i], priv.potdat[i], &priv.coord[i]);
+            priv.potdat[i] = potdat[i];
+        }
+    }
+
+    /* Wait until counters stop, or 32ms pass (4*8ms). */
+    if ((same == 2) || (++priv.count >= 4)) {
+        /* Latch final coordinates. */
+        pot_coord[0] = priv.coord[0];
+        pot_coord[1] = priv.coord[1];
+        /* Clear internal state for next round of measurements. */
+        memset(priv.coord, 0, sizeof(priv.coord));
+        memset(priv.potdat, 0, sizeof(priv.potdat));
+        priv.count = 0;
+        /* Kick off the sampling process. */
+        cust->potgo = _potgo | 1;
+        /* POTGO logic dumps charge from POTX/Y lines set to input mode. This
+         * lasts for 7-8 scanlines and messes with read_gamepad() which
+         * temporarily sets pin 9 (POTY) to input mode. In a game I would 
+         * simply arrange for the gamepad and potgo logic not to conflict 
+         * (eg order them correctly in the vblank handler) but here, in 
+         * concert with disabling this IRQ in read_gamepad(), the delay is 
+         * a suitable fix. */
+        delay_ms(1);
+    }
+}
+
 /* Read gamepad button state of specified port using specified ciaa address. */
 static uint32_t read_gamepad(uint8_t port, volatile struct amiga_cia *_ciaa)
 {
     unsigned int i, j;
     uint32_t state = 0;
-    uint16_t prev_potgo, pad_potgo;
+
+    /* We can't allow POTGO discharge logic to trigger while we're reading 
+     * the gamepad. */
+    IRQ_DISABLE(INT_CIAB);
 
     /* Pin 6 clocks the shift register (74LS165). Set as output, LOW, before 
      * we enable the pad's shift-register mode. */
-    _ciaa->ddra |= CIAAPRA_FIR0 << port;
     _ciaa->pra &= ~(CIAAPRA_FIR0 << port);
+    _ciaa->ddra |= CIAAPRA_FIR0 << port;
 
     /* Port pin 5 enables the shift register. Set as output, LOW. Port pin 9 
      * is the shift-register output ('165 pin 9). Set it as input. */
-    prev_potgo = potgo;
-    pad_potgo = (prev_potgo & ~(0x0f00 << (port<<2))) | (0x0200 << (port<<2));
-    cust->potgo = potgo = pad_potgo;
+    cust->potgo = (potgo & ~(0x0f00 << (port<<2))) | (0x0200 << (port<<2));
+    /* NOTE: Another option would be to set port pin 9 in output mode, HIGH. 
+     * This would require the gamepad to sink more current, but should be 
+     * supported. It would also prevent any conflict with POTGO, as only 
+     * pins set as input are connected to the pot logic (and discharged 
+     * when POTGO[0] is written. 
+     * However setting as input is kinder to the gamepad; it may theoretically 
+     * help support gamepad clones which direct connect pin 9 to an MCU with 
+     * weaker current-sink capability; and it also matches most WHDLoad slaves
+     * (which set 0110b rather than out 0010b, but it means the same). */
 
     /* Probe 7 buttons (B0-B6), plus 3 ID bits (B7-B9).
      * B7 = '165 pin 11 (parallel input A) = FALSE (pulled high)
@@ -128,8 +199,10 @@ static uint32_t read_gamepad(uint8_t port, volatile struct amiga_cia *_ciaa)
     }
 
     /* Return the port to joystick/mouse mode. */
-    cust->potgo = potgo = prev_potgo;
+    cust->potgo = potgo;
     _ciaa->ddra &= ~(CIAAPRA_FIR0 << port);
+
+    IRQ_ENABLE(INT_CIAB);
 
     return state;
 }
@@ -148,11 +221,19 @@ void joymousecheck(void)
         uint8_t changed, type;
         uint16_t start_x, start_y;
         uint32_t state;
-        int cur_x, cur_y;
+        unsigned int vblank_stamp;
+        struct coord cur, min, max;
         volatile struct amiga_cia *ciaa;
     } ports[2], *p;
 
     copperlist_set(copper_joymouse);
+
+    /* CIABTA interrupts every 8ms to monitor POTGO/POTDAT. */
+    ciab->icr = CIAICR_SETCLR | CIAICR_TIMER_A;
+    i = div32(cpu_hz, 1250); /* 8ms */
+    ciab->talo = (uint8_t)i;
+    ciab->tahi = (uint8_t)(i>>8);
+    ciab->cra = CIACRA_LOAD | CIACRA_START;
 
     joydat[0] = cust->joy0dat;
     joydat[1] = cust->joy1dat;
@@ -220,6 +301,7 @@ void joymousecheck(void)
             case T_MOUSE:
                 box = mouse;
                 nr_box = ARRAY_SIZE(mouse);
+                p->cur.x = p->cur.y = 40;
                 break;
             case T_JOYSTICK:
                 box = joystick;
@@ -260,6 +342,9 @@ void joymousecheck(void)
                 nr_box = ARRAY_SIZE(analog);
                 /* No pull-ups on the POTX/POTY lines. */
                 _potgo &= ~(0x0f00 << (port<<2));
+                p->min.x = p->min.y = 1024;
+                p->max.x = p->max.y = 0;
+                p->cur = p->min;
                 break;
             }
 
@@ -280,64 +365,89 @@ void joymousecheck(void)
             }
 
             cust->potgo = potgo = _potgo;
+            p->vblank_stamp = vblank_count;
         }
 
         newjoydat[0] = cust->joy0dat;
         newjoydat[1] = cust->joy1dat;
 
+        /* Screen updates below start at bottom of screen. Avoids flicker. */
+        wait_bos();
+
         /* Draw mouse cursors. */
-        wait_bos(); /* avoids flicker */
         for (port = 0; port < 2; port++) {
             p = &ports[port];
             if (p->type != T_MOUSE)
                 continue;
             box = &mouse[3];
             /* Clear the old cursor location. */
-            clear_rect(p->cur_x + p->start_x + box->x + 1,
-                       p->cur_y/2 + p->start_y + box->y + 1,
+            clear_rect(p->cur.x + p->start_x + box->x + 1,
+                       p->cur.y/2 + p->start_y + box->y + 1,
                        4, 2, 1<<1);
             /* Update mouse coordinates. */
-            p->cur_x += (int8_t)(newjoydat[port] - joydat[port]);
-            p->cur_y += (int8_t)((newjoydat[port]>>8) - (joydat[port]>>8));
-            p->cur_x = min_t(int, max_t(int, p->cur_x, 0), mouse[3].w-5);
-            p->cur_y = min_t(int, max_t(int, p->cur_y, 0), mouse[3].h*2-5);
+            p->cur.x += (int8_t)(newjoydat[port] - joydat[port]);
+            p->cur.y += (int8_t)((newjoydat[port]>>8) - (joydat[port]>>8));
+            p->cur.x = min_t(int, max_t(int, p->cur.x, 0), mouse[3].w-5);
+            p->cur.y = min_t(int, max_t(int, p->cur.y, 0), mouse[3].h*2-5);
             /* Draw the new cursor location. */
-            fill_rect(p->cur_x + p->start_x + box->x + 1,
-                      p->cur_y/2 + p->start_y + box->y + 1,
+            fill_rect(p->cur.x + p->start_x + box->x + 1,
+                      p->cur.y/2 + p->start_y + box->y + 1,
                       4, 2, 1<<1);
         }
 
         /* Draw analog positions. */
         for (port = 0; port < 2; port++) {
-            int x, y, old_x, old_y;
-            uint16_t _potdat;
+            struct coord cur, old;
+            int changed = 0;
             p = &ports[port];
             if (p->type != T_ANALOG)
                 continue;
+            if ((unsigned int)(vblank_count - p->vblank_stamp) < 10)
+                continue;
             box = &analog[3];
             /* Check if analog coordinates have changed. */
-            _potdat = potdat[port];
-            x = (uint8_t)_potdat;
-            y = (uint8_t)(_potdat>>8);
-            if ((x == p->cur_x) && (y == p->cur_y))
+            cur = pot_coord[port];
+            if ((cur.x == p->cur.x) && (cur.y == p->cur.y))
                 continue;
             /* Clear the old cursor location. */
-            old_x = (p->cur_x * (mouse[3].w-5)) >> 8;
-            old_y = (p->cur_y * (mouse[3].h*2-5)) >> 8;
-            clear_rect(old_x + p->start_x + box->x + 1,
-                       old_y/2 + p->start_y + box->y + 1,
+            old.x = ((uint8_t)p->cur.x * (mouse[3].w-5)) >> 8;
+            old.y = ((uint8_t)p->cur.y * (mouse[3].h*2-5)) >> 8;
+            clear_rect(old.x + p->start_x + box->x + 1,
+                       old.y/2 + p->start_y + box->y + 1,
                        4, 2, 1<<1);
             /* Draw the new cursor location. */
-            p->cur_x = x;
-            p->cur_y = y;
-            x = (x * (mouse[3].w-5)) >> 8;
-            y = (y * (mouse[3].h*2-5)) >> 8;
-            fill_rect(x + p->start_x + box->x + 1,
-                      y/2 + p->start_y + box->y + 1,
+            p->cur.x = cur.x;
+            p->cur.y = cur.y;
+            cur.x = ((uint8_t)cur.x * (mouse[3].w-5)) >> 8;
+            cur.y = ((uint8_t)cur.y * (mouse[3].h*2-5)) >> 8;
+            fill_rect(cur.x + p->start_x + box->x + 1,
+                      cur.y/2 + p->start_y + box->y + 1,
                       4, 2, 1<<1);
             /* Print the location numerically. */
-            sprintf(s, "(%3u,%3u)", p->cur_x, p->cur_y);
+            sprintf(s, "(%3u,%3u)", p->cur.x, p->cur.y);
             print_text_box(5 + (port ? 35 : 0), 12, s);
+            /* Update min/max. */
+            if (p->cur.x < p->min.x) {
+                p->min.x = p->cur.x;
+                changed++;
+            }
+            if (p->cur.y < p->min.y) {
+                p->min.y = p->cur.y;
+                changed++;
+            }
+            if (p->cur.x > p->max.x) {
+                p->max.x = p->cur.x;
+                changed++;
+            }
+            if (p->cur.y > p->max.y) {
+                p->max.y = p->cur.y;
+                changed++;
+            }
+            if (changed) {
+                sprintf(s, "(%3u,%3u)-(%3u,%3u)",
+                        p->min.x, p->min.y, p->max.x, p->max.y);
+                print_text_box(0 + (port ? 35 : 0), 13, s);
+            }
         }
 
         /* Draw button states. */
@@ -423,5 +533,6 @@ void joymousecheck(void)
     }
 
     /* Clean up. */
-    cust->potgo = potgo = 0x0000;
+    cust->potgo = potgo = 0xff00;
+    ciab_init();
 }
