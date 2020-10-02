@@ -410,16 +410,16 @@ void joymousecheck(void)
             if ((cur.x == p->cur.x) && (cur.y == p->cur.y))
                 continue;
             /* Clear the old cursor location. */
-            old.x = ((uint8_t)p->cur.x * (mouse[3].w-5)) >> 8;
-            old.y = ((uint8_t)p->cur.y * (mouse[3].h*2-5)) >> 8;
+            old.x = ((uint8_t)p->cur.x * (mouse[3].w-4)) >> 8;
+            old.y = ((uint8_t)p->cur.y * (mouse[3].h*2-4)) >> 8;
             clear_rect(old.x + p->start_x + box->x + 1,
                        old.y/2 + p->start_y + box->y + 1,
                        4, 2, 1<<1);
             /* Draw the new cursor location. */
             p->cur.x = cur.x;
             p->cur.y = cur.y;
-            cur.x = ((uint8_t)cur.x * (mouse[3].w-5)) >> 8;
-            cur.y = ((uint8_t)cur.y * (mouse[3].h*2-5)) >> 8;
+            cur.x = ((uint8_t)cur.x * (mouse[3].w-4)) >> 8;
+            cur.y = ((uint8_t)cur.y * (mouse[3].h*2-4)) >> 8;
             fill_rect(cur.x + p->start_x + box->x + 1,
                       cur.y/2 + p->start_y + box->y + 1,
                       4, 2, 1<<1);
