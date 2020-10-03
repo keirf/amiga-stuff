@@ -30,8 +30,6 @@ static volatile struct amiga_cia * const ciaa =
     (struct amiga_cia *)0x0bfe001;
 static volatile struct amiga_cia * const ciab =
     (struct amiga_cia *)0x0bfd000;
-static volatile struct amiga_kickstart * const kickmem =
-    (struct amiga_kickstart *)0x00f80000;
 
 /*******************
  * SYSTEM CONFIGURATION
@@ -74,6 +72,13 @@ extern struct cpu cpu;
 } while (0)
 
 extern volatile uint32_t spurious_autovector_total;
+
+
+/*******************
+ * KICKSTART ROM
+ */
+
+const char *get_kick_string(void);
 
 
 /*******************

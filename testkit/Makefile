@@ -12,6 +12,7 @@ OBJS += cia.o
 OBJS += floppy.o
 OBJS += joymouse.o
 OBJS += keyboard.o
+OBJS += kickmem.o
 OBJS += memory.o
 OBJS += mfm.o
 OBJS += serpar.o

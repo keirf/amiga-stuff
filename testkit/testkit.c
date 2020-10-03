@@ -120,25 +120,6 @@ unsigned int cpu_hz;
 /* Regardless of intrinsic PAL/NTSC-ness, display may be 50 or 60Hz. */
 uint8_t vbl_hz;
 
-/* Kickstart version */
-typedef struct kick_pair { uint16_t kversion; char ktext[9]; } kick_pair_t;
-
-/* Kickstart versions according to https://de.wikipedia.org/wiki/Kickstart */
-static kick_pair_t kickstart_versions[] = {
-    {30,"1.0"},     {31,"1.1 NTSC"},{32,"1.1 PAL"},
-    {33,"1.2"},     {34,"1.3"},     {35,"1.3 2024"},
-    {36,"1.4 beta"},{37,"2.0x"},    {38,""},
-    {39,"3.0"},     {40,"3.1"},     {42,"3.2"},
-    {43,"3.1patch"},{44,"3.5"},     {45,"3.9"},
-    {46,"3.1.4"},   {50,"MorphOS1"},{51,"MorphOS2"},
-    {52,"4.0"},     {53,"4.1"}};
-static kick_pair_t kickstart_subversions[] = {
-    {37175,"2.04"}, {37299,"2.05"}};
-
-const char kickstart_unknown_text[] = {"unknown"};
-char *kickversion_text;
-uint32_t kickversion_number;
-
 /* VBL IRQ: 16- and 32-bit timestamps, and VBL counter. */
 static volatile uint32_t stamp32;
 static volatile uint16_t stamp16;
@@ -513,36 +494,6 @@ static void detect_cpu_model(struct cpu *c)
         sprintf(c->name, "680%u0", c->model);
     }
 }
-
-static char* detect_kick_version(uint32_t *ver_number)
-{
-    uint8_t i=0, j=0;
-    char *kick_text = (char *)kickstart_unknown_text;
-    uint16_t kick_major = (kickmem->rom_version_major) & 0xffff;
-    uint16_t kick_minor = (kickmem->rom_version_minor) & 0xffff;
-
-    for(i=0; i<(sizeof(kickstart_versions)/sizeof(kickstart_versions[0])); ++i )
-    {
-        if (kickstart_versions[i].kversion == kick_major)
-        {
-            kick_text = kickstart_versions[i].ktext;
-            if ('x' == kick_text[strlen(kick_text)-1])
-            {
-                for (j=0; j<(sizeof(kickstart_subversions)/sizeof(kickstart_subversions[0])); ++j )
-                {
-                    if (kickstart_subversions[j].kversion <= (kick_major*1000+kick_minor))
-                    {
-                        kick_text = kickstart_subversions[j].ktext;
-                    }
-                }
-            }
-            break;
-        }
-    }
-    *ver_number = (kick_major<<16)|(kick_minor);
-    return kick_text;
-}
-
 
 static void system_reset(void)
 {
@@ -933,6 +884,15 @@ static void centre_string(char *s, int width, char c)
     s[width] = '\0';
 }
 
+static void pad_string(char *s, int width, char c)
+{
+    int l = strlen(s);
+    if (l >= width)
+        return;
+    memset(s+l, c, width-l);
+    s[width] = '\0';
+}
+
 static void mainmenu(void)
 {
     const static struct {
@@ -973,10 +933,11 @@ static void mainmenu(void)
     sprintf(s, " %s - %s/%s - %uHz ",
             cpu.name, chipset_name[chipset_type],
             is_pal ? "PAL" : "NTSC", vbl_hz);
+    if(0)pad_string(s, 44, '-');
     centre_string(s, 44, '-');
     print_line(&r);
     r.y++;
-    sprintf(s, " Kickstart %s (%2d.%03d) ", kickversion_text, (kickversion_number>>16), (kickversion_number&0xFFFF));
+    sprintf(s, " ROM: %s ", get_kick_string());
     centre_string(s, 44, '-');
     print_line(&r);
     r.y++;
@@ -1270,7 +1231,6 @@ void cstart(void)
     vbl_hz = detect_vbl_hz();
     is_pal = detect_pal_chipset();
     cpu_hz = is_pal ? PAL_HZ : NTSC_HZ;
-    kickversion_text = detect_kick_version(&kickversion_number);
 
     sort(mem_region, nr_mem_regions, sizeof(mem_region[0]), mem_region_cmp);
 
