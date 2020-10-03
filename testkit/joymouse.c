@@ -210,7 +210,7 @@ static uint32_t read_gamepad(uint8_t port, volatile struct amiga_cia *_ciaa)
 void joymousecheck(void)
 {
     char s[80];
-    struct char_row r = { .x = 11, .y = 1, .s = s };
+    struct char_row r = { .x = 14, .y = 1, .s = s };
     uint16_t joydat[2], newjoydat[2], _potgo = 0;
     uint8_t key, nr_box = 0;
     unsigned int port, i, j;
@@ -241,7 +241,7 @@ void joymousecheck(void)
 
     print_menu_nav_line();
 
-    sprintf(s, "-- Controller Ports Test --");
+    sprintf(s, "-- Controller Ports --");
     print_line(&r);
     r.x = 0;
     r.y += 2;

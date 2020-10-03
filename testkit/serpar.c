@@ -470,9 +470,9 @@ void serparcheck(void)
 
     while (!do_exit) {
 
-        r.x = 8;
+        r.x = 7;
         r.y = 1;
-        sprintf(s, "-- Serial/Parallel Test --");
+        sprintf(s, "-- Serial & Parallel Ports --");
         print_line(&r);
 
         r.x = 0;

@@ -195,6 +195,7 @@ void joymousecheck(void);
 void audiocheck(void);
 void videocheck(void);
 void ciacheck(void);
+void battclock_test(void);
 void serparcheck(void);
 
 /* Menu options with associated key (c) and bounding box (x1,y),(x2,y). */
@@ -884,15 +885,6 @@ static void centre_string(char *s, int width, char c)
     s[width] = '\0';
 }
 
-static void pad_string(char *s, int width, char c)
-{
-    int l = strlen(s);
-    if (l >= width)
-        return;
-    memset(s+l, c, width-l);
-    s[width] = '\0';
-}
-
 static void mainmenu(void)
 {
     const static struct {
@@ -905,9 +897,11 @@ static void mainmenu(void)
         { joymousecheck, "Controller Ports" },
         { audiocheck,    "Audio" },
         { videocheck,    "Video" },
-        { ciacheck,      "CIA, Chipset, Batt.Clock" },
+        { ciacheck,      "CIA, Chipset" },
+        { battclock_test,"RTC (Batt.Clock)" },
         { serparcheck,   "Serial, Parallel" }
     };
+    const int split = 6;
 
     uint8_t i;
     char s[80];
@@ -924,16 +918,21 @@ static void mainmenu(void)
     centre_string(s, 44, '-');
     print_line(&r);
     r.y++;
-    for (i = 0; i < ARRAY_SIZE(mainmenu_option); i++) {
-        sprintf(s, "$%u %s$", i+1, mainmenu_option[i].name);
+    for (i = 0; i < split; i++) {
+        if ((i+split) >= ARRAY_SIZE(mainmenu_option))
+            sprintf(s, "$%u %17s$", i+1, mainmenu_option[i].name);
+        else
+            sprintf(s, "$%u %17s$  $%u %17s$",
+                    i+1, mainmenu_option[i].name,
+                    i+split+1, mainmenu_option[i+split].name);
         print_line(&r);
         r.y++;
     }
 
+    r.y++;
     sprintf(s, " %s - %s/%s - %uHz ",
             cpu.name, chipset_name[chipset_type],
             is_pal ? "PAL" : "NTSC", vbl_hz);
-    if(0)pad_string(s, 44, '-');
     centre_string(s, 44, '-');
     print_line(&r);
     r.y++;

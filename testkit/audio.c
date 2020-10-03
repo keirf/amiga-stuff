@@ -77,8 +77,8 @@ void audiocheck(void)
 
     print_menu_nav_line();
 
-    r.x = 12;
-    sprintf(s, "-- Audio Test --");
+    r.x = 14;
+    sprintf(s, "-- Audio --");
     print_line(&r);
     r.y += 2;
     r.x = 8;

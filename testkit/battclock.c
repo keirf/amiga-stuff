@@ -479,9 +479,11 @@ void battclock_test(void)
     struct time time;
     struct bc bc;
 
+    print_menu_nav_line();
+
     r.x = 5;
     r.y = 0;
-    sprintf(s, "-- Battery-Backed Clock Test --");
+    sprintf(s, "-- RTC / Battery-Backed Clock --");
     print_line(&r);
 
     detect_clock(&bc);
