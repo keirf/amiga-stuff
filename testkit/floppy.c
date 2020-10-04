@@ -1003,6 +1003,6 @@ void floppycheck(void)
         }
 
         end_allocheap_arena(alloc_s);
-        clear_text_rows(r.y, 6);
+        clear_text_rows(r.y, 7);
     }
 }
