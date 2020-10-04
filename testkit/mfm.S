@@ -55,18 +55,22 @@ decode_mfm_long:
         or.l    d1,d0
         rts
 
-        /* mfm_encode_track(mfmbuf, tracknr, mfm_bytes) */
+        /* mfm_encode_track(mfmbuf, tracknr, mfm_bytes, nr_secs) */
 mfm_encode_track:
         movem.l d0-d7/a0-a1,-(sp)
         lea     11*4(sp),a1       /* args: */
         move.l  (a1)+,a0          /* mfmbuf */
         move.l  (a1)+,d4          /* tracknr */
         move.l  (a1)+,d1          /* mfm_bytes */
+        move.l  (a1)+,d7          /* nr_secs */
         move.l  #0x55555555,d5
         move.l  #0xaaaaaaaa,d6
         lea.l   (a0,d1.w),a1    /* a1 = end of mfm buffer */
-        lea.l   0x1600(a0),a0
-        move.w  #10,d7
+        move.w  d7,d1
+        lsl.w   #8,d1
+        add.w   d1,d1
+        lea.l   (a0,d1.w),a0    /* a0 = end of input data */
+        subq.w  #1,d7
 .sect:  moveq   #0x7f,d2
         moveq   #0,d3
         move.l  d3,-(a1)        /* sector gap */

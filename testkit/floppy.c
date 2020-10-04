@@ -12,8 +12,10 @@
 #include "testkit.h"
 
 unsigned int mfm_decode_track(void *mfmbuf, void *headers, void *data,
-                              uint16_t mfm_bytes);
-void mfm_encode_track(void *mfmbuf, uint16_t tracknr, uint16_t mfm_bytes);
+                              unsigned int mfm_bytes);
+void mfm_encode_track(void *mfmbuf, unsigned int tracknr,
+                      unsigned int mfm_bytes,
+                      unsigned int nr_secs);
 
 /* CIAB IRQ: FLAG (disk index) pulse counter. */
 static volatile unsigned int disk_index_count;
@@ -197,7 +199,13 @@ static void disk_wait_dma(void)
     cust->dsklen = 0x4000; /* no more dma */
 }
 
-static uint32_t drive_id(unsigned int drv)
+/* Amiga Drive IDs, from resources/disk.i */
+#define DRT_AMIGA      0x00000000
+#define DRT_37422D2S   0x55555555
+#define DRT_EMPTY      0xFFFFFFFF
+#define DRT_150RPM     0xAAAAAAAA
+
+static uint32_t _drive_id(unsigned int drv)
 {
     uint32_t id = 0;
     uint8_t mask = CIABPRB_SEL0 << drv;
@@ -215,7 +223,36 @@ static uint32_t drive_id(unsigned int drv)
         id = (id<<1) | ((ciaa->pra>>5)&1); /* 8. Read and save state of RDY */
         ciab->prb |= mask;  /* 9. SELxB high */
     }
-    return ~id;
+    return id;
+}
+
+/* Get drive id but handle Gotek's unsynchronised HD ID bitstream. 
+ * We can see either 5555.... or AAAA.... */
+static uint32_t drive_id(unsigned int drv)
+{
+    uint32_t id[3];
+    id[0] = _drive_id(drv);
+    id[1] = _drive_id(drv);
+    ciab->prb &= ~(CIABPRB_SEL0 << drv);
+    ciab->prb |= CIABPRB_SEL0 << drv;
+    id[2] = _drive_id(drv);
+    if (((id[0] != id[1]) || (id[1] != id[2]))
+        && ((id[0] == 0x55555555) || (id[0] == 0xaaaaaaaa))
+        && ((id[1] == id[0]) || (id[1] == ~id[0]))
+        && ((id[2] == id[0]) || (id[2] == ~id[0]))) {
+        id[0] = DRT_150RPM;
+    }
+    if ((id[0] == DRT_EMPTY) && (drv == 0))
+        id[0] = DRT_AMIGA;
+    return id[0];
+}
+
+static const char *drive_id_type(unsigned int drv, uint32_t id)
+{
+    return (id == 0) || ((id == ~0) && (drv == 0)) ? "DS-DD 80"
+        : (id == 0x55555555) ? "DS-DD 40"
+        : (id == 0xaaaaaaaa) ? "DS-HD 80"
+        : (id == 0xffffffff) ? "No Drive" : "Unknown";
 }
 
 static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
@@ -421,23 +458,32 @@ static void drive_read_test(unsigned int drv, struct char_row *r)
     char *s = (char *)r->s;
     void *mfmbuf, *data;
     struct sec_header *headers;
-    unsigned int mfm_bytes = 13100, nr_secs, nr_valid;
+    unsigned int mfm_bytes = 13100, trk_secs = 11, nr_secs, nr_valid;
     int done = 0, retries;
     uint8_t trk = 0;
-    uint16_t valid_map;
+    uint32_t valid_map;
     uint16_t xstart = 144, xpos = xstart;
     uint8_t ystart = 70,  ypos = ystart;
+    uint32_t id = drive_id(drv);
+    bool_t is_hd = (id == DRT_150RPM);
+    unsigned int nr_cyls = (id == 0x55555555) ? 40 : 80;
 
     r->x = r->y = 0;
-    sprintf(s, "-- DF%u: Read Test --", drv);
+    sprintf(s, "-- DF%u: %s Density %u-Cyl Read Test --", drv,
+            is_hd ? "High" : "Double", nr_cyls);
     print_line(r);
     r->y += 2;
 
     copperlist_set(copper_read);
 
+    if (is_hd) {
+        trk_secs *= 2;
+        mfm_bytes *= 2;
+    }
+
     mfmbuf = allocmem(mfm_bytes);
-    headers = allocmem(12 * sizeof(*headers));
-    data = allocmem(12 * 512);
+    headers = allocmem((trk_secs+1) * sizeof(*headers));
+    data = allocmem((trk_secs+1) * 512);
 
     drive_select(drv, 1);
     drive_check_ready(r);
@@ -465,10 +511,10 @@ static void drive_read_test(unsigned int drv, struct char_row *r)
     r->y++;
 
     /* Move the heads full range to check/reset calibration. */
-    seek_track(160);
+    seek_track(nr_cyls*2);
     seek_track(0);
 
-    while (trk < 160) {
+    while (trk < (nr_cyls*2)) {
 
         if (!(trk % 20)) {
             sprintf(s, "%2u :", trk>>1);
@@ -489,7 +535,8 @@ static void drive_read_test(unsigned int drv, struct char_row *r)
             valid_map = nr_valid = s[0] = 0;
             while (nr_secs--) {
                 struct sec_header *h = &headers[nr_secs];
-                if ((h->format == 0xff) && !h->data_csum && (h->sec < 11)) {
+                if ((h->format == 0xff) && !h->data_csum
+                    && (h->sec < trk_secs)) {
                     if (h->trk > trk) {
                         s[0] = '+';
                     } else if (h->trk < trk) {
@@ -500,7 +547,7 @@ static void drive_read_test(unsigned int drv, struct char_row *r)
                     }
                 }
             }
-            s[0] = s[0] ?: "BA9876543210"[nr_valid];
+            s[0] = s[0] ?: "MLKJIHGFEDCBA9876543210"[nr_valid+(is_hd?0:11)];
             s[1] = '\0';
             clear_rect(xpos+(trk&1)*176-3, ypos-1, 14, 10, 7);
             fill_rect(xpos+(trk&1)*176-3, ypos-1, 14, 9,
@@ -539,9 +586,10 @@ static uint32_t wait_for_index(void)
     return div32(e-s, ticks_per_ms);
 }
 
-static char *index_wait_to_str(uint32_t ms)
+static char *index_wait_to_str(uint32_t ms, bool_t is_hd)
 {
-    return ((ms < 180) ? "Early" : (ms > 220) ? "Late" : "OK");
+    unsigned int base = is_hd ? 400 : 200;
+    return ((ms < base-20) ? "Early" : (ms > base+20) ? "Late" : "OK");
 }
 
 static void drive_write_test(unsigned int drv, struct char_row *r)
@@ -549,20 +597,29 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
     char *s = (char *)r->s, retrystr[20];
     void *mfmbuf;
     struct sec_header *headers;
-    unsigned int i, j, mfm_bytes = 13100, nr_secs;
-    uint32_t erase_wait, write_wait;
-    uint16_t valid_map;
+    unsigned int i, j, mfm_bytes = 13100, trk_secs = 11, nr_secs;
+    uint32_t erase_wait, write_wait, index_late_thresh;
+    uint32_t valid_map;
     int done = 0, retries, late_indexes = 0;
     uint8_t rnd, *data;
+    uint32_t id = drive_id(drv);
+    bool_t is_hd = (id == DRT_150RPM);
+    unsigned int nr_cyls = (id == 0x55555555) ? 40 : 80;
 
-    r->y = 0;
-    sprintf(s, "-- DF%u: Write Test --", drv);
+    r->x = r->y = 0;
+    sprintf(s, "-- DF%u: %s Density %u-Cyl Write Test --", drv,
+            is_hd ? "High" : "Double", nr_cyls);
     print_line(r);
     r->y += 2;
 
+    if (is_hd) {
+        trk_secs *= 2;
+        mfm_bytes *= 2;
+    }
+
     mfmbuf = allocmem(mfm_bytes);
-    headers = allocmem(12 * sizeof(*headers));
-    data = allocmem(12 * 512);
+    headers = allocmem((trk_secs+1) * sizeof(*headers));
+    data = allocmem((trk_secs+1) * 512);
 
     drive_select(drv, 1);
     drive_check_ready(r);
@@ -590,7 +647,7 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
         goto out;
     }
 
-    for (i = 158; i < 160; i++) {
+    for (i = (nr_cyls-1)*2; i < nr_cyls*2; i++) {
 
         retries = 0;
         do {
@@ -619,7 +676,7 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
             disk_wait_dma();
 
             /* write */
-            mfm_encode_track(mfmbuf, i, mfm_bytes);
+            mfm_encode_track(mfmbuf, i, mfm_bytes, trk_secs);
             erase_wait = wait_for_index();
             disk_write_track(mfmbuf, mfm_bytes);
             disk_wait_dma();
@@ -637,29 +694,32 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
             /* Check sector headers */
             while (nr_secs--) {
                 struct sec_header *h = &headers[nr_secs];
-                if ((h->format = 0xff) && (h->trk == i) && !h->data_csum)
+                if ((h->format = 0xff) && (h->trk == i) && !h->data_csum
+                    && (h->sec < trk_secs))
                     valid_map |= 1u<<h->sec;
             }
 
             /* Check our verification token */
-            for (j = 0; j < 11*512; j++)
+            for (j = 0; j < trk_secs*512; j++)
                 if (data[j] != rnd)
                     valid_map = 0;
 
-        } while (valid_map != 0x7ff);
+        } while (valid_map != (1u<<trk_secs)-1);
 
         sprintf(s, "Track %u written:", i);
         print_line(r);
         r->y++;
         sprintf(s, " - Erase To Index Pulse: %u ms (%s)", erase_wait,
-                index_wait_to_str(erase_wait));
+                index_wait_to_str(erase_wait, is_hd));
         print_line(r);
         r->y++;
         sprintf(s, " - Write To Index Pulse: %u ms (%s)", write_wait,
-                index_wait_to_str(write_wait));
+                index_wait_to_str(write_wait, is_hd));
         print_line(r);
         r->y++;
-        if ((erase_wait > 220) || (write_wait > 220))
+        index_late_thresh = is_hd ? 420 : 220;
+        if ((erase_wait > index_late_thresh)
+            || (write_wait > index_late_thresh))
             late_indexes = 1;
     }
 
@@ -841,11 +901,27 @@ void floppycheck(void)
             print_line(&r);
             r.y++;
             for (i = 0; i < 4; i++) {
-                uint32_t id = drive_id(i);
-                sprintf(s, "DF%u: %08x (%s)", i, id,
-                        (id == -!!i) ? "Present" :
-                        (id !=  -!i) ? "???" :
-                        (i == 0) ? "Gotek?" : "Not Present");
+                uint32_t id[3];
+                char suffix[32];
+                bool_t id_unstable;
+                suffix[0] = '\0';
+                id[0] = _drive_id(i);
+                id[1] = _drive_id(i);
+                ciab->prb &= ~(CIABPRB_SEL0 << i);
+                ciab->prb |= CIABPRB_SEL0 << i;
+                id[2] = _drive_id(i);
+                id_unstable = ((id[0] != id[1]) || (id[1] != id[2]));
+                if (id_unstable) {
+                    sprintf(suffix, "ID unstable");
+                    if (((id[0] == 0x55555555) || (id[0] == 0xaaaaaaaa))
+                        && ((id[1] == id[0]) || (id[1] == ~id[0]))
+                        && ((id[2] == id[0]) || (id[2] == ~id[0]))) {
+                        id[0] = 0xaaaaaaaa;
+                        sprintf(suffix+strlen(suffix), " (Gotek?)");
+                    }
+                }
+                sprintf(s, "DF%u: %08X (%8s) %s", i, id[0],
+                        drive_id_type(i, id[0]), suffix);
                 print_line(&r);
                 r.y++;
             }
