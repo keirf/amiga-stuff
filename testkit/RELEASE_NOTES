@@ -1,0 +1,66 @@
+************************************
+** Amiga Test Kit Release Notes
+** Keir Fraser <keir.xen@gmail.com>
+************************************
+
+** v1.14 - 29 September 2020
+ - New analog/proportional controller test
+ - Rename joystick/mouse test to "Controller Ports Test"
+
+** v1.13 - 29 September 2020
+ - Handle and report spurious IRQs
+   - Report in CIA/Chipset submenu
+   - Revert to previous behaviour (crash) on spurious IRQ storm
+ - Crash handler pretty-prints exception name
+   - Address Error, Line F, ...
+
+** v1.12 - 21 August 2020
+ - New floppy read test: per-track map of read errors
+
+** v1.11 - 22 July 2020
+ - Fix NTSC 8361 "Thin Agnus" detection
+   - Previously detected as PAL
+ - Cache/MMU-disable code tweaks
+ - Fix for GCC 9.3.0 (new release toolchain)
+
+** v1.10 - 20 June 2020
+ - Fix reported startup hang on Apollo 1230 Mk2 accelerator
+ - Add "All Channels On/Off" to the Audio test menu
+
+** v1.9 - 4 June 2020
+ - Fix startup crash on A600/Furia/68EC020
+   - "Coprocessor Protocol Violation" guru
+ - Report 68060 revision id
+
+** v1.8 - 4 June 2020
+ - Audio test includes a Protracker module (Jester/Sanity)
+   - Uses Frank Wille's Protracker replay routine
+ - Improved & fixed memory-size reporting in the memory tests
+ - Binaries are packed using Zopfli for improved loading speed
+ - Fix some #BERR crashes on Amiga 3000/4000 (Fat Gary)
+ - Fix Address Fault and Bus Fault crash reports on vanilla 68000
+
+** v1.7 - 23 March 2020
+ - Fix MSM6242 12/24h flag setting in Battery-Backed Clock test
+ - Simplify and fix the asm startup/init
+
+** v1.6 - 7 March 2020
+ - Extended memory tests
+   - Custom region test
+   - Configurable delay between fill & check
+ - Fix crash on A1200/BlizzardPPC/060 (issue #17)
+ - Fix hang in RTC tests (issue #18)
+
+** v1.5 - 28 September 2019
+ - Thorough CIA Timer & TOD tests
+ - Battery-clock test fix for TF534 accelerator (issue #11)
+ - Floppy drive signal tests allow toggling of STEP and DIR
+
+** v1.4 - 3 June 2019
+ - System Reset option in main menu
+
+** v1.3 - 14 March 2019
+ - Name change: SysTest -> Amiga Test Kit
+
+** v1.2 - 30 November 2018
+ - Implement Set Date & time for Battery Backed Clock (RTC)
