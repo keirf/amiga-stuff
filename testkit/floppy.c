@@ -55,28 +55,25 @@ static void drive_wait_ready(void)
 }
 
 /* Sophisticated wait-for-RDY with diagnostic report. */
-static void drive_check_ready(struct char_row *r)
+static void drive_check_ready(struct char_row *r, bool_t is_hd)
 {
-    uint32_t s = get_time(), e, one_sec = ms_to_ticks(1000);
+    uint32_t s = get_time(), e;
+    unsigned int timeout = ms_to_ticks(is_hd ? 2000 : 1250);
     int ready;
 
     do {
         ready = !!(~ciaa->pra & CIAAPRA_RDY);
         e = get_time();
-    } while (!ready && ((e - s) < one_sec));
+    } while (!ready && ((e - s) < timeout));
 
     if (ready) {
         char delaystr[10];
         e = get_time();
         ticktostr(e - s, delaystr);
         sprintf((char *)r->s,
-                (e - s) < div32(one_sec, 1000)
-                ? "READY too fast (%s): Gotek or hacked PC drive?"
-                : (e - s) <= (one_sec>>1)
-                ? "READY in good time (%s)"
-                : (e - s) < one_sec
-                ? "READY late (%s): slow motor spin-up?"
-                : "READY *very* late (%s): slow motor spin-up?",
+                (e - s) < ms_to_ticks(1)
+                ? "Drive READY too fast (%s): Gotek or modified PC drive?"
+                : "Drive READY asserted %s after Motor On",
                 delaystr);
     } else {
         sprintf((char *)r->s,
@@ -87,13 +84,15 @@ static void drive_check_ready(struct char_row *r)
     r->y++;
 
     if (ready) {
+        s = get_time();
+        timeout = ms_to_ticks(10);
         do {
             ready = !!(~ciaa->pra & CIAAPRA_RDY);
             e = get_time();
-        } while (ready && ((e - s) < one_sec));
+        } while (ready && ((e - s) < timeout));
         if (!ready) {
             sprintf((char *)r->s,
-                    "READY signal is oscillating: hacked PC drive?");
+                    "READY signal is oscillating: modified PC drive?");
             print_line(r);
             r->y++;
         }
@@ -188,10 +187,10 @@ static void disk_write_track(void *mfm, uint16_t mfm_bytes)
     cust->dsklen = 0xc000 + mfm_bytes / 2;
 }
 
-static void disk_wait_dma(void)
+static void disk_wait_dma(bool_t is_hd)
 {
-    unsigned int i;
-    for (i = 0; i < 1000; i++) {
+    unsigned int i, timeout = is_hd ? 1000 : 500;
+    for (i = 0; i < timeout; i++) {
         if (cust->intreqr & INT_DSKBLK) /* dsk-blk-done? */
             break;
         delay_ms(1);
@@ -486,9 +485,9 @@ static void drive_read_test(unsigned int drv, struct char_row *r)
     data = allocmem((trk_secs+1) * 512);
 
     drive_select(drv, 1);
-    drive_check_ready(r);
-    seek_cyl0();
+    drive_check_ready(r, is_hd);
 
+    seek_cyl0();
     if (cur_cyl < 0) {
         sprintf(s, "No Track 0: Drive Not Present?");
         print_line(r);
@@ -530,7 +529,7 @@ static void drive_read_test(unsigned int drv, struct char_row *r)
             /* Read and decode a full track of data. */
             memset(mfmbuf, 0, mfm_bytes);
             disk_read_track(mfmbuf, mfm_bytes);
-            disk_wait_dma();
+            disk_wait_dma(is_hd);
             nr_secs = mfm_decode_track(mfmbuf, headers, data, mfm_bytes);
             valid_map = nr_valid = s[0] = 0;
             while (nr_secs--) {
@@ -622,10 +621,10 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
     data = allocmem((trk_secs+1) * 512);
 
     drive_select(drv, 1);
-    drive_check_ready(r);
-    seek_cyl0();
+    drive_check_ready(r, is_hd);
     r->y++;
 
+    seek_cyl0();
     if (cur_cyl < 0) {
         sprintf(s, "No Track 0: Drive Not Present?");
         print_line(r);
@@ -673,19 +672,19 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
             memset(mfmbuf, rnd, mfm_bytes);
             wait_for_index();
             disk_write_track(mfmbuf, mfm_bytes);
-            disk_wait_dma();
+            disk_wait_dma(is_hd);
 
             /* write */
             mfm_encode_track(mfmbuf, i, mfm_bytes, trk_secs);
             erase_wait = wait_for_index();
             disk_write_track(mfmbuf, mfm_bytes);
-            disk_wait_dma();
+            disk_wait_dma(is_hd);
 
             /* read */
             memset(mfmbuf, 0, mfm_bytes);
             write_wait = wait_for_index();
             disk_read_track(mfmbuf, mfm_bytes);
-            disk_wait_dma();
+            disk_wait_dma(is_hd);
 
             /* verify */
             nr_secs = mfm_decode_track(mfmbuf, headers, data, mfm_bytes);
@@ -752,6 +751,7 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     int done = 0;
     uint8_t key, good, progress = 0, head, cyl = 0;
     char progress_chars[] = "|/-\\";
+    bool_t is_hd = FALSE;
 
     r->x = r->y = 0;
     sprintf(s, "-- DF%u: Continuous Head Calibration Test --", drv);
@@ -763,7 +763,7 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     data = allocmem(12 * 512);
 
     drive_select(drv, 1);
-    drive_check_ready(r);
+    drive_wait_ready();
     seek_cyl0();
 
     if (cur_cyl < 0) {
@@ -782,7 +782,6 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     }
 
     /* Start the test proper. Print option keys and instructions. */
-    r->y--;
     sprintf(s, "$1 Re-Seek Current Cylinder$");
     print_line(r);
     r->y++;
@@ -839,7 +838,7 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
             ciab->prb &= ~CIABPRB_SIDE;
         memset(mfmbuf, 0, mfm_bytes);
         disk_read_track(mfmbuf, mfm_bytes);
-        disk_wait_dma();
+        disk_wait_dma(is_hd);
         nr_secs = mfm_decode_track(mfmbuf, headers, data, mfm_bytes);
         /* Default sector map is all X's (all sectors missing). */
         for (i = 0; i < 11; i++)
