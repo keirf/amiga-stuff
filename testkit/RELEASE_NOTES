@@ -3,6 +3,16 @@
 ** Keir Fraser <keir.xen@gmail.com>
 ************************************
 
+** v1.15 - 4 October 2020
+ - Floppy: Support HD disks for read/write tests
+   - Automatically detect HD disk via drive ID
+ - Floppy: Better READY and Drive ID reporting
+ - Main Menu improvements:
+   - Report Kickstart version info
+   - Convert manu options to two-column format
+ - Improved analog controller test
+   - Report min/max pot values
+
 ** v1.14 - 29 September 2020
  - New analog/proportional controller test
  - Rename joystick/mouse test to "Controller Ports Test"
