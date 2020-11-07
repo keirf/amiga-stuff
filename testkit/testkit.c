@@ -326,6 +326,18 @@ unsigned int ms_to_ticks(uint16_t ms)
     return mul32(ms, ticks_per_ms);
 }
 
+static uint8_t get_deniseid(void)
+{
+    uint8_t id = cust->deniseid;
+    int i;
+    for (i = 0; i < 32; i++) {
+        uint8_t id2 = cust->deniseid;
+        if (id != id2)
+            return 0xff;
+    }
+    return id;
+}
+
 static uint8_t detect_chipset_type(void)
 {
     /* Type = VPOSR[14:8]. Ignore bit 4 as this identifies PAL vs NTSC. */
@@ -336,7 +348,8 @@ static uint8_t detect_chipset_type(void)
         break;
     case 0x20: /* 8372 (Fatter Agnus) through rev 4 */
     case 0x21: /* 8372 (Fatter Agnus) rev 5 */
-        type = CHIPSET_ecs;
+        /* Full ECS requires Super Denise (8373) */
+        type = (get_deniseid() & 2) ? CHIPSET_ocs : CHIPSET_ecs;
         break;
     case 0x22: /* 8374 (Alice) thru rev 2 */
     case 0x23: /* 8374 (Alice) rev 3 through rev 4 */
