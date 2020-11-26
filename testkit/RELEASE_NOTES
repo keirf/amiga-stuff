@@ -3,6 +3,10 @@
 ** Keir Fraser <keir.xen@gmail.com>
 ************************************
 
+** v1.16 - 26 November 2020
+ - Report ECS only if both Agnus *and* Denise are ECS
+ - Video test cards for scaler calibration (hi-res pixel checkerboard)
+
 ** v1.15 - 4 October 2020
  - Floppy: Support HD disks for read/write tests
    - Automatically detect HD disk via drive ID
