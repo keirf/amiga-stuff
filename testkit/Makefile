@@ -34,7 +34,7 @@ entry.o: AFLAGS += -DDETECT_MEMORY
 $(NAME)-$(VER).zip: $(NAME).adf $(NAME) $(NAME).info README.md $(NAME).elf
 	$(RM) -r $(NAME)-$(VER)
 	mkdir -p $(NAME)-$(VER)/debug
-	cp $^ $(NAME)-$(VER)
+	cp $^ RELEASE_NOTES $(NAME)-$(VER)
 	mv $(NAME)-$(VER)/$(NAME).elf $(NAME)-$(VER)/debug
 	$(RM) $@
 	zip -r $@ $(NAME)-$(VER)

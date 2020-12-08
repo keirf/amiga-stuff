@@ -82,6 +82,7 @@ jobs:
         make all
         cd testkit
         make clean && make -j4 all VER=$VER
+        rm AmigaTestKit-$VER/RELEASE_NOTES
         git rev-parse HEAD >AmigaTestKit-$VER/COMMIT
         cd ..
         mkdir _cidist
