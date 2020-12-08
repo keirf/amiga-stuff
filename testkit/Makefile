@@ -1,5 +1,5 @@
 NAME := AmigaTestKit
-VER := v1.16
+VER := $(shell git rev-parse --short HEAD)
 
 OBJS += entry.o
 OBJS += cancellation.o
