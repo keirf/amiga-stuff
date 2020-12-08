@@ -208,10 +208,13 @@ static void crash(struct frame *f)
 
     /* Print the exception stack frame. */
     y += 2;
-    sprintf(s, "Exception #%02x (%u: %s) at PC %08x%s:",
-            exc_nr, exc_nr, exc_str(exc_nr), f->pc, src);
+    sprintf(s, "Exception #%02x (%u: %s)",
+            exc_nr, exc_nr, exc_str(exc_nr));
     print(x, y, s);
     x += 2;
+    y++;
+    sprintf(s, "PC: %08x%s", f->pc, src);
+    print(x, y, s);
     y++;
     sprintf(s, "d0: %08x  d1: %08x  d2: %08x  d3: %08x",
             f->d[0], f->d[1], f->d[2], f->d[3]);
