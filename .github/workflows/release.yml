@@ -1,0 +1,110 @@
+on:
+  push:
+    tags:
+    - 'testkit-v*.*'
+
+name: Release
+
+jobs:
+  build:
+    env:
+      AMIGAGCC_SHA: ea5e974248d
+      BINUTILS_RELEASE: 2.28
+      GCC_RELEASE: 7.1.0
+    runs-on: ubuntu-20.04
+
+    steps:
+
+    - uses: actions/checkout@v2
+
+    - name: Set environment variables
+      id: vars
+      run: |
+        echo "::set-output name=ref::$(echo ${{ github.ref }} | sed -e's#.*testkit-##')"
+
+    - name: Dependency packages
+      run: |
+        sudo apt update
+        sudo apt install -y autoconf bison build-essential flex gettext git lhasa libgmp-dev libmpc-dev libmpfr-dev ncurses-dev rsync texinfo wget tzdata zopfli python3-pip
+        python3 -m pip install --user crcmod
+
+    - name: Cache toolchain
+      id: cache-toolchain
+      uses: actions/cache@v2
+      with:
+        path: ~/cross
+        key: ${{ runner.os }}-${{ env.AMIGAGCC_SHA }}-${{ env.BINUTILS_RELEASE }}-${{ env.GCC_RELEASE }}
+
+    - name: Build toolchain
+      if: steps.cache-toolchain.outputs.cache-hit != 'true'
+      env:
+        MAKE_OPTS: -j4
+        MAKE_DIR: cross
+      run: |
+        git config --global pull.rebase false
+        export MDIR=$HOME/${MAKE_DIR}
+        mkdir -p $MDIR/bin
+        export PATH=$PATH:$MDIR
+        mkdir ~/_tc && cd ~/_tc
+        wget https://ftp.gnu.org/gnu/binutils/binutils-${BINUTILS_RELEASE}.tar.bz2
+        wget https://ftp.gnu.org/gnu/gcc/gcc-${GCC_RELEASE}/gcc-${GCC_RELEASE}.tar.bz2
+        wget http://sun.hasenbraten.de/vasm/release/vasm.tar.gz
+        wget http://sun.hasenbraten.de/vlink/release/vlink.tar.gz
+        tar xf binutils-${BINUTILS_RELEASE}.tar.bz2
+        tar xf gcc-${GCC_RELEASE}.tar.bz2
+        tar xf vasm.tar.gz
+        tar xf vlink.tar.gz
+        cd binutils-${BINUTILS_RELEASE}
+        ./configure --prefix=$MDIR --target=m68k-unknown-elf
+        make ${MAKE_OPTS}
+        make install
+        cd ../gcc-${GCC_RELEASE}
+        sed -i 's/--check/-c/g' contrib/download_prerequisites
+        ./contrib/download_prerequisites
+        mkdir ../gcc-build && cd ../gcc-build
+        ../gcc-${GCC_RELEASE}/configure --prefix=$MDIR --target=m68k-unknown-elf --enable-languages=c --disable-libssp
+        make ${MAKE_OPTS}
+        make install
+        cd ../vasm
+        make ${MAKE_OPTS} CPU=m68k SYNTAX=mot
+        cp vasmm68k_mot vobjdump $MDIR/bin/
+        cd ../vlink
+        make ${MAKE_OPTS}
+        cp vlink $MDIR/bin/
+        cd ..
+        git clone https://github.com/bebbo/amiga-gcc.git
+        cd amiga-gcc
+        git checkout ${AMIGAGCC_SHA}
+        make update
+        make all ${MAKE_OPTS} PREFIX=$MDIR verbose=y
+
+    - name: Build dist
+      run: |
+        export PATH=$PATH:~/cross/bin
+        export VER=${{ steps.vars.outputs.ref }}
+        make all
+        cd testkit
+        make clean && make -j4 all VER=$VER
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: "Amiga Test Kit ${{ steps.vars.outputs.ref }}"
+        body: "[**Download Amiga Test Kit ${{ steps.vars.outputs.ref }}**](https://github.com/keirf/Amiga-Stuff/releases/download/testkit-${{ steps.vars.outputs.ref }}/AmigaTestKit-${{ steps.vars.outputs.ref }}.zip)"
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: testkit/AmigaTestKit-${{ steps.vars.outputs.ref }}.zip
+        asset_name: AmigaTestKit-${{ steps.vars.outputs.ref }}.zip
+        asset_content_type: application/zip
