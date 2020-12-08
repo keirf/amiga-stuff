@@ -923,7 +923,7 @@ static void mainmenu(void)
     clear_whole_screen();
     keycode_buffer = 0;
 
-    sprintf(s, "Amiga Test Kit v%s - by Keir Fraser", version);
+    sprintf(s, "Amiga Test Kit %s - by Keir Fraser", version);
     centre_string(s, 44, ' ');
     print_line(&r);
     r.y++;

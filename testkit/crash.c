@@ -178,7 +178,7 @@ static void crash(struct frame *f)
     /* Print a banner. */
     x = 4;
     y = 0;
-    sprintf(s, "Amiga Test Kit v%s (build: %s %s)",
+    sprintf(s, "Amiga Test Kit %s (build: %s %s)",
             version, build_date, build_time);
     print(x, y, s);
 

@@ -1,5 +1,5 @@
 NAME := AmigaTestKit
-VER := 1.16
+VER := v1.16
 
 OBJS += entry.o
 OBJS += cancellation.o
@@ -25,19 +25,19 @@ include ../base/Rules.mk
 # build.o must be refreshed on every build
 .PHONY: build.c
 
-all: $(NAME)-v$(VER).zip
+all: $(NAME)-$(VER).zip
 
 build.o: CFLAGS += -DVER="\"$(VER)\""
 
 entry.o: AFLAGS += -DDETECT_MEMORY
 
-$(NAME)-v$(VER).zip: $(NAME).adf $(NAME) $(NAME).info README.md $(NAME).elf
-	$(RM) -r $(NAME)-v$(VER)
-	mkdir -p $(NAME)-v$(VER)/debug
-	cp $^ $(NAME)-v$(VER)
-	mv $(NAME)-v$(VER)/$(NAME).elf $(NAME)-v$(VER)/debug
+$(NAME)-$(VER).zip: $(NAME).adf $(NAME) $(NAME).info README.md $(NAME).elf
+	$(RM) -r $(NAME)-$(VER)
+	mkdir -p $(NAME)-$(VER)/debug
+	cp $^ $(NAME)-$(VER)
+	mv $(NAME)-$(VER)/$(NAME).elf $(NAME)-$(VER)/debug
 	$(RM) $@
-	zip -r $@ $(NAME)-v$(VER)
+	zip -r $@ $(NAME)-$(VER)
 
 $(NAME): $(NAME).exe
 	cp $< $@

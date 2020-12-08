@@ -1,5 +1,7 @@
 name: CI
+
 on: [push, pull_request]
+
 jobs:
   build:
     env:
@@ -7,9 +9,15 @@ jobs:
       BINUTILS_RELEASE: 2.28
       GCC_RELEASE: 7.1.0
     runs-on: ubuntu-20.04
+
     steps:
 
     - uses: actions/checkout@v2
+
+    - name: Set environment variables
+      id: vars
+      run: |
+        echo "::set-output name=sha_short::$(git rev-parse --short HEAD)"
 
     - name: Dependency packages
       run: |
@@ -71,9 +79,14 @@ jobs:
       run: |
         export PATH=$PATH:~/cross/bin
         make all
+        cd testkit
+        make clean && make -j4 all VER=${{ steps.vars.outputs.sha_short }}
+        cd ..
+        mkdir _cidist
+        mv testkit/AmigaTestKit-${{ steps.vars.outputs.sha_short }} _cidist/AmigaTestKit.CI.${{ steps.vars.outputs.sha_short }}
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: AmigaTestKit.CI.${{ github.run_number }}.${{ github.run_id }}
-        path: testkit/AmigaTestKit-v*.zip
+        name: AmigaTestKit.CI.${{ steps.vars.outputs.sha_short }}
+        path: _cidist
