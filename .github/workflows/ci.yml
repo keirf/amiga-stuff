@@ -78,12 +78,14 @@ jobs:
     - name: Build dist
       run: |
         export PATH=$PATH:~/cross/bin
+        export VER=${{ steps.vars.outputs.sha_short }}
         make all
         cd testkit
-        make clean && make -j4 all VER=${{ steps.vars.outputs.sha_short }}
+        make clean && make -j4 all VER=$VER
+        git rev-parse HEAD >AmigaTestKit-$VER/COMMIT
         cd ..
         mkdir _cidist
-        mv testkit/AmigaTestKit-${{ steps.vars.outputs.sha_short }} _cidist/AmigaTestKit.CI.${{ steps.vars.outputs.sha_short }}
+        mv testkit/AmigaTestKit-$VER _cidist/AmigaTestKit.CI.$VER
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
