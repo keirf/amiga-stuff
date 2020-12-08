@@ -56,4 +56,4 @@ $(NAME).adf: bootblock.bin $(NAME).bin
 
 clean::
 	$(RM) *.adf *.exe *.zip $(NAME) *.tmp *.gz
-	$(RM) -r $(NAME)-v* ptplayer/*.o
+	$(RM) -r $(NAME)-* ptplayer/*.o
