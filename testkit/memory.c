@@ -35,6 +35,9 @@ static uint32_t ub(uint32_t _ub)
     if (_ub > 0x10000000) {
         /* ZorroIII: Round to nearest 1MB (issue #6). */
         ub = (_ub + 0x7ffff) & ~0xfffff;
+    } else if ((_ub & 0xffff0000) == 0x00bf0000) {
+        /* No rounding up in the CIA reserved region (issue #39). */
+        ub = _ub;
     }
     return ub;
 }
