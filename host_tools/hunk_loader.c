@@ -20,6 +20,15 @@
 #include <unistd.h>
 #include <getopt.h>
 
+#if defined(__APPLE__) && defined(__MACH__)
+
+#include <libkern/OSByteOrder.h>
+
+#define htobe32(x) OSSwapHostToBigInt32(x)
+#define be32toh(x) OSSwapBigToHostInt32(x)
+
+#endif
+
 #define HUNK_HEADER       0x3F3
 #define HUNK_UNIT         0x3E7
 
