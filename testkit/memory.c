@@ -17,10 +17,33 @@
 
 static int delay_sec;
 
+/* Strict memory regions should not be rounded because they are close to
+ * critical memory-mapped resources (CIA, RTC, custom registers). Issue #39. */
+const static struct strict_region {
+    uint32_t val, mask;
+} strict_region[] = {
+    { 0x00bf0000, 0xffff0000 }, /* 0x00BF0000 - 0x00BFFFFF */
+    { 0x00dc0000, 0xfffc0000 }  /* 0x00DC0000 - 0x00DFFFFF */
+};
+
+static bool_t in_strict_region(uint32_t x)
+{
+    int i;
+    for (i = 0; i < ARRAY_SIZE(strict_region); i++) {
+        const struct strict_region *sr = &strict_region[i];
+        if ((x & sr->mask) == sr->val)
+            return TRUE;
+    }
+    return FALSE;
+}
+
 static uint32_t lb(uint32_t _lb)
 {
+    uint32_t lb;
+    if (in_strict_region(_lb))
+        return _lb;
     /* Round down to 64kB boundary. */
-    uint32_t lb = _lb & ~0xffff;
+    lb = _lb & ~0xffff;
     if (_lb > 0x10000000) {
         /* ZorroIII: Round to nearest 1MB (issue #6). */
         lb = (_lb + 0x7ffff) & ~0xfffff;
@@ -30,14 +53,14 @@ static uint32_t lb(uint32_t _lb)
 
 static uint32_t ub(uint32_t _ub)
 {
+    uint32_t ub;
+    if (in_strict_region(_ub))
+        return _ub;
     /* Round up to 64kB boundary. */
-    uint32_t ub = (_ub + 0xffff) & ~0xffff;
+    ub = (_ub + 0xffff) & ~0xffff;
     if (_ub > 0x10000000) {
         /* ZorroIII: Round to nearest 1MB (issue #6). */
         ub = (_ub + 0x7ffff) & ~0xfffff;
-    } else if ((_ub & 0xffff0000) == 0x00bf0000) {
-        /* No rounding up in the CIA reserved region (issue #39). */
-        ub = _ub;
     }
     return ub;
 }
