@@ -551,6 +551,8 @@ static void blitter_release(void)
 /* Wait for end of bitplane DMA. */
 void wait_bos(void)
 {
+    while (*(volatile uint8_t *)&cust->vhposr == 0xf0)
+        continue;
     while (*(volatile uint8_t *)&cust->vhposr != 0xf0)
         continue;
 }
