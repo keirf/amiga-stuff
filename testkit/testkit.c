@@ -944,13 +944,7 @@ static void mainmenu(void)
         r.y++;
     }
 
-    r.y++;
-    sprintf(s, " %s - %s/%s - %uHz ",
-            cpu.name, chipset_name[chipset_type],
-            is_pal ? "PAL" : "NTSC", vbl_hz);
-    centre_string(s, 44, '-');
-    print_line(&r);
-    r.y++;
+    r.y += 2;
     sprintf(s, " ROM: %s ", get_kick_string());
     centre_string(s, 44, '-');
     print_line(&r);
@@ -961,14 +955,28 @@ static void mainmenu(void)
     sprintf(s, "build: %s %s", build_date, build_time);
     print_line(&r);
 
+redo_hz:
+    r.y = 9;
+    sprintf(s, " %s - %s/%s - %uHz ",
+            cpu.name, chipset_name[chipset_type],
+            is_pal ? "PAL" : "NTSC", vbl_hz);
+    centre_string(s, 44, '-');
+    print_line(&r);
     r.y = 14;
-    sprintf(s, "$H System Reset$%34s[ATK %s]", "", version);
+    sprintf(s, "$H System Reset$     $E Switch to %dHz$%10s[ATK %s]",
+            (vbl_hz == 50) ? 60 : 50, "", version);
     print_line(&r);
     r.y--;
 
     while ((i = keycode_buffer - K_F1) >= ARRAY_SIZE(mainmenu_option)) {
         if (keycode_buffer == K_HELP)
             system_reset();
+        if (keycode_buffer == K_ESC) {
+            *(volatile uint16_t *)0xdff1dc = (vbl_hz == 50) ? 0x00 : 0x20;
+            vbl_hz = detect_vbl_hz();
+            keycode_buffer = 0;
+            goto redo_hz;
+        }
     }
 
     clear_whole_screen();
