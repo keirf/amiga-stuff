@@ -866,7 +866,7 @@ void print_menu_nav_line(void)
 {
     char s[80];
     struct char_row r = { .x = 4, .y = 14, .s = s };
-    sprintf(s, "$C main menu$  $E up one menu$");
+    sprintf(s, "$C main menu$  $E up one menu$%7s[ATK %s]", "", version);
     print_line(&r);
 }
 
@@ -962,7 +962,7 @@ static void mainmenu(void)
     print_line(&r);
 
     r.y = 14;
-    sprintf(s, "$H System Reset$");
+    sprintf(s, "$H System Reset$%34s[ATK %s]", "", version);
     print_line(&r);
     r.y--;
 

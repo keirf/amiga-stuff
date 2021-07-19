@@ -233,7 +233,7 @@ void kbdcheck(void)
     sprintf(s, "Raw Keycodes:");
     print_line(&r);
     r.y = 14;
-    sprintf(s, "$C main menu$");
+    sprintf(s, "$C main menu$%21s[ATK %s]", "", version);
     print_line(&r);
     r.y = 11;
 
