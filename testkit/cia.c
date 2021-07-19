@@ -167,7 +167,8 @@ static void cia_timer_test(void)
     uint16_t i, times[2][4];
     uint32_t exp, exp_irq, tot[4] = { 0 };
     unsigned int hsync_per_vbl = (vbl_hz == 50) ? 313 : 263;
-    bool_t all_in_tol = TRUE;
+    bool_t all_in_tol = TRUE, true_vbl_hz_is_good;
+    uint32_t true_vbl_hz, x, y;
 
     sprintf(s, "-- CIA Timer Test --");
     print_line(&r);
@@ -198,7 +199,19 @@ static void cia_timer_test(void)
     ciaa->icr = CIAICR_TIMER_A | CIAICR_TIMER_B;
     ciab->icr = CIAICR_TIMER_A | CIAICR_TIMER_B;
 
-    exp = div32(cpu_hz*10, vbl_hz);
+    x = div32(tot[1]+20, 40); /* x = ticks_per_vbl * 2.5 */
+    true_vbl_hz = div32(cpu_hz*25+(x>>1), x); /* 250*ticks_per_sec / x */
+    x = true_vbl_hz; /* true_vbl_hz = 100 * ticks_per_sec / ticks_per_vbl */
+    y = do_div(x, 100);
+    true_vbl_hz_is_good = ((x >= (vbl_hz - 5)) && (x <= (vbl_hz + 5)));
+    sprintf(s, "Detected VBlank frequency is %u.%02uHz -> %s", x, y,
+            true_vbl_hz_is_good ? "OK" : "FAIL");
+    print_line(&r);
+    r.y++;
+    if (!true_vbl_hz_is_good)
+        true_vbl_hz = vbl_hz * 100;
+
+    exp = div32(cpu_hz*10*50, true_vbl_hz>>1);
     exp_irq = exp >> 16;
     sprintf(s, "Expect %u Ticks and %u-%u IRQs during 100 VBLs:",
             exp, exp_irq, exp_irq+1);
