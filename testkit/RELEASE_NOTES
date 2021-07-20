@@ -3,6 +3,13 @@
 ** Keir Fraser <keir.xen@gmail.com>
 ************************************
 
+** v1.18 - 20 July 2021
+ - Display ATK version at bottom of every test screen
+ - Base CIA timer test on true detected VBL frequency
+ - Fix alternating checkerboard to colour-cycle once per frame
+ - Remove 30-second motor tiemout from floppy drive signal test
+ - Do not memory-test in the DC0000-DFFFFF region (issue 39)
+
 ** v1.17 - 2 July 2021
  - Report ROM v47.x as Kickstart 3.2 (issue 46)
  - Do not memory-test in the BFxxxx CIA region (issue 39)
