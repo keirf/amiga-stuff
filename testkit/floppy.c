@@ -732,8 +732,8 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     void *mfmbuf, *data;
     struct sec_header *headers;
     unsigned int i, mfm_bytes = 13100, nr_secs;
-    int done = 0;
-    uint8_t key, good, progress = 0, head, cyl = 0;
+    int done = 0, cyl = 0;
+    uint8_t key, good, progress = 0, head;
     char progress_chars[] = "|/-\\";
     bool_t is_hd = FALSE;
 
@@ -769,13 +769,16 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     sprintf(s, "$1 Re-Seek Current Cylinder$");
     print_line(r);
     r->y++;
-    sprintf(s, "$2 Cylinder: %u$", cyl);
+    sprintf(s, "Change Cyl: $2+40$  $3+10$  $4-10$  $5+1$  $6-1$");
     print_line(r);
     r->y += 2;
     sprintf(s, "-> Use an AmigaDOS disk written by a well-calibrated drive.");
     print_line(r);
     r->y++;
     sprintf(s, "-> Adjust drive until 11 valid sectors found on both sides.");
+    print_line(r);
+    r->y++;
+    sprintf(s, "-> Calibrate a few cylinders across the full range (0-79).");
     print_line(r);
     r->y += 5;
     sprintf(s, "    (.:okay X:missing -:cyl-low +:cyl-high)");
@@ -791,25 +794,40 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
         if (done)
             goto out;
         if (key) {
+            enum {SEEK_NONE=0, SEEK_FAST, SEEK_SLOW} seek = SEEK_NONE;
             keycode_buffer = 0;
-            if (key == K_F2) {
-                cyl = (cyl == 0) ? 40 : (cyl == 40) ? 79 : 0;
-                r->y -= 5;
-                sprintf(s, "$2 Cylinder: %u$", cyl);
-                wait_bos();
-                print_line(r);
-                r->y += 5;
-                key = K_F1; /* re-seek */
+            if ((key >= K_F2) && (key <= K_F6)) {
+                switch (key) {
+                case K_F2: cyl += 40; break;
+                case K_F3: cyl += 10; break;
+                case K_F4: cyl -= 10; break;
+                case K_F5: cyl +=  1; break;
+                case K_F6: cyl -=  1; break;
+                }
+                if (cyl < 0) cyl += 80;
+                if (cyl >= 80) cyl -= 80;
+                if (0) {
+                    r->y -= 1;
+                    sprintf(s, "Cylinder %2u:", cyl);
+                    wait_bos();
+                    print_line(r);
+                    r->y += 1;
+                }
+                seek = SEEK_FAST;
             }
-            if (key == K_F1) {
+            if (key == K_F1)
+                seek = SEEK_SLOW;
+            if (seek != SEEK_NONE) {
                 /* Step away from and back to cylinder 0. Useful after 
                  * stepper and cyl-0 sensor adjustments. */
                 sprintf(s, "Seeking...");
                 wait_bos();
                 clear_text_rows(r->y+1, 1); /* clear side-1 text */
                 print_line(r); /* overwrites side-0 text */
-                seek_track(80);
-                seek_cyl0();
+                if (seek == SEEK_SLOW) {
+                    seek_track(80);
+                    seek_cyl0();
+                }
                 seek_track(cyl*2);
                 head = 0;
                 wait_bos();
@@ -844,9 +862,9 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
         /* Update status message. */
         if (head)
             r->y++;
-        sprintf(s, "%c Side %u (%ser) Cyl.Nrs: %s (%u/11 okay)",
+        sprintf(s, "%c Cyl %u Head %u (%ser): %s (%u/11 okay)",
                 progress_chars[(progress+(head?2:0))&3],
-                head, head ? "Upp" : "Low", map, good);
+                cyl, head, head ? "Upp" : "Low", map, good);
         wait_bos();
         print_line(r);
         if (head) {
