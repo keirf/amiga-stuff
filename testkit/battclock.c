@@ -1,7 +1,10 @@
 /*
  * battclock.c
  * 
- * Test the Oki MSM6242B / Ricoh RP5C01 battery-backed clock.
+ * Test the battery-backed real-time clock.
+ * Supported chips:
+ *  * Oki MSM6242 (also Epson RTC-62421/62423/72421/72423)
+ *  * Ricoh RP5C01
  * 
  * Written & released by Keir Fraser <keir.xen@gmail.com>
  * 
@@ -492,7 +495,7 @@ redisplay:
         sprintf(s, "** No Clock Detected **");
     } else {
         sprintf(s, "%s detected at %08x",
-                (bc.type == BC_RP5C01) ? "RP5C01" : "MSM6242",
+                (bc.type == BC_RP5C01) ? "RP5C01" : "6242/7242",
                 bc.base);
     }
     r.x = 7;
