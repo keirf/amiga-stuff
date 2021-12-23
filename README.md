@@ -1,4 +1,4 @@
-# Amiga-Stuff: Code & Tools for Amigas
+# Amiga Stuff: Code & Tools for Amigas
 
 ## Amiga Test Kit
 
@@ -6,7 +6,7 @@
 ![Downloads Badge][downloads-badge]
 ![Version Badge][version-badge]
 
-### Download the latest release of Amiga Test Kit [here (Github)](https://github.com/keirf/Amiga-Stuff/releases/download/testkit-v1.18/AmigaTestKit-v1.18.zip).
+### Download the latest release of Amiga Test Kit [here (Github)](https://github.com/keirf/amiga-stuff/releases/download/testkit-v1.18/AmigaTestKit-v1.18.zip).
 
 ### Build From Source (Docker)
 
@@ -96,6 +96,6 @@ file header comments and run-time help info.
   Small and efficient implementation of Inflate, as specified
   in RFC 1951 "DEFLATE Compressed Data Format Specification".
 
-[ci-badge]: https://github.com/keirf/Amiga-Stuff/workflows/CI/badge.svg
-[downloads-badge]: https://img.shields.io/github/downloads/keirf/Amiga-Stuff/total
-[version-badge]: https://img.shields.io/github/v/release/keirf/Amiga-Stuff
+[ci-badge]: https://github.com/keirf/amiga-stuff/workflows/CI/badge.svg
+[downloads-badge]: https://img.shields.io/github/downloads/keirf/amiga-stuff/total
+[version-badge]: https://img.shields.io/github/v/release/keirf/amiga-stuff

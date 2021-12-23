@@ -92,7 +92,7 @@ jobs:
       with:
         tag_name: ${{ github.ref }}
         release_name: "Amiga Test Kit ${{ steps.vars.outputs.ref }}"
-        body: "[**Download Amiga Test Kit ${{ steps.vars.outputs.ref }}**](https://github.com/keirf/Amiga-Stuff/releases/download/testkit-${{ steps.vars.outputs.ref }}/AmigaTestKit-${{ steps.vars.outputs.ref }}.zip)"
+        body: "[**Download Amiga Test Kit ${{ steps.vars.outputs.ref }}**](https://github.com/keirf/amiga-stuff/releases/download/testkit-${{ steps.vars.outputs.ref }}/AmigaTestKit-${{ steps.vars.outputs.ref }}.zip)"
         draft: false
         prerelease: false
 
