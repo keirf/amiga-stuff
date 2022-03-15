@@ -735,7 +735,8 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     int done = 0, cyl = 0;
     uint8_t key, good, progress = 0, head;
     char progress_chars[] = "|/-\\";
-    bool_t is_hd = FALSE;
+    uint32_t id = drive_id(drv);
+    bool_t is_hd = (id == DRT_150RPM);
 
     r->x = r->y = 0;
     sprintf(s, "-- DF%u: Continuous Head Calibration Test --", drv);
@@ -763,6 +764,15 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
             print_line(r);
             goto out;
         }
+    }
+
+    if (is_hd) {
+        sprintf(s, "HD disks are unsupported for head calibration.");
+        print_line(r);
+        r->y++;
+        sprintf(s, "Please retry with a DD 880kB AmigaDOS disk.");
+        print_line(r);
+        goto out;
     }
 
     /* Start the test proper. Print option keys and instructions. */
