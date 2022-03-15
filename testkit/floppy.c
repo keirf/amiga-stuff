@@ -198,7 +198,9 @@ static void disk_wait_dma(bool_t is_hd)
     cust->dsklen = 0x4000; /* no more dma */
 }
 
-/* Amiga Drive IDs, from resources/disk.i */
+/* Amiga Drive IDs, from resources/disk.i.
+ * These disagree in part with the Hardware Reference Manual, however it is
+ * the HRM which is wrong (see discussion in Github issue #58). */
 #define DRT_AMIGA      0x00000000
 #define DRT_37422D2S   0x55555555
 #define DRT_EMPTY      0xFFFFFFFF
