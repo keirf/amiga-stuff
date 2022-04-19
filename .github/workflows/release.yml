@@ -19,7 +19,7 @@ jobs:
     - name: Set environment variables
       id: vars
       run: |
-        echo "::set-output name=ref::$(echo ${{ github.ref }} | sed -e's#.*testkit-##')"
+        echo "::set-output name=ver::$(echo ${{ github.ref }} | sed -e's#.*testkit-v##')"
 
     - name: Dependency packages
       run: |
@@ -79,7 +79,7 @@ jobs:
     - name: Build dist
       run: |
         export PATH=$PATH:~/cross/bin
-        export VER=${{ steps.vars.outputs.ref }}
+        export VER=${{ steps.vars.outputs.ver }}
         make all
         cd testkit
         make clean && make -j4 all VER=$VER
@@ -91,8 +91,8 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ github.ref }}
-        release_name: "Amiga Test Kit ${{ steps.vars.outputs.ref }}"
-        body: "[**Download Amiga Test Kit ${{ steps.vars.outputs.ref }}**](https://github.com/keirf/amiga-stuff/releases/download/testkit-${{ steps.vars.outputs.ref }}/AmigaTestKit-${{ steps.vars.outputs.ref }}.zip)"
+        release_name: "Amiga Test Kit ${{ steps.vars.outputs.ver }}"
+        body: "[**Download Amiga Test Kit ${{ steps.vars.outputs.ver }}**](https://github.com/keirf/amiga-stuff/releases/download/testkit-v${{ steps.vars.outputs.ver }}/AmigaTestKit-${{ steps.vars.outputs.ver }}.zip)"
         draft: false
         prerelease: false
 
@@ -103,6 +103,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: testkit/AmigaTestKit-${{ steps.vars.outputs.ref }}.zip
-        asset_name: AmigaTestKit-${{ steps.vars.outputs.ref }}.zip
+        asset_path: testkit/AmigaTestKit-${{ steps.vars.outputs.ver }}.zip
+        asset_name: AmigaTestKit-${{ steps.vars.outputs.ver }}.zip
         asset_content_type: application/zip
