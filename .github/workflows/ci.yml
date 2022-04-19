@@ -83,11 +83,12 @@ jobs:
         rm AmigaTestKit-$VER/RELEASE_NOTES
         git rev-parse HEAD >AmigaTestKit-$VER/COMMIT
         cd ..
-        mkdir _cidist
-        mv testkit/AmigaTestKit-$VER _cidist/AmigaTestKit.CI.$VER
+        mkdir -p _cidist/amiga-stuff.ci.$VER
+        mv testkit/AmigaTestKit-$VER _cidist/amiga-stuff.ci.$VER
+        cp -a host_tools inflate _cidist/amiga-stuff.ci.$VER
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: AmigaTestKit.CI.${{ steps.vars.outputs.sha_short }}
+        name: amiga-stuff.ci.${{ steps.vars.outputs.sha_short }}
         path: _cidist
