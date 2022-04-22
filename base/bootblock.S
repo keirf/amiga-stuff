@@ -52,13 +52,13 @@ pl_load_len: dc.l 0
         moveq   #MEMF_PUBLIC|MEMF_CHIP,d1
         cmp.w   #37,LibBase_Version(a6)
         jcs     1f
-        moveq   #MEMF_PUBLIC,d1  /* exec >= 37: don;t need to load into chip */
+        moveq   #MEMF_PUBLIC,d1  /* exec >= 37: don't need to load into chip */
 1:      jsr     Exec_AllocMem(a6)
         move.l  (sp),a1
         move.l  d0,-(sp)
         jeq     error
 
-        /* Load data. */
+        /* Load the INFLATE routine and the compressed payload data. */
         moveq   #3-1,d2 /* max three attempts */
 1:      move.l  (sp),d0
         add.l   pl_load_off(pc),d0
@@ -74,7 +74,8 @@ pl_load_len: dc.l 0
 
         jbsr    motor_off
 
-        /* Allocate chip memory for full bootblock. */
+        /* Allocate memory for INFLATE. We cannot run it from the payload
+         * area as it will be overwritten during payload decompression. */
         move.l  #pl_data-start,d0
         moveq   #MEMF_PUBLIC,d1
         jsr     Exec_AllocMem(a6)
@@ -82,7 +83,7 @@ pl_load_len: dc.l 0
         move.l  d0,-(sp)
         jeq     error
 
-        /* Copy full bootblock to allocated area. */
+        /* Copy INFLATE routine from payload to its own allocated area. */
         move.l  (sp),a1
         move.l  4(sp),a0
         add.l   pl_load_off(pc),a0
@@ -92,17 +93,17 @@ pl_load_len: dc.l 0
 1:      move.l  (a0)+,(a1)+
         dbf     d0,1b
 
-        /* Call into the full bootblock to perform inflate. */
+        /* Call INFLATE. */
         jbsr    cache_clear
         move.l  (sp)+,a0
-        jsr     1f-start(a0)
+        jsr     INFLATE-start(a0)
 
-        /* On return we jump at the inflated payload. */
+        /* Jump to the decompressed payload. */
         move.l  (sp)+,a0        /* a0 = payload data */
         move.l  (sp)+,a1        /* a1 = TDIOReq */
         jmp     (a0)
 
-1:      /* Inflate. */
+INFLATE:
         move.l  4(sp),a4        /* a4 = dest */
         lea     pl_data-start(a4),a5
         add.l   pl_load_off(pc),a5 /* a5 = src */
@@ -110,14 +111,14 @@ pl_load_len: dc.l 0
 
         jbsr    cache_clear
 
-        /* Free full bootblock and return to caller. */
+        /* Deallocate the INFLATE memory area and return to the bootblock. */
         lea     start(pc),a1
         move.l  #pl_data-start,d0
         move.l  (4).w,a6
         jmp     Exec_FreeMem(a6)
 
 cache_clear:
-        /* We have loaded code from disk: Flush caches if possible */
+        /* Code has been written to memory: Flush caches if possible. */
         cmp.w   #37,LibBase_Version(a6) /* exec.lib_version >= 37? */
         jcs     1f
         jsr     Exec_CacheClearU(a6)
