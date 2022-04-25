@@ -513,8 +513,11 @@ static void system_reset(void)
 {
     int _system_reset(void *unused)
     {
-        /* EAB, thread 78548 "Amiga hardware reset" */
-        asm volatile ( "lea (2).w,%a0; reset; jmp (%a0)" );
+        /* EAB, thread 78548 "Amiga hardware reset".
+         * The longword alignment is included, despite commentary in the above
+         * thread, just to be on the safe side since it costs so little.
+         */
+        asm volatile ( "lea (2).w,%a0; .balignw 4,0x4e71; reset; jmp (%a0)" );
         return 0;
     }
 
