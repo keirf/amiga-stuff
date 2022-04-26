@@ -513,11 +513,21 @@ static void system_reset(void)
 {
     int _system_reset(void *unused)
     {
-        /* EAB, thread 78548 "Amiga hardware reset".
-         * The longword alignment is included, despite commentary in the above
-         * thread, just to be on the safe side since it costs so little.
+        /* Amiga Hardware Reference Manual, 3ed, "System Control Hardware".
+         * Replaces the code from EAB, thread 78548 "Amiga hardware reset".
+         * By reading the RESET entry point directly from the ROM we avoid
+         * jumping into the reset-time ROM overlay in low memory. That method
+         * assumes there is a JMP instruction in overlay memory at address 0x2,
+         * which is not the case for some non-Kickstart overlays, including the
+         * ACA500plus FlashROM (see GitHub issue #55).
          */
-        asm volatile ( "lea (2).w,%a0; .balignw 4,0x4e71; reset; jmp (%a0)" );
+        asm volatile (
+            "lea.l  0x01000000,%a0\n" /* MAGIC_ROMEND */
+            "sub.l  -0x14(%a0),%a0\n" /* MAGIC_SIZEOFFSET */
+            "move.l 4(%a0),%a0\n"     /* Reset Initial PC */
+            "subq.l #2,%a0\n"         /* 2nd RESET instruction (in ROM) */
+            ".balignw 4,0x4e71\n"     /* Longword alignment (paranoia) */
+            "reset; jmp (%a0)" );     /* JMP is executed from prefetch */
         return 0;
     }
 
