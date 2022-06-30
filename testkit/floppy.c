@@ -751,6 +751,13 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     bool_t is_hd = (id == DRT_150RPM);
     int8_t headsel = -1;
     struct char_row headsel_r;
+    struct reseek {
+        uint32_t last_time;
+        uint32_t interval;
+        int8_t sel;
+        struct char_row r;
+    } reseek = { .sel = 0 };
+    const uint8_t reseek_options[] = { 0, 1, 2, 3, 5, 10, 30 };
 
     r->x = r->y = 0;
     sprintf(s, "-- DF%u: Continuous Head Calibration Test --", drv);
@@ -799,6 +806,10 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     headsel_r = *r;
     sprintf(s, "Head(s): $7 Both$");
     print_line(r);
+    r->y++;
+    reseek.r = *r;
+    sprintf(s, "Auto re-seek: $8 Off$");
+    print_line(r);
     r->y += 2;
     sprintf(s, "-> Use an AmigaDOS disk written by a well-calibrated drive.");
     print_line(r);
@@ -821,6 +832,9 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
         done = (do_exit || (key == K_ESC));
         if (done)
             goto out;
+        if (reseek.sel && !key && get_time() - reseek.last_time > reseek.interval) {
+            key = K_F1;
+        }
         if (key) {
             enum {SEEK_NONE=0, SEEK_FAST, SEEK_SLOW} seek = SEEK_NONE;
             keycode_buffer = 0;
@@ -854,6 +868,20 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
                 clear_text_rows(headsel_r.y, 1);
                 print_line(&headsel_r);
             }
+            if (key == K_F8) {
+                reseek.sel++;
+                if (reseek.sel >= sizeof(reseek_options)/sizeof(reseek_options[0]))
+                    reseek.sel = 0;
+                reseek.interval = ms_to_ticks(1000 * reseek_options[reseek.sel]);
+                reseek.last_time = get_time();
+                if (reseek.sel)
+                    sprintf(s, "Auto re-seek: $8 %u sec$", reseek_options[reseek.sel]);
+                else
+                    sprintf(s, "Auto re-seek: $8 Off$");
+                wait_bos();
+                clear_text_rows(reseek.r.y, 1);
+                print_line(&reseek.r);
+            }
             if (key == K_F1)
                 seek = SEEK_SLOW;
             if (seek != SEEK_NONE) {
@@ -871,6 +899,7 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
                 head = headsel >= 0 ? headsel : 0;
                 wait_bos();
                 clear_text_rows(r->y, 1); /* clear seek text */
+                reseek.last_time = get_time();
             }
         }
         /* Read and decode a full track of data. */
