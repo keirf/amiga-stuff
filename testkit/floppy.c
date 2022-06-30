@@ -335,6 +335,7 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
                         ~pra & CIAAPRA_WPRO ? "/WPR" : "",
                         ~pra & CIAAPRA_TK0  ? "/TK0" : "",
                         ~pra & CIAAPRA_RDY  ? "/RDY" : "");
+                wait_bos();
                 print_line(r);
                 old_pra = pra;
             }
@@ -346,6 +347,7 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
                         prb & CIABPRB_DIR ? '-' : '+',
                         prb & CIABPRB_SIDE ? 'H' : 'L',
                         prb & CIABPRB_SIDE ? "0/lower" : "1/upper");
+                wait_bos();
                 print_line(r);
                 r->y -= 4;
                 old_prb = prb;
@@ -360,6 +362,7 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
                         !!(motors&(1u<<drv)) ? "On" : "Off",
                         !!(old_pra & CIAAPRA_RDY), rdystr);
                 r->y++;
+                wait_bos();
                 print_line(r);
                 r->y--;
                 old_disk_index_count = disk_index_count;
