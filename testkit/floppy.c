@@ -742,10 +742,12 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     struct sec_header *headers;
     unsigned int i, mfm_bytes = 13100, nr_secs;
     int done = 0, cyl = 0;
-    uint8_t key, good, progress = 0, head;
+    uint8_t key, good, progress[2] = {0, 0}, head;
     char progress_chars[] = "|/-\\";
     uint32_t id = drive_id(drv);
     bool_t is_hd = (id == DRT_150RPM);
+    int8_t headsel = -1;
+    struct char_row headsel_r;
 
     r->x = r->y = 0;
     sprintf(s, "-- DF%u: Continuous Head Calibration Test --", drv);
@@ -789,6 +791,10 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     print_line(r);
     r->y++;
     sprintf(s, "Change Cyl: $2+40$  $3+10$  $4-10$  $5+1$  $6-1$");
+    print_line(r);
+    r->y++;
+    headsel_r = *r;
+    sprintf(s, "Head(s): $7 Both$");
     print_line(r);
     r->y += 2;
     sprintf(s, "-> Use an AmigaDOS disk written by a well-calibrated drive.");
@@ -834,6 +840,17 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
                 }
                 seek = SEEK_FAST;
             }
+            if (key == K_F7) {
+                headsel++;
+                if (headsel > 1)
+                    headsel = -1;
+                sprintf(s, "Head(s): $7 %s$",
+                        headsel == -1 ? "Both" :
+                        headsel == 0 ? "0/lower" : "1/upper");
+                wait_bos();
+                clear_text_rows(headsel_r.y, 1);
+                print_line(&headsel_r);
+            }
             if (key == K_F1)
                 seek = SEEK_SLOW;
             if (seek != SEEK_NONE) {
@@ -848,7 +865,7 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
                     seek_cyl0();
                 }
                 seek_track(cyl*2);
-                head = 0;
+                head = headsel >= 0 ? headsel : 0;
                 wait_bos();
                 clear_text_rows(r->y, 1); /* clear seek text */
             }
@@ -882,15 +899,17 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
         if (head)
             r->y++;
         sprintf(s, "%c Cyl %u Head %u (%ser): %s (%u/11 okay)",
-                progress_chars[(progress+(head?2:0))&3],
+                progress_chars[progress[head]&3],
                 cyl, head, head ? "Upp" : "Low", map, good);
         wait_bos();
         print_line(r);
-        if (head) {
+        if (head)
             r->y--;
-            progress++;
-        }
-        head ^= 1;
+        progress[head]++;
+        if (headsel == -1)
+            head ^= 1;
+        else
+            head = headsel;
     }
 
 out:
