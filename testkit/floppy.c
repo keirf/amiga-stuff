@@ -340,8 +340,9 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
             }
             if ((prb != old_prb) || key) {
                 r->y += 4;
-                sprintf(s, "$7 STEP=%u$  $8 DIR=%u$",
-                        !!(prb & CIABPRB_STEP), !!(prb & CIABPRB_DIR));
+                sprintf(s, "$7 STEP=%u$  $8 DIR=%u$  $9 SIDE=%u$",
+                        !!(prb & CIABPRB_STEP), !!(prb & CIABPRB_DIR),
+                        !!(prb & CIABPRB_SIDE));
                 print_line(r);
                 r->y -= 4;
                 old_prb = prb;
@@ -382,6 +383,9 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
                 key = 0; /* don't force print */
             } else if (key == 0x57) { /* F8 */
                 ciab->prb ^= CIABPRB_DIR;
+                key = 0; /* don't force print */
+            } else if (key == 0x58) { /* F9 */
+                ciab->prb ^= CIABPRB_SIDE;
                 key = 0; /* don't force print */
             } else if (key == K_ESC) { /* ESC */
                 break;
