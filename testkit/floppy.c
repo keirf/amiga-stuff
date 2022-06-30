@@ -331,18 +331,21 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
                         motors&(1u<<2) ? '2' : ' ',
                         motors&(1u<<3) ? '3' : ' ',
                         pra,
-                        ~pra & CIAAPRA_CHNG ? "CHG" : "",
-                        ~pra & CIAAPRA_WPRO ? "WPR" : "",
-                        ~pra & CIAAPRA_TK0  ? "TK0" : "",
-                        ~pra & CIAAPRA_RDY  ? "RDY" : "");
+                        ~pra & CIAAPRA_CHNG ? "/CHG" : "",
+                        ~pra & CIAAPRA_WPRO ? "/WPR" : "",
+                        ~pra & CIAAPRA_TK0  ? "/TK0" : "",
+                        ~pra & CIAAPRA_RDY  ? "/RDY" : "");
                 print_line(r);
                 old_pra = pra;
             }
             if ((prb != old_prb) || key) {
                 r->y += 4;
-                sprintf(s, "$7 STEP=%u$  $8 DIR=%u$  $9 SIDE=%u$",
-                        !!(prb & CIABPRB_STEP), !!(prb & CIABPRB_DIR),
-                        !!(prb & CIABPRB_SIDE));
+                sprintf(s, "$7 /STEP=%c$  $8 DIR=%c (%c1)$  $9 /SIDE=%c (head %s)$",
+                        prb & CIABPRB_STEP ? 'H' : 'L',
+                        prb & CIABPRB_DIR ? 'H' : 'L',
+                        prb & CIABPRB_DIR ? '-' : '+',
+                        prb & CIABPRB_SIDE ? 'H' : 'L',
+                        prb & CIABPRB_SIDE ? "0/lower" : "1/upper");
                 print_line(r);
                 r->y -= 4;
                 old_prb = prb;
