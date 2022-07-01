@@ -885,7 +885,7 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
                 clear_text_rows(r->y+1, 1); /* clear side-1 text */
                 print_line(r); /* overwrites side-0 text */
                 if (seek == SEEK_SLOW) {
-                    seek_track(80);
+                    seek_track(79*2);
                     seek_cyl0();
                 }
                 seek_track(cyl*2);
