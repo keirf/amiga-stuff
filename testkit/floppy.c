@@ -264,6 +264,8 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
     uint32_t rdy_delay, mtr_time;
     int rdy_changed;
 
+    r->x = 6;
+
     while (!do_exit && (key != K_ESC)) {
 
         /* Oddities of external drives when motor is off:
@@ -341,12 +343,13 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
             }
             if ((prb != old_prb) || key) {
                 r->y += 4;
-                sprintf(s, "$7 /STEP=%c$  $8 DIR=%c (%c1)$  $9 /SIDE=%c (head %s)$",
+                sprintf(s, "$7 /STEP=%c$  $8 /DIR=%c (%3s)$  "
+                        "$9 /SIDE=%c (%s)$",
                         prb & CIABPRB_STEP ? 'H' : 'L',
                         prb & CIABPRB_DIR ? 'H' : 'L',
-                        prb & CIABPRB_DIR ? '-' : '+',
+                        prb & CIABPRB_DIR ? "Out" : "In",
                         prb & CIABPRB_SIDE ? 'H' : 'L',
-                        prb & CIABPRB_SIDE ? "0/lower" : "1/upper");
+                        prb & CIABPRB_SIDE ? "0/Lower" : "1/Upper");
                 wait_bos();
                 print_line(r);
                 r->y -= 4;
@@ -745,12 +748,11 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     struct sec_header *headers;
     unsigned int i, mfm_bytes = 13100, nr_secs;
     int done = 0, cyl = 0;
-    uint8_t key, good, progress[2] = {0, 0}, head;
+    uint8_t key, good, progress = 0, head;
     char progress_chars[] = "|/-\\";
     uint32_t id = drive_id(drv);
     bool_t is_hd = (id == DRT_150RPM);
     int8_t headsel = -1;
-    struct char_row headsel_r;
     struct reseek {
         uint32_t last_time;
         uint32_t interval;
@@ -758,6 +760,7 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
         struct char_row r;
     } reseek = { .sel = 0 };
     const uint8_t reseek_options[] = { 0, 1, 2, 3, 5, 10, 30 };
+    char reseek_str[10] = "Off";
 
     r->x = r->y = 0;
     sprintf(s, "-- DF%u: Continuous Head Calibration Test --", drv);
@@ -803,21 +806,14 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     sprintf(s, "Change Cyl: $2+40$  $3+10$  $4-10$  $5+1$  $6-1$");
     print_line(r);
     r->y++;
-    headsel_r = *r;
-    sprintf(s, "Head(s): $7 Both$");
-    print_line(r);
-    r->y++;
     reseek.r = *r;
-    sprintf(s, "Auto re-seek: $8 Off$");
+    sprintf(s, "$7 Head(s): Both   $   $8 Auto re-seek: Off   $");
     print_line(r);
     r->y += 2;
     sprintf(s, "-> Use an AmigaDOS disk written by a well-calibrated drive.");
     print_line(r);
     r->y++;
     sprintf(s, "-> Adjust drive until 11 valid sectors found on both sides.");
-    print_line(r);
-    r->y++;
-    sprintf(s, "-> Calibrate a few cylinders across the full range (0-79).");
     print_line(r);
     r->y += 5;
     sprintf(s, "    (.:okay X:missing -:cyl-low +:cyl-high)");
@@ -832,7 +828,8 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
         done = (do_exit || (key == K_ESC));
         if (done)
             goto out;
-        if (reseek.sel && !key && get_time() - reseek.last_time > reseek.interval) {
+        if (reseek.sel && !key
+            && (get_time() - reseek.last_time) > reseek.interval) {
             key = K_F1;
         }
         if (key) {
@@ -848,38 +845,34 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
                 }
                 if (cyl < 0) cyl += 80;
                 if (cyl >= 80) cyl -= 80;
-                if (0) {
-                    r->y -= 1;
-                    sprintf(s, "Cylinder %2u:", cyl);
-                    wait_bos();
-                    print_line(r);
-                    r->y += 1;
-                }
                 seek = SEEK_FAST;
             }
             if (key == K_F7) {
-                headsel++;
-                if (headsel > 1)
+                if (++headsel > 1) {
                     headsel = -1;
-                sprintf(s, "Head(s): $7 %s$",
-                        headsel == -1 ? "Both" :
-                        headsel == 0 ? "0/lower" : "1/upper");
-                wait_bos();
-                clear_text_rows(headsel_r.y, 1);
-                print_line(&headsel_r);
+                    head = 0;
+                }
+                if (headsel >= 0) {
+                    clear_text_rows(r->y+!headsel, 1);
+                    head = headsel;
+                }
             }
             if (key == K_F8) {
-                reseek.sel++;
-                if (reseek.sel >= sizeof(reseek_options)/sizeof(reseek_options[0]))
+                if (++reseek.sel >= ARRAY_SIZE(reseek_options))
                     reseek.sel = 0;
-                reseek.interval = ms_to_ticks(1000 * reseek_options[reseek.sel]);
+                reseek.interval = ms_to_ticks(1000*reseek_options[reseek.sel]);
                 reseek.last_time = get_time();
                 if (reseek.sel)
-                    sprintf(s, "Auto re-seek: $8 %u sec$", reseek_options[reseek.sel]);
+                    sprintf(reseek_str, "%u sec", reseek_options[reseek.sel]);
                 else
-                    sprintf(s, "Auto re-seek: $8 Off$");
+                    sprintf(reseek_str, "Off");
+            }
+            if ((key == K_F7) || (key == K_F8)) {
+                sprintf(s, "$7 Head(s): %7s$   $8 Auto re-seek: %6s$",
+                        headsel == -1 ? "Both" :
+                        headsel == 0 ? "0/Lower" : "1/Upper",
+                        reseek_str);
                 wait_bos();
-                clear_text_rows(reseek.r.y, 1);
                 print_line(&reseek.r);
             }
             if (key == K_F1)
@@ -896,7 +889,8 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
                     seek_cyl0();
                 }
                 seek_track(cyl*2);
-                head = headsel >= 0 ? headsel : 0;
+                if (headsel == -1)
+                    head = 0;
                 wait_bos();
                 clear_text_rows(r->y, 1); /* clear seek text */
                 reseek.last_time = get_time();
@@ -928,20 +922,15 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
                 good++;
         }
         /* Update status message. */
-        if (head)
-            r->y++;
+        r->y += head;
         sprintf(s, "%c Cyl %u Head %u (%ser): %s (%u/11 okay)",
-                progress_chars[progress[head]&3],
+                progress_chars[progress&3],
                 cyl, head, head ? "Upp" : "Low", map, good);
         wait_bos();
         print_line(r);
-        if (head)
-            r->y--;
-        progress[head]++;
-        if (headsel == -1)
-            head ^= 1;
-        else
-            head = headsel;
+        r->y -= head;
+        if ((headsel >= 0) || ((head = !head) == 0))
+            progress++;
     }
 
 out:
