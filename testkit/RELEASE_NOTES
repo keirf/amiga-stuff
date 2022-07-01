@@ -3,6 +3,10 @@
 ** Keir Fraser <keir.xen@gmail.com>
 ************************************
 
+** v1.19 - 1 July 2022
+ - floppy: Enhanced calibration and signal tests
+ - aca500plus: Fix reset sequence
+
 ** v1.18 - 20 July 2021
  - Display ATK version at bottom of every test screen
  - Base CIA timer test on true detected VBL frequency
