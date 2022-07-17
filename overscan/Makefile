@@ -9,6 +9,7 @@ all: overscan.adf
 overscan.adf: bootblock.bin overscan.bin
 	$(GZIP) overscan.bin
 	../inflate/degzip -H overscan.bin.gz overscan.tmp
+	xdftool $@ format "Overscan"
 	$(PYTHON) ../base/mk_adf.py bootblock.bin overscan.tmp $@
 	$(RM) overscan.tmp
 

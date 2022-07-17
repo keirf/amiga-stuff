@@ -22,7 +22,7 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y autoconf bison build-essential flex gettext git lhasa libgmp-dev libmpc-dev libmpfr-dev ncurses-dev rsync texinfo wget tzdata zopfli python3-pip
-        python3 -m pip install --user crcmod
+        python3 -m pip install --user crcmod amitools
 
     - name: Cache toolchain
       id: cache-toolchain

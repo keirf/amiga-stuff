@@ -48,11 +48,13 @@ $(NAME).exe: $(NAME).bin
 	$(PYTHON) ../inflate/pack_exe.py $@ $@.tmp
 	mv $@.tmp $@
 
-$(NAME).adf: bootblock.bin $(NAME).bin
+$(NAME).adf: bootblock.bin $(NAME).bin $(NAME) $(NAME).info
 	$(GZIP) $(NAME).bin
 	../inflate/degzip -H $(NAME).bin.gz $(NAME).bin.tmp
+	xdftool $@ format "AmigaTestKit $(VER)"
 	$(PYTHON) ../base/mk_adf.py bootblock.bin $(NAME).bin.tmp $@
 	$(RM) $(NAME).bin.tmp
+	xdftool $@ write $(NAME) + write $(NAME).info
 
 clean::
 	$(RM) *.adf *.exe *.zip $(NAME) *.tmp *.gz
