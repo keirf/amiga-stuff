@@ -3,6 +3,10 @@
 ** Keir Fraser <keir.xen@gmail.com>
 ************************************
 
+** v1.19 - 18 July 2022
+ - ADF image is now AmigaDOS-compatible
+   - Run ATK from floppy disk via Workbench or CLI
+
 ** v1.19 - 1 July 2022
  - floppy: Enhanced calibration and signal tests
  - aca500plus: Fix reset sequence
