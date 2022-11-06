@@ -11,12 +11,12 @@ jobs:
 
     steps:
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Set environment variables
       id: vars
       run: |
-        echo "::set-output name=sha_short::$(git rev-parse --short HEAD)"
+        echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
     - name: Dependency packages
       run: |
@@ -26,7 +26,7 @@ jobs:
 
     - name: Cache toolchain
       id: cache-toolchain
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: ~/cross
         key: ${{ runner.os }}-${{ env.BINUTILS_RELEASE }}-${{ env.GCC_RELEASE }}
@@ -88,7 +88,7 @@ jobs:
         cp -a host_tools inflate _cidist/amiga-stuff.ci.$VER
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: amiga-stuff.ci.${{ steps.vars.outputs.sha_short }}
         path: _cidist

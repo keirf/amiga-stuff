@@ -14,12 +14,12 @@ jobs:
 
     steps:
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Set environment variables
       id: vars
       run: |
-        echo "::set-output name=ver::$(echo ${{ github.ref }} | sed -e's#.*testkit-v##')"
+        echo "ver=$(echo ${{ github.ref }} | sed -e's#.*testkit-v##')" >> $GITHUB_OUTPUT
 
     - name: Dependency packages
       run: |
@@ -29,7 +29,7 @@ jobs:
 
     - name: Cache toolchain
       id: cache-toolchain
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: ~/cross
         key: ${{ runner.os }}-${{ env.BINUTILS_RELEASE }}-${{ env.GCC_RELEASE }}
