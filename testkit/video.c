@@ -184,6 +184,176 @@ static void checkerboard(bool_t alternating)
     }
 }
 
+static void solidcolours(void)
+{
+    uint16_t *p, *bgp, *cop;
+
+    const uint16_t colours[] = {
+        0x0f00, 0x00f0, 0x000f, 0x0fff, 0x0000,
+    };
+    int num = 0;
+
+    /* This test shows full-screen solid colours, for adjusting purity on CRT
+     * monitors and spotting dead pixels on LCDs. */
+
+    cop = p = allocmem(16384 /* plenty */);
+
+    /* Turn off all bitplanes, which also hides the pointer sprite. */
+    *p++ = 0x0100; *p++ = 0x0200;
+
+    /* Background colour. */
+    *p++ = 0x0180;
+    bgp = p;
+    *p++ = colours[num];
+
+    /* End of copper list. */
+    *p++ = 0xffff; *p++ = 0xfffe;
+
+    copperlist_set(cop);
+
+    while (!do_exit && (keycode_buffer != K_ESC)) {
+        wait_bos();
+
+        /* Any non-exiting key cycles to the next colour. */
+        if (keycode_buffer != 0 && keycode_buffer != K_ESC) {
+            num++;
+            if (num == ARRAY_SIZE(colours))
+                num = 0;
+            *bgp = colours[num];
+
+            keycode_buffer = 0;
+        }
+    }
+}
+
+static void grid(bool_t crosshatch)
+{
+    const int width = 384;
+    const int height = 284;
+    const int line_size = width / 8;
+    const int bitplane_size = line_size * height;
+    const int vpitch = 20;
+    const int hpitch = vpitch;
+
+    uint16_t *p, *cop;
+    uint8_t *bitplane;
+    uint16_t y, x;
+
+    /* This test shows full-screen dots or crosshatch, for adjusting
+     * convergence and linearity on CRT monitors. */
+
+    bitplane = allocmem(bitplane_size);
+
+    /* Draw the pattern. */
+    memset(bitplane, 0, bitplane_size);
+    if (crosshatch) {
+        for (y = 0; y < height; y++) {
+            uint8_t *line = &bitplane[line_size * y];
+            for (x = hpitch / 2; x < width; x += hpitch)
+                line[x / 8] |= 0x80 >> (x % 8);
+        }
+        for (y = vpitch / 2; y < height; y += vpitch) {
+            memset(&bitplane[line_size * y], 0xff, line_size);
+        }
+    } else {
+        for (y = vpitch / 2; y < height; y += vpitch) {
+            uint8_t *line = &bitplane[line_size * y];
+            for (x = hpitch / 2; x < width; x += hpitch)
+                line[x / 8] |= 0x80 >> (x % 8);
+        }
+    }
+
+    cop = p = allocmem(16384 /* plenty */);
+
+    /* Disable sprite DMA to hide the pointer sprite. */
+    *p++ = 0x0096; *p++ = DMA_SPREN;
+
+    /* Black background, white foreground. */
+    *p++ = 0x0180; *p++ = 0x0000;
+    *p++ = 0x0182; *p++ = 0x0fff;
+
+    /* Low res, one bitplane. */
+    *p++ = 0x0100; *p++ = 0x1200;
+
+    /* Bitplane 1 data. */
+    *p++ = 0x00e0; *p++ = ((uint32_t) bitplane) >> 16;
+    *p++ = 0x00e2; *p++ = ((uint32_t) bitplane) & 0xffff;
+
+    /* Display window with maximum overscan. */
+    *p++ = 0x008e; *p++ = 0x1b51;
+    *p++ = 0x0090; *p++ = 0x37d1;
+
+    /* Data fetch start and stop. */
+    *p++ = 0x0092; *p++ = 0x0020;
+    *p++ = 0x0094; *p++ = 0x00d8;
+
+    /* End of copper list. */
+    *p++ = 0xffff; *p++ = 0xfffe;
+
+    copperlist_set(cop);
+
+    /* Any key exits. */
+    while (!do_exit && (keycode_buffer == 0))
+        continue;
+
+    /* Reenable sprite DMA. */
+    copperlist_default();
+    wait_bos();
+    cust->dmacon = DMA_SETCLR | DMA_SPREN;
+}
+
+static void colourbars(bool_t fullrange)
+{
+    uint16_t *p, *cop;
+    uint16_t y, i;
+
+    const uint16_t bars75_colours[] = {
+        0x0fff, 0x0bb0, 0x00bb, 0x00b0, 0x0b0b, 0x0b00, 0x000b, 0x0000,
+    };
+    const uint16_t bars100_colours[] = {
+        0x0fff, 0x0ff0, 0x00ff, 0x00f0, 0x0f0f, 0x0f00, 0x000f, 0x0000,
+    };
+    const uint16_t *colours = fullrange ? bars100_colours : bars75_colours;
+
+    /* This test shows full-screen EBU-style colour bars, for adjusting hue and
+     * checking colour rendition generally. */
+
+    cop = p = allocmem(16384 /* plenty */);
+
+    /* Turn off all bitplanes, which also hides the pointer sprite. */
+    *p++ = 0x0100; *p++ = 0x0200;
+
+    for (y = 1; y < 313; y++) {
+        /* Bar 0 starts immediately after hsync. */
+        uint16_t x = 3;
+
+        for (i = 0; i < 8; i++) {
+            /* Wait for the next bar and set the colour. */
+            *p++ = ((y & 0xff) << 8) | (x << 1) | 1; *p++ = 0xfffe;
+            *p++ = 0x0180; *p++ = colours[i];
+
+            /* Space bars 1-7 evenly across a non-overscanned display. */
+            if (i == 0)
+                x = 26;
+            x += 11;
+
+            /* Before y wraps back to 0, wait for the end of the line. */
+            if (y == 0xff && i == 7) {
+                *p++ = 0xffdf; *p++ = 0xfffe;
+            }
+        }
+    }
+
+    /* End of copper list. */
+    *p++ = 0xffff; *p++ = 0xfffe;
+
+    copperlist_set(cop);
+
+    /* Any key exits. */
+    while (!do_exit && (keycode_buffer == 0))
+        continue;
+}
+
 void videocheck(void)
 {
     char s[80];
@@ -213,6 +383,24 @@ void videocheck(void)
 
         r.y += 2;
 
+        sprintf(s, "$6 Solid colours (purity)$ - any key switches colour");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "$7 Dots (convergence)$");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "$8 Crosshatch (linearity)$");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "$9 75%% colour bars$");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "$0 100%% colour bars$");
+        print_line(&r);
+        r.y++;
+
+        r.y += 2;
+
         do {
             while (!do_exit && !(key = keycode_buffer))
                 continue;
@@ -220,7 +408,7 @@ void videocheck(void)
             if (key == K_ESC)
                 do_exit = 1;
             key -= K_F1;
-        } while (!do_exit && (key >= 3));
+        } while (!do_exit && (key >= 10));
 
         if (do_exit)
             break;
@@ -236,6 +424,21 @@ void videocheck(void)
             break;
         case 2:
             checkerboard(TRUE);
+            break;
+        case 5:
+            solidcolours();
+            break;
+        case 6:
+            grid(FALSE);
+            break;
+        case 7:
+            grid(TRUE);
+            break;
+        case 8:
+            colourbars(FALSE);
+            break;
+        case 9:
+            colourbars(TRUE);
             break;
         }
         clear_whole_screen();
