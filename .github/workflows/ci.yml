@@ -7,7 +7,7 @@ jobs:
     env:
       BINUTILS_RELEASE: 2.28
       GCC_RELEASE: 7.1.0
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
 
@@ -22,7 +22,9 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y autoconf bison build-essential flex gettext git lhasa libgmp-dev libmpc-dev libmpfr-dev ncurses-dev rsync texinfo wget tzdata zopfli python3-pip
-        python3 -m pip install --user crcmod amitools
+        python3 -m pip install --user -U pip setuptools
+        python3 -m pip install --user crcmod cython
+        python3 -m pip install --user -U git+https://github.com/cnvogelg/amitools.git
 
     - name: Cache toolchain
       id: cache-toolchain
