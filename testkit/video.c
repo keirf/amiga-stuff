@@ -184,14 +184,13 @@ static void checkerboard(bool_t alternating)
     }
 }
 
-static void solidcolours(void)
+static void uniform(int colour_index)
 {
-    uint16_t *p, *bgp, *cop;
+    uint16_t *p, *cop;
 
     const uint16_t colours[] = {
-        0x0f00, 0x00f0, 0x000f, 0x0fff, 0x0000,
+        0x0000, 0x0fff, 0x0f00, 0x00f0, 0x000f
     };
-    int num = 0;
 
     /* This test shows full-screen solid colours, for adjusting purity on CRT
      * monitors and spotting dead pixels on LCDs. */
@@ -203,27 +202,16 @@ static void solidcolours(void)
 
     /* Background colour. */
     *p++ = 0x0180;
-    bgp = p;
-    *p++ = colours[num];
+    *p++ = colours[colour_index];
 
     /* End of copper list. */
     *p++ = 0xffff; *p++ = 0xfffe;
 
     copperlist_set(cop);
 
-    while (!do_exit && (keycode_buffer != K_ESC)) {
-        wait_bos();
-
-        /* Any non-exiting key cycles to the next colour. */
-        if (keycode_buffer != 0 && keycode_buffer != K_ESC) {
-            num++;
-            if (num == ARRAY_SIZE(colours))
-                num = 0;
-            *bgp = colours[num];
-
-            keycode_buffer = 0;
-        }
-    }
+    /* Any key exits. */
+    while (!do_exit && (keycode_buffer == 0))
+        continue;
 }
 
 static void grid(bool_t crosshatch)
@@ -302,21 +290,33 @@ static void grid(bool_t crosshatch)
     cust->dmacon = DMA_SETCLR | DMA_SPREN;
 }
 
-static void colourbars(bool_t fullrange)
+/* This test shows full-screen EBU-style colour bars, for adjusting hue and
+ * checking colour rendition generally. */
+static void ebu_bars(int index)
 {
     uint16_t *p, *cop;
     uint16_t y, i;
 
-    const uint16_t bars75_colours[] = {
-        0x0fff, 0x0bb0, 0x00bb, 0x00b0, 0x0b0b, 0x0b00, 0x000b, 0x0000,
-    };
-    const uint16_t bars100_colours[] = {
+    const uint16_t ebu_100_0_100_0[] = {
         0x0fff, 0x0ff0, 0x00ff, 0x00f0, 0x0f0f, 0x0f00, 0x000f, 0x0000,
     };
-    const uint16_t *colours = fullrange ? bars100_colours : bars75_colours;
+    const uint16_t ebu_100_0_75_0[] = {
+        0x0fff, 0x0bb0, 0x00bb, 0x00b0, 0x0b0b, 0x0b00, 0x000b, 0x0000,
+    };
+    const uint16_t ebu_75_0_75_0[] = {
+        0x0bbb, 0x0bb0, 0x00bb, 0x00b0, 0x0b0b, 0x0b00, 0x000b, 0x0000,
+    };
+    const uint16_t greyscale[] = {
+        0x0fff, 0x0ddd, 0x0bbb, 0x0999, 0x0777, 0x0555, 0x0333, 0x0111,
+    };
+    const uint16_t *colours = NULL;
 
-    /* This test shows full-screen EBU-style colour bars, for adjusting hue and
-     * checking colour rendition generally. */
+    switch (index) {
+    case 0: colours = ebu_100_0_100_0; break;
+    case 1: colours = ebu_100_0_75_0; break;
+    case 2: colours = ebu_75_0_75_0; break;
+    case 3: colours = greyscale; break;
+    }
 
     cop = p = allocmem(16384 /* plenty */);
 
@@ -354,6 +354,81 @@ static void colourbars(bool_t fullrange)
         continue;
 }
 
+static void full_field_tests(void)
+{
+    char s[80];
+    struct char_row r = { .s = s };
+    void *alloc_s;
+    uint8_t key = 0;
+
+    while (!do_exit) {
+
+        print_menu_nav_line();
+
+        r.x = 5;
+        r.y = 0;
+        sprintf(s, "-- Full-Field: Uniform & Bars --");
+        print_line(&r);
+
+        r.x = 3;
+        r.y = 2;
+        sprintf(s, "$1 Black$");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "$2 White$");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "$3 Red$");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "$4 Green$");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "$5 Blue$");
+        print_line(&r);
+        r.y += 2;
+        sprintf(s, "$6 EBU 100/0/100/0 Bars (100%% colour)$");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "$7 EBU 100/0/75/0 Bars (75%% colour)$");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "$8 EBU 75/0/75/0 Bars (75%% variant)$");
+        print_line(&r);
+        r.y++;
+        sprintf(s, "$9 Greyscale Bars$");
+        print_line(&r);
+
+        do {
+            while (!do_exit && !(key = keycode_buffer))
+                continue;
+            keycode_buffer = 0;
+            if (key == K_ESC)
+                break;
+            key -= K_F1;
+        } while (!do_exit && (key >= 9));
+
+        if (do_exit || (key == K_ESC))
+            break;
+
+        alloc_s = start_allocheap_arena();
+        clear_text_rows(0, 13);
+        switch (key) {
+        case 0 ... 4:
+            uniform(key);
+            break;
+        case 5 ... 8:
+            ebu_bars(key-5);
+            break;
+        }
+        clear_whole_screen();
+        keycode_buffer = 0;
+        copperlist_default();
+        end_allocheap_arena(alloc_s);
+
+    }
+}
+
 void videocheck(void)
 {
     char s[80];
@@ -383,19 +458,16 @@ void videocheck(void)
 
         r.y += 2;
 
-        sprintf(s, "$6 Solid colours (purity)$ - any key switches colour");
+        sprintf(s, "Full-field tests (any key exits each test):");
         print_line(&r);
         r.y++;
-        sprintf(s, "$7 Dots (convergence)$");
+        sprintf(s, "$4 Uniform & Bars$");
         print_line(&r);
         r.y++;
-        sprintf(s, "$8 Crosshatch (linearity)$");
+        sprintf(s, "$5 Dots (convergence)$");
         print_line(&r);
         r.y++;
-        sprintf(s, "$9 75%% colour bars$");
-        print_line(&r);
-        r.y++;
-        sprintf(s, "$0 100%% colour bars$");
+        sprintf(s, "$6 Crosshatch (linearity)$");
         print_line(&r);
         r.y++;
 
@@ -408,7 +480,7 @@ void videocheck(void)
             if (key == K_ESC)
                 do_exit = 1;
             key -= K_F1;
-        } while (!do_exit && (key >= 10));
+        } while (!do_exit && (key >= 6));
 
         if (do_exit)
             break;
@@ -425,20 +497,14 @@ void videocheck(void)
         case 2:
             checkerboard(TRUE);
             break;
-        case 5:
-            solidcolours();
+        case 3:
+            full_field_tests();
             break;
-        case 6:
+        case 4:
             grid(FALSE);
             break;
-        case 7:
+        case 5:
             grid(TRUE);
-            break;
-        case 8:
-            colourbars(FALSE);
-            break;
-        case 9:
-            colourbars(TRUE);
             break;
         }
         clear_whole_screen();
