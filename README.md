@@ -6,7 +6,7 @@
 ![Downloads Badge][downloads-badge]
 ![Version Badge][version-badge]
 
-### Download the latest release of Amiga Test Kit [here (Github)](https://github.com/keirf/amiga-stuff/releases/download/testkit-v1.20/AmigaTestKit-1.20.zip).
+### Download the latest release of Amiga Test Kit [here (Github)](https://github.com/keirf/amiga-stuff/releases/download/testkit-v1.21/AmigaTestKit-1.21.zip).
 
 ### Build From Source (Docker)
 
