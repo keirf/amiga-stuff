@@ -154,7 +154,11 @@ def process_hunk(f, i):
                 if i == 0:
                     # First hunk must be code: we inject our entry/exit code
                     assert id == HUNK_CODE
-                    packed = get_code('depacker_entry') + packed
+                    # Prepend the depacker entry code. This must be exactly
+                    # 24 bytes in size, as this is assumed by depacker_main.
+                    depacker_entry = get_code('depacker_entry')
+                    assert len(depacker_entry) == 24
+                    packed = depacker_entry + packed
                     # Allocate explicit extra space for the final exit code
                     # This must always extend the allocation as these bytes
                     # will not be zeroed before we jump to the original exe.

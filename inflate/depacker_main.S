@@ -46,7 +46,7 @@ unpack_next_seg:
         lsr.l   #2,d0
         cmp.l   (sp),a3         /* First segment?... */
         jne     1f
-        subq.l  #6,d0           /* ...Then adjust for depacker_entry */
+        subq.l  #6,d0           /* ...Then clip depacker_entry (24 bytes) */
 1:      move.l  -(a0),-(a5)
         subq.l  #1,d0
         jne     1b
