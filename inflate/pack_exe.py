@@ -239,7 +239,6 @@ def generate_final_hunk():
     else:
         # Compress everything except the depacker itself (and the
         # longword containing the size of the compressed stream).
-        packed_len = len(depacker) + len(packed)
         alloc += leeway # Include depacker leeway in the hunk allocation
         hunk = depacker + struct.pack('>I', len(packed)) + packed
     assert alloc&3 == 0 and len(hunk)&3 == 0
