@@ -85,13 +85,13 @@ def process_relocs(target, offs):
 # Get the (one) position-independent code hunk from an Amiga load file.
 def get_code(name):
     with open(scriptdir + name, 'rb') as f:
-        (id, x, nr, first, last) = struct.unpack('>5I', f.read(5*4))
+        id, x, nr, first, last = struct.unpack('>5I', f.read(5*4))
         assert id == HUNK_HEADER and x == 0
         assert nr == 1 and first == 0 and last == 0
-        (x, id, nr) = struct.unpack('>3I', f.read(3*4))
+        x, id, nr = struct.unpack('>3I', f.read(3*4))
         assert id == HUNK_CODE and nr == x
         code = bytes(f.read(nr * 4))
-        (id,) = struct.unpack('>I', f.read(4))
+        id, = struct.unpack('>I', f.read(4))
         assert id == HUNK_END
     #print('"%s": %u bytes (%u longs)' % (name, len(code), len(code)//4))
     return code
@@ -106,7 +106,7 @@ def pack(raw):
               ' >/dev/null')
     with open(PREFIX+'.raw', 'rb') as f:
         packed = f.read()
-    (inb, outb, crc, leeway) = struct.unpack('>2I2H', packed[:12])
+    inb, outb, crc, leeway = struct.unpack('>2I2H', packed[:12])
     # Extract the DEFLATE stream and check the header's length fields.
     inb -= 14
     packed = packed[12:-2]
@@ -121,7 +121,7 @@ def pack(raw):
     # Extend and pad leeway.
     leeway += padding
     leeway += -leeway & 3
-    return (packed, crc, leeway)
+    return packed, crc, leeway
 
 # Read next hunk from the input file, compress it if appropriate, and appends
 # the encoded output hunk to hunks[], updates allocs[i], and appends
@@ -134,18 +134,18 @@ def process_hunk(f, i):
     seen_dat = False   # Have we seen CODE/DATA/BSS yet?
     hunk = bytes() # Full encoding of this hunk
     while True:
-        (_id,) = struct.unpack('>I', f.read(4))
+        _id, = struct.unpack('>I', f.read(4))
         id = _id & 0x3fffffff
         if id == HUNK_CODE or id == HUNK_DATA:
             if seen_dat:
                 f.seek(-4, os.SEEK_CUR)
                 break # Done with this hunk!
             seen_dat = id
-            (_nr,) = struct.unpack('>I', f.read(4))
+            _nr, = struct.unpack('>I', f.read(4))
             nr = _nr & 0x3fffffff
             raw = f.read(nr*4)
             assert alloc >= len(raw)
-            (packed, crc, leeway) = pack(raw)
+            packed, crc, leeway = pack(raw)
             if i != 0 and nr*4 < len(packed)+MIN_COMPRESSION:
                 # This hunk is not worth compressing. Store it as is.
                 packed = raw
@@ -176,7 +176,7 @@ def process_hunk(f, i):
                 f.seek(-4, os.SEEK_CUR)
                 break # Done with this hunk!
             seen_dat = id
-            (_nr,) = struct.unpack('>I', f.read(4))
+            _nr, = struct.unpack('>I', f.read(4))
             nr = _nr & 0x3fffffff
             assert alloc >= nr*4
             stream_sizes.append(0) # No compression
@@ -187,10 +187,10 @@ def process_hunk(f, i):
             break # Done with this hunk!
         elif id == HUNK_RELOC32:
             while True:
-                (nr,) = struct.unpack('>I', f.read(4))
+                nr, = struct.unpack('>I', f.read(4))
                 if nr == 0:
                     break # Done with RELOC32
-                (h,) = struct.unpack('>I', f.read(4))
+                h, = struct.unpack('>I', f.read(4))
                 offs = list(struct.unpack('>%dI' % nr, f.read(nr*4)))
                 if first_reloc:
                     # Write out this hunk's number.
@@ -232,7 +232,7 @@ def generate_final_hunk():
     # Allocation size covers the depacker and the depacked stream.
     alloc = len(depacker) + 4 + len(raw)
     # Compress the raw byte sequence.
-    (packed, crc, leeway) = pack(raw)
+    packed, crc, leeway = pack(raw)
     if len(raw) < len(packed)+MIN_COMPRESSION:
         # Not worth compressing, so don't bother.
         hunk = depacker + bytes(4) + raw # 'bytes(4)' means not packed
@@ -256,7 +256,7 @@ def process(f, out_f):
 
     # Read the load-file header of the input file, including every
     # hunk's original allocation size.
-    (id, x, nr, first, last) = struct.unpack('>5I', f.read(5*4))
+    id, x, nr, first, last = struct.unpack('>5I', f.read(5*4))
     assert id == HUNK_HEADER and x == 0
     assert first == 0 and last == nr-1 and nr > 0
     allocs = list(struct.unpack('>%dI' % nr, f.read(nr*4)))
@@ -284,7 +284,7 @@ def process(f, out_f):
     f.seek(0, os.SEEK_END)
     in_sz = f.tell()
     out_sz = out_f.tell()
-    return (in_sz, out_sz)
+    return in_sz, out_sz
 
 def usage(argv):
     print("%s input-file output-file" % argv[0])
@@ -296,10 +296,10 @@ def main(argv):
         usage(argv)
     if len(argv) != 3:
         usage(argv)
-    (in_sz, out_sz) = process(open(argv[1], 'rb'), open(argv[2], 'wb'))
+    in_sz, out_sz = process(open(argv[1], 'rb'), open(argv[2], 'wb'))
 
     tot_old_alloc = tot_new_alloc = tot_old_store = tot_new_store = 0
-    for (id, old_alloc, new_alloc, old_store, new_store) in infos:
+    for id, old_alloc, new_alloc, old_store, new_store in infos:
         tot_old_alloc += old_alloc
         tot_new_alloc += new_alloc
         tot_old_store += old_store
@@ -316,7 +316,7 @@ def main(argv):
 
     # Stats summary for all the original hunks.
     for i in range(len(infos)-1):
-        (id, old_alloc, new_alloc, old_store, new_store) = infos[i]
+        id, old_alloc, new_alloc, old_store, new_store = infos[i]
         if new_store != 0:
             print(' [%02u] %s %9u (%+8u, %+5.1f%%)   %7u (%+5u) %s' %
                   (i, hname[id], new_store, new_store-old_store,
@@ -325,7 +325,7 @@ def main(argv):
                    memname[allocs[i] >> 30]))
 
     # Summarise the new depacker/relocation hunk.
-    (id, old_alloc, new_alloc, old_store, new_store) = infos[-1]
+    id, old_alloc, new_alloc, old_store, new_store = infos[-1]
     print(' [%02u] DEPACK %7u %20s %7u' %
           (len(infos)-1, new_store, '', new_alloc))
 
