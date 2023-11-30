@@ -7,7 +7,7 @@ TOOL_PREFIX = m68k-unknown-elf-
 CC = $(TOOL_PREFIX)gcc
 OBJCOPY = $(TOOL_PREFIX)objcopy
 PYTHON = python3
-GZIP = zopfli
+GZIP = zopfli --i32
 #GZIP = gzip -fk9
 
 ifneq ($(VERBOSE),1)

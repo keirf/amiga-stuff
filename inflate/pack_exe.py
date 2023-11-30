@@ -40,7 +40,7 @@ memname = {
 MIN_COMPRESSION = 8
 
 # Command for creating gzip files.
-GZIP = "zopfli"
+GZIP = "zopfli --i32"
 #GZIP = "gzip -fk9"
 
 # Prefix for intermediate (temporary) files.

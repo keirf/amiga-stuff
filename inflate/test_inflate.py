@@ -11,7 +11,7 @@ import crcmod.predefined
 import struct, sys, os
 
 # Command for creating gzip files.
-GZIP = "zopfli -c"
+GZIP = "zopfli --i32 -c"
 #GZIP = "gzip -c9"
 
 HUNK_HEADER = 0x3f3
