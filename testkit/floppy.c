@@ -953,6 +953,94 @@ out:
     keycode_buffer = 0;
 }
 
+static bool_t head_exercise_seek(unsigned int cyl, unsigned int nr_cyls)
+{
+    int i;
+    cyl = min_t(unsigned int, cyl, nr_cyls - 1);
+    seek_track(cyl*2);
+    for (i = 0; i < 100; i++) {
+        delay_ms(1);
+        if (keycode_buffer || do_exit)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static void head_exercise(int nr_passes, unsigned int nr_cyls)
+{
+    unsigned int cyl;
+    unsigned int step = nr_cyls / 8;
+
+    seek_cyl0();
+
+    while ((nr_passes == -1) || (--nr_passes != 0)) {
+        for (cyl = 0; cyl < nr_cyls; cyl += step) {
+            if (head_exercise_seek(cyl + step - 1, nr_cyls)
+                || head_exercise_seek(cyl, nr_cyls))
+                goto out;
+        }
+    }
+
+out:
+    seek_cyl0();
+}
+
+static void drive_cleaning(unsigned int drv, struct char_row *r)
+{
+    char *s = (char *)r->s;
+    int done = 0, motor = 0;
+    uint8_t key;
+    uint32_t id = drive_id(drv);
+    unsigned int nr_cyls = (id == 0x55555555) ? 40 : 80;
+
+    r->x = r->y = 0;
+    sprintf(s, "-- DF%u: Head Cleaning / Stepper Exercise --", drv);
+    print_line(r);
+    r->y += 2;
+
+    drive_select(drv, 0);
+
+    /* Start the test proper. Print option keys and instructions. */
+    sprintf(s, "$1 Head Cleaner (3 passes, motor on)$");
+    print_line(r);
+    r->y++;
+    sprintf(s, "$2 Stepper Exercise (any key to stop)$");
+    print_line(r);
+    r->y++;
+    sprintf(s, "$3 Toggle Motor$");
+    print_line(r);
+    r->y++;
+
+    for (;;) {
+        key = keycode_buffer;
+        done = (do_exit || (key == K_ESC));
+        if (done)
+            goto out;
+        if (key) {
+            keycode_buffer = 0;
+            switch (key) {
+            case K_F1: /* head cleaner */
+                drive_select(drv, 1);
+                head_exercise(3, nr_cyls);
+                drive_select(drv, motor);
+                break;
+            case K_F2: /* stepper exercise */
+                head_exercise(-1, nr_cyls);
+                break;
+            case K_F3: /* motor toggle */
+                motor = !motor;
+                drive_select(drv, motor);
+                break;
+            }
+        }
+    }
+
+out:
+    drive_select(drv, 0);
+    drive_deselect();
+    keycode_buffer = 0;
+}
+
 void floppycheck(void)
 {
     char s[80];
@@ -1007,18 +1095,15 @@ void floppycheck(void)
         sprintf(s, "$1 DF0$  $2 DF1$  $3 DF2$  $4 DF3$");
         print_line(&r);
         r.y++;
-        sprintf(s, "$5 Signal Test$");
+        sprintf(s, "$5 Read Test$     $6 Write Test$");
         print_line(&r);
         r.y++;
-        sprintf(s, "$6 Read Test$");
+        sprintf(s, "$7 Signal Test$   $8 Head Calibration$");
         print_line(&r);
         r.y++;
-        sprintf(s, "$7 Write Test$");
+        sprintf(s, "$9 Disk Cleaning / Stepper Exercise$");
         print_line(&r);
-        r.y++;
-        sprintf(s, "$8 Head Calibration Test$");
-        print_line(&r);
-        r.y -= 5;
+        r.y -= 4;
 
         while (!do_exit) {
             /* Grab a key */
@@ -1030,9 +1115,9 @@ void floppycheck(void)
                 do_exit = 1;
             /* Check for keys F1-F8 only */
             key -= K_F1; /* Offsets from F1 */
-            if (key >= 8)
+            if (key >= 9)
                 continue;
-            /* F5-F8: handled outside this loop */
+            /* F5-F9: handled outside this loop */
             if (key > 3)
                 break;
             /* F1-F4: DF0-DF3 */
@@ -1050,19 +1135,19 @@ void floppycheck(void)
 
         switch (key) {
         case 4: /* F5 */
-            drv = drive_signal_test(drv, &_r);
-            break;
-        case 5: /* F6 */
             clear_text_rows(0, r.y);
             drive_read_test(drv, &_r);
             clear_text_rows(0, r.y);
             draw_floppy_ids = 1;
             break;
-        case 6: /* F7 */
+        case 5: /* F6 */
             clear_text_rows(0, r.y);
             drive_write_test(drv, &_r);
             clear_text_rows(0, r.y);
             draw_floppy_ids = 1;
+            break;
+        case 6: /* F7 */
+            drv = drive_signal_test(drv, &_r);
             break;
         case 7: /* F8 */
             clear_text_rows(0, r.y);
@@ -1071,6 +1156,10 @@ void floppycheck(void)
             draw_floppy_ids = 1;
             break;
         case 8: /* F9 */
+            clear_text_rows(0, r.y);
+            drive_cleaning(drv, &_r);
+            clear_text_rows(0, r.y);
+            draw_floppy_ids = 1;
             break;
         }
 
