@@ -250,8 +250,10 @@ static int test_memory_range(void *_args)
                 (a & (1u<< 1)) ? 'X' : '-', (a & (1u<< 0)) ? 'X' : '-');
         print_line(r);
         /* Wait for async exit. */
-        for (;;)
-            continue;
+        for (;;) {
+            delay_ms(500);
+            ciaa->pra ^= CIAAPRA_LED;
+        }
     }
 
     return 0;
