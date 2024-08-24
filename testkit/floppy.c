@@ -743,7 +743,7 @@ out:
 static void drive_cal_test(unsigned int drv, struct char_row *r)
 {
     char *s = (char *)r->s;
-    char map[12];
+    char map[12], idxstr[10];
     void *mfmbuf, *data;
     struct sec_header *headers;
     unsigned int i, mfm_bytes = 13100, nr_secs;
@@ -752,6 +752,7 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     char progress_chars[] = "|/-\\";
     uint32_t id = drive_id(drv);
     bool_t is_hd = (id == DRT_150RPM);
+    bool_t seek_in_out = TRUE;
     int8_t headsel = -1;
     struct reseek {
         uint32_t last_time;
@@ -880,13 +881,22 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
             if (seek != SEEK_NONE) {
                 /* Step away from and back to cylinder 0. Useful after 
                  * stepper and cyl-0 sensor adjustments. */
-                sprintf(s, "Seeking...");
+                sprintf(s, "Seeking cyl%s%u...",
+                        (seek != SEEK_SLOW) ? " " :
+                        seek_in_out ? "s 79 -> 0 -> " : "s 0 -> 79 -> ",
+                        cyl);
                 wait_bos();
                 clear_text_rows(r->y+1, 1); /* clear side-1 text */
                 print_line(r); /* overwrites side-0 text */
                 if (seek == SEEK_SLOW) {
-                    seek_track(79*2);
-                    seek_cyl0();
+                    if (seek_in_out) {
+                        seek_track(79*2);
+                        seek_cyl0();
+                    } else {
+                        seek_cyl0();
+                        seek_track(79*2);
+                    }
+                    seek_in_out = !seek_in_out;
                 }
                 seek_track(cyl*2);
                 if (headsel == -1)
@@ -923,9 +933,10 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
         }
         /* Update status message. */
         r->y += head;
-        sprintf(s, "%c Cyl %u Head %u (%ser): %s (%u/11 okay)",
+        ticktostr(disk_index_period, idxstr);
+        sprintf(s, "%c Cyl %u Head %u (%ser): %s (%u/11 okay) %s",
                 progress_chars[progress&3],
-                cyl, head, head ? "Upp" : "Low", map, good);
+                cyl, head, head ? "Upp" : "Low", map, good, idxstr);
         wait_bos();
         print_line(r);
         r->y -= head;
