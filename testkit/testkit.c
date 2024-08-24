@@ -1065,11 +1065,12 @@ static void c_CIAB_IRQ(struct c_exception_frame *frame)
     IRQ_RESET(INT_CIAB);
 }
 
-static uint16_t vblank_joydat, mouse_x, mouse_y;
+static uint16_t vblank_joydat[2], mouse_x, mouse_y;
 static void c_VBLANK_IRQ(struct c_exception_frame *frame)
 {
-    uint16_t joydat, hstart, vstart, vstop;
+    uint16_t joydat[2], hstart, vstart, vstop;
     uint16_t cur16 = get_ciaatb();
+    int i;
 
     vblank_count++;
 
@@ -1077,12 +1078,15 @@ static void c_VBLANK_IRQ(struct c_exception_frame *frame)
     stamp16 = cur16;
 
     /* Update mouse pointer coordinates based on mouse input. */
-    joydat = cust->joy0dat;
-    mouse_x += (int8_t)(joydat - vblank_joydat);
-    mouse_y += (int8_t)((joydat >> 8) - (vblank_joydat >> 8));
+    joydat[0] = cust->joy0dat;
+    joydat[1] = cust->joy1dat;
+    for (i = 0; i < 2; i++) {
+        mouse_x += (int8_t)(joydat[i] - vblank_joydat[i]);
+        mouse_y += (int8_t)((joydat[i] >> 8) - (vblank_joydat[i] >> 8));
+        vblank_joydat[i] = joydat[i];
+    }
     mouse_x = min_t(int16_t, max_t(int16_t, mouse_x, 0), xres-1);
     mouse_y = min_t(int16_t, max_t(int16_t, mouse_y, 0), 2*yres-1);
-    vblank_joydat = joydat;
 
     /* Move the mouse pointer sprite. */
     hstart = (mouse_x>>1) + diwstrt_h-1;
@@ -1099,8 +1103,8 @@ static void c_VBLANK_IRQ(struct c_exception_frame *frame)
 
 static void c_SOFT_IRQ(struct c_exception_frame *frame)
 {
-    static uint16_t prev_lmb;
-    uint16_t lmb, i, x, y;
+    static uint16_t prev_ciaapra;
+    uint16_t ciaapra, i, x, y;
     struct menu_option *am, *m;
 
     /* Clear the spurious autovector counts. This allows a certain maximum
@@ -1148,9 +1152,11 @@ static void c_SOFT_IRQ(struct c_exception_frame *frame)
         active_menu_option = m;
     }
 
-    /* When LMB is first pressed emit a keycode if we are within a menu box. */
-    lmb = !(ciaa->pra & CIAAPRA_FIR0);
-    if (lmb && !prev_lmb && (m != NULL)) {
+    /* When a left mouse button or fire button is first pressed emit a keycode
+     * if we are within a menu box.  */
+    ciaapra = ciaa->pra;
+    if ((~ciaapra & prev_ciaapra & (CIAAPRA_FIR0 | CIAAPRA_FIR1))
+        && (m != NULL)) {
         keycode_buffer = m->c;
         if (m->c == K_CTRL)
             do_exit = 1; /* Ctrl (+ L.Alt) sets the exit flag */
@@ -1158,7 +1164,7 @@ static void c_SOFT_IRQ(struct c_exception_frame *frame)
         if (do_exit || (m->c == K_ESC))
             do_cancel = 1;
     }
-    prev_lmb = lmb;
+    prev_ciaapra = ciaapra;
 
     /* Perform an asynchronous function cancellation if so instructed. */
     if (do_cancel)
@@ -1252,7 +1258,8 @@ void cstart(void)
     cust->cop1lc.p = copper;
     cust->cop2lc.p = copper_2;
 
-    vblank_joydat = cust->joy0dat;
+    vblank_joydat[0] = cust->joy0dat;
+    vblank_joydat[1] = cust->joy1dat;
 
     wait_bos();
     cust->dmacon = DMA_SETCLR | DMA_COPEN | DMA_DSKEN;
