@@ -239,6 +239,8 @@ void call_cancellable_test(int (*fn)(void *), void *arg)
     call_cancellable_fn(&test_cancellation, fn, arg);
     /* We can't be in any blitter or menu-option-update critical section. */
     assert(cust->intenar & INT_SOFT);
+    /* Memory test may mess with power LED / audio filter: Reset it. */
+    ciaa->pra &= ~CIAAPRA_LED;
 }
 
 /* Allocate chip memory. Automatically freed when sub-test exits. */
@@ -1167,11 +1169,8 @@ static void c_SOFT_IRQ(struct c_exception_frame *frame)
     prev_ciaapra = ciaapra;
 
     /* Perform an asynchronous function cancellation if so instructed. */
-    if (do_cancel) {
+    if (do_cancel)
         cancel_call(&test_cancellation, frame);
-        /* Memory test may mess with power LED / audio filter: Reset it. */
-        ciaa->pra &= ~CIAAPRA_LED;
-    }
 
     IRQ_RESET(INT_SOFT);
 }
