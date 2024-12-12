@@ -11,6 +11,12 @@
 
 #include "testkit.h"
 
+static struct {
+    unsigned int nr_cyls;
+    unsigned int step_ms;
+    bool_t is_hd;
+} drive_param;
+
 unsigned int mfm_decode_track(void *mfmbuf, void *headers, void *data,
                               unsigned int mfm_bytes);
 void mfm_encode_track(void *mfmbuf, unsigned int tracknr,
@@ -55,10 +61,10 @@ static void drive_wait_ready(void)
 }
 
 /* Sophisticated wait-for-RDY with diagnostic report. */
-static void drive_check_ready(struct char_row *r, bool_t is_hd)
+static void drive_check_ready(struct char_row *r)
 {
     uint32_t s = get_time(), e;
-    unsigned int timeout = ms_to_ticks(is_hd ? 2000 : 1250);
+    unsigned int timeout = ms_to_ticks(drive_param.is_hd ? 2000 : 1250);
     int ready;
 
     do {
@@ -106,14 +112,14 @@ static unsigned int seek_cyl0(void)
     unsigned int steps = 0;
 
     ciab->prb |= CIABPRB_DIR | CIABPRB_SIDE; /* outward, side 0 */
-    delay_ms(18);
+    delay_ms(15 + drive_param.step_ms);
 
     cur_cyl = 0;
 
     while (!(~ciaa->pra & CIAAPRA_TK0)) {
         ciab->prb &= ~CIABPRB_STEP;
         ciab->prb |= CIABPRB_STEP;
-        delay_ms(3);
+        delay_ms(drive_param.step_ms);
         if (steps++ == 100) {
             cur_cyl = -1;
             break;
@@ -143,12 +149,12 @@ static void seek_track(unsigned int track)
     } else {
         ciab->prb &= ~CIABPRB_DIR; /* inward */
     }
-    delay_ms(18);
+    delay_ms(15 + drive_param.step_ms);
 
     while (diff--) {
         ciab->prb &= ~CIABPRB_STEP;
         ciab->prb |= CIABPRB_STEP;
-        delay_ms(3);
+        delay_ms(drive_param.step_ms);
     }
 
     delay_ms(15);
@@ -187,9 +193,9 @@ static void disk_write_track(void *mfm, uint16_t mfm_bytes)
     cust->dsklen = 0xc000 + mfm_bytes / 2;
 }
 
-static void disk_wait_dma(bool_t is_hd)
+static void disk_wait_dma(void)
 {
-    unsigned int i, timeout = is_hd ? 1000 : 500;
+    unsigned int i, timeout = drive_param.is_hd ? 1000 : 500;
     for (i = 0; i < timeout; i++) {
         if (cust->intreqr & INT_DSKBLK) /* dsk-blk-done? */
             break;
@@ -245,6 +251,7 @@ static uint32_t drive_id(unsigned int drv)
     }
     if ((id[0] == DRT_EMPTY) && (drv == 0))
         id[0] = DRT_AMIGA;
+
     return id[0];
 }
 
@@ -254,6 +261,18 @@ static const char *drive_id_type(unsigned int drv, uint32_t id)
         : (id == 0x55555555) ? "DS-DD 40"
         : (id == 0xaaaaaaaa) ? "DS-HD 80"
         : (id == 0xffffffff) ? "No Drive" : "Unknown";
+}
+
+static void set_drive_params(uint32_t id)
+{
+    drive_param.is_hd = (id == DRT_150RPM);
+    if (id == DRT_37422D2S) {
+        drive_param.nr_cyls = 40;
+        drive_param.step_ms = 6;
+    } else {
+        drive_param.nr_cyls = 80;
+        drive_param.step_ms = 3;
+    }
 }
 
 static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
@@ -267,6 +286,8 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
     r->x = 6;
 
     while (!do_exit && (key != K_ESC)) {
+
+        set_drive_params(drive_id(drv));
 
         /* Oddities of external drives when motor is off:
          *  1. TRK0 signal may be switched off;
@@ -462,19 +483,18 @@ static void drive_read_test(unsigned int drv, struct char_row *r)
     uint32_t valid_map;
     uint16_t xstart = 144, xpos = xstart;
     uint8_t ystart = 70,  ypos = ystart;
-    uint32_t id = drive_id(drv);
-    bool_t is_hd = (id == DRT_150RPM);
-    unsigned int nr_cyls = (id == 0x55555555) ? 40 : 80;
+
+    set_drive_params(drive_id(drv));
 
     r->x = r->y = 0;
     sprintf(s, "-- DF%u: %s Density %u-Cyl Read Test --", drv,
-            is_hd ? "High" : "Double", nr_cyls);
+            drive_param.is_hd ? "High" : "Double", drive_param.nr_cyls);
     print_line(r);
     r->y += 2;
 
     copperlist_set(copper_read);
 
-    if (is_hd) {
+    if (drive_param.is_hd) {
         trk_secs *= 2;
         mfm_bytes *= 2;
     }
@@ -484,7 +504,7 @@ static void drive_read_test(unsigned int drv, struct char_row *r)
     data = allocmem((trk_secs+1) * 512);
 
     drive_select(drv, 1);
-    drive_check_ready(r, is_hd);
+    drive_check_ready(r);
 
     seek_cyl0();
     if (cur_cyl < 0) {
@@ -509,10 +529,10 @@ static void drive_read_test(unsigned int drv, struct char_row *r)
     r->y++;
 
     /* Move the heads full range to check/reset calibration. */
-    seek_track(nr_cyls*2);
+    seek_track(drive_param.nr_cyls*2);
     seek_track(0);
 
-    while (trk < (nr_cyls*2)) {
+    while (trk < (drive_param.nr_cyls*2)) {
 
         if (!(trk % 20)) {
             sprintf(s, "%2u :", trk>>1);
@@ -528,7 +548,7 @@ static void drive_read_test(unsigned int drv, struct char_row *r)
             /* Read and decode a full track of data. */
             memset(mfmbuf, 0, mfm_bytes);
             disk_read_track(mfmbuf, mfm_bytes);
-            disk_wait_dma(is_hd);
+            disk_wait_dma();
             nr_secs = mfm_decode_track(mfmbuf, headers, data, mfm_bytes);
             valid_map = nr_valid = s[0] = 0;
             while (nr_secs--) {
@@ -545,7 +565,8 @@ static void drive_read_test(unsigned int drv, struct char_row *r)
                     }
                 }
             }
-            s[0] = s[0] ?: "MLKJIHGFEDCBA9876543210"[nr_valid+(is_hd?0:11)];
+            s[0] = s[0] ?: "MLKJIHGFEDCBA9876543210"[
+                nr_valid + (drive_param.is_hd ? 0 : 11)];
             s[1] = '\0';
             clear_rect(xpos+(trk&1)*176-3, ypos-1, 14, 10, 7);
             fill_rect(xpos+(trk&1)*176-3, ypos-1, 14, 9,
@@ -584,9 +605,9 @@ static uint32_t wait_for_index(void)
     return div32(e-s, ticks_per_ms);
 }
 
-static char *index_wait_to_str(uint32_t ms, bool_t is_hd)
+static char *index_wait_to_str(uint32_t ms)
 {
-    unsigned int base = is_hd ? 400 : 200;
+    unsigned int base = drive_param.is_hd ? 400 : 200;
     return ((ms < base-20) ? "Early" : (ms > base+20) ? "Late" : "OK");
 }
 
@@ -600,17 +621,16 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
     uint32_t valid_map;
     int done = 0, retries, late_indexes = 0;
     uint8_t rnd, *data;
-    uint32_t id = drive_id(drv);
-    bool_t is_hd = (id == DRT_150RPM);
-    unsigned int nr_cyls = (id == 0x55555555) ? 40 : 80;
+
+    set_drive_params(drive_id(drv));
 
     r->x = r->y = 0;
     sprintf(s, "-- DF%u: %s Density %u-Cyl Write Test --", drv,
-            is_hd ? "High" : "Double", nr_cyls);
+            drive_param.is_hd ? "High" : "Double", drive_param.nr_cyls);
     print_line(r);
     r->y += 2;
 
-    if (is_hd) {
+    if (drive_param.is_hd) {
         trk_secs *= 2;
         mfm_bytes *= 2;
     }
@@ -620,7 +640,7 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
     data = allocmem((trk_secs+1) * 512);
 
     drive_select(drv, 1);
-    drive_check_ready(r, is_hd);
+    drive_check_ready(r);
     r->y++;
 
     seek_cyl0();
@@ -645,7 +665,7 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
         goto out;
     }
 
-    for (i = (nr_cyls-1)*2; i < nr_cyls*2; i++) {
+    for (i = (drive_param.nr_cyls-1)*2; i < drive_param.nr_cyls*2; i++) {
 
         retries = 0;
         do {
@@ -671,19 +691,19 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
             memset(mfmbuf, rnd, mfm_bytes);
             wait_for_index();
             disk_write_track(mfmbuf, mfm_bytes);
-            disk_wait_dma(is_hd);
+            disk_wait_dma();
 
             /* write */
             mfm_encode_track(mfmbuf, i, mfm_bytes, trk_secs);
             erase_wait = wait_for_index();
             disk_write_track(mfmbuf, mfm_bytes);
-            disk_wait_dma(is_hd);
+            disk_wait_dma();
 
             /* read */
             memset(mfmbuf, 0, mfm_bytes);
             write_wait = wait_for_index();
             disk_read_track(mfmbuf, mfm_bytes);
-            disk_wait_dma(is_hd);
+            disk_wait_dma();
 
             /* verify */
             nr_secs = mfm_decode_track(mfmbuf, headers, data, mfm_bytes);
@@ -708,14 +728,14 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
         print_line(r);
         r->y++;
         sprintf(s, " - Erase To Index Pulse: %u ms (%s)", erase_wait,
-                index_wait_to_str(erase_wait, is_hd));
+                index_wait_to_str(erase_wait));
         print_line(r);
         r->y++;
         sprintf(s, " - Write To Index Pulse: %u ms (%s)", write_wait,
-                index_wait_to_str(write_wait, is_hd));
+                index_wait_to_str(write_wait));
         print_line(r);
         r->y++;
-        index_late_thresh = is_hd ? 420 : 220;
+        index_late_thresh = drive_param.is_hd ? 420 : 220;
         if ((erase_wait > index_late_thresh)
             || (write_wait > index_late_thresh))
             late_indexes = 1;
@@ -750,8 +770,6 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     int done = 0, cyl = 0;
     uint8_t key, good, progress = 0, head;
     char progress_chars[] = "|/-\\";
-    uint32_t id = drive_id(drv);
-    bool_t is_hd = (id == DRT_150RPM);
     bool_t seek_in_out = TRUE;
     int8_t headsel = -1;
     struct reseek {
@@ -762,6 +780,8 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
     } reseek = { .sel = 0 };
     const uint8_t reseek_options[] = { 0, 1, 2, 3, 5, 10, 30 };
     char reseek_str[10] = "Off";
+
+    set_drive_params(drive_id(drv));
 
     r->x = r->y = 0;
     sprintf(s, "-- DF%u: Continuous Head Calibration Test --", drv);
@@ -791,7 +811,7 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
         }
     }
 
-    if (is_hd) {
+    if (drive_param.is_hd) {
         sprintf(s, "HD disks are unsupported for head calibration.");
         print_line(r);
         r->y++;
@@ -844,8 +864,8 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
                 case K_F5: cyl +=  1; break;
                 case K_F6: cyl -=  1; break;
                 }
-                if (cyl < 0) cyl += 80;
-                if (cyl >= 80) cyl -= 80;
+                if (cyl < 0) cyl += drive_param.nr_cyls;
+                if (cyl >= drive_param.nr_cyls) cyl -= drive_param.nr_cyls;
                 seek = SEEK_FAST;
             }
             if (key == K_F7) {
@@ -890,11 +910,11 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
                 print_line(r); /* overwrites side-0 text */
                 if (seek == SEEK_SLOW) {
                     if (seek_in_out) {
-                        seek_track(79*2);
+                        seek_track((drive_param.nr_cyls-1)*2);
                         seek_cyl0();
                     } else {
                         seek_cyl0();
-                        seek_track(79*2);
+                        seek_track((drive_param.nr_cyls-1)*2);
                     }
                     seek_in_out = !seek_in_out;
                 }
@@ -912,7 +932,7 @@ static void drive_cal_test(unsigned int drv, struct char_row *r)
             ciab->prb &= ~CIABPRB_SIDE;
         memset(mfmbuf, 0, mfm_bytes);
         disk_read_track(mfmbuf, mfm_bytes);
-        disk_wait_dma(is_hd);
+        disk_wait_dma();
         nr_secs = mfm_decode_track(mfmbuf, headers, data, mfm_bytes);
         /* Default sector map is all X's (all sectors missing). */
         for (i = 0; i < 11; i++)
