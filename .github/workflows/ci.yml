@@ -90,7 +90,7 @@ jobs:
         cp -a host_tools inflate _cidist/amiga-stuff.ci.$VER
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: amiga-stuff.ci.${{ steps.vars.outputs.sha_short }}
         path: _cidist
