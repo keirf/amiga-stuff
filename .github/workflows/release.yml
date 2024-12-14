@@ -8,8 +8,8 @@ name: Release
 jobs:
   build:
     env:
-      BINUTILS_RELEASE: 2.28
-      GCC_RELEASE: 7.1.0
+      BINUTILS_RELEASE: 2.34
+      GCC_RELEASE: 9.3.0
     runs-on: ubuntu-22.04
 
     steps:
@@ -47,12 +47,12 @@ jobs:
         mkdir -p $MDIR/bin
         export PATH=$PATH:$MDIR
         mkdir ~/_tc && cd ~/_tc
-        wget https://ftp.gnu.org/gnu/binutils/binutils-${BINUTILS_RELEASE}.tar.bz2
-        wget https://ftp.gnu.org/gnu/gcc/gcc-${GCC_RELEASE}/gcc-${GCC_RELEASE}.tar.bz2
+        wget https://ftp.gnu.org/gnu/binutils/binutils-${BINUTILS_RELEASE}.tar.xz
+        wget https://ftp.gnu.org/gnu/gcc/gcc-${GCC_RELEASE}/gcc-${GCC_RELEASE}.tar.xz
         wget http://sun.hasenbraten.de/vasm/release/vasm.tar.gz
         wget http://sun.hasenbraten.de/vlink/release/vlink.tar.gz
-        tar xf binutils-${BINUTILS_RELEASE}.tar.bz2
-        tar xf gcc-${GCC_RELEASE}.tar.bz2
+        tar xf binutils-${BINUTILS_RELEASE}.tar.xz
+        tar xf gcc-${GCC_RELEASE}.tar.xz
         tar xf vasm.tar.gz
         tar xf vlink.tar.gz
         cd binutils-${BINUTILS_RELEASE}
