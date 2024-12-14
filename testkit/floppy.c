@@ -310,13 +310,8 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
         drive_wait_ready();
 
         seek_cyl0();
-        if (cur_cyl == 0) {
-            unsigned int nr_cyls;
-            seek_track(159);
-            nr_cyls = seek_cyl0() + 1;
-            if (cur_cyl == 0)
-                sprintf(s, "-- DF%u: %u cylinders --", drv, nr_cyls);
-        }
+        if (cur_cyl == 0)
+            sprintf(s, "-- DF%u: %u cylinders --", drv, drive_param.nr_cyls);
         if (cur_cyl < 0)
             sprintf(s, "-- DF%u: No Track 0 (Drive not present?) --", drv);
         print_line(r);
