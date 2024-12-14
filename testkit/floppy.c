@@ -325,7 +325,7 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
         sprintf(s, "$1 DF0$  $2 DF1$  $3 DF2$  $4 DF3$");
         print_line(r);
         r->y++;
-        sprintf(s, "$5 Motor On/Off$  $6 Step$");
+        sprintf(s, "$5 Motor On/Off$  $6 Step Pulse$");
         print_line(r);
         r->y -= 3;
 
@@ -401,7 +401,9 @@ static unsigned int drive_signal_test(unsigned int drv, struct char_row *r)
                 mtr_time = get_time();
                 rdy_delay = 0;
             } else if (key == 0x55) { /* F6 */
-                seek_track((cur_cyl == 0) ? 2 : 0);
+                ciab->prb &= ~CIABPRB_STEP;
+                ciab->prb |= CIABPRB_STEP;
+                delay_ms(drive_param.step_ms);
                 key = 0; /* don't force print */
             } else if (key == 0x56) { /* F7 */
                 ciab->prb ^= CIABPRB_STEP;
