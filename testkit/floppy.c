@@ -669,7 +669,7 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
             retrystr[0] = '\0';
             if (retries)
                 sprintf(retrystr, " attempt %u", retries+1);
-            sprintf(s, "Writing Track %u...%s", i, retrystr);
+            sprintf(s, "Writing Track %u.%u...%s", i>>1, i&1, retrystr);
             print_line(r);
             done = (do_exit || (keycode_buffer == K_ESC));
             if (done)
@@ -677,7 +677,7 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
             if (retries++)
                 seek_cyl0();
             if (retries == 5) {
-                sprintf(s, "Cannot Write Track %u", i);
+                sprintf(s, "Cannot Write Track %u.%u", i>>1, i&1);
                 print_line(r);
                 goto out;
             }
@@ -721,7 +721,7 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
 
         } while (valid_map != (1u<<trk_secs)-1);
 
-        sprintf(s, "Track %u written:", i);
+        sprintf(s, "Track %u.%u written:", i>>1, i&1);
         print_line(r);
         r->y++;
         sprintf(s, " - Erase To Index Pulse: %u ms (%s)", erase_wait,
@@ -739,7 +739,8 @@ static void drive_write_test(unsigned int drv, struct char_row *r)
     }
 
     r->y++;
-    sprintf(s, "Tracks 158 & 159 written okay");
+    sprintf(s, "Tracks %u.0 & %u.1 written okay",
+            drive_param.nr_cyls-1, drive_param.nr_cyls-1);
     print_line(r);
     if (late_indexes) {
         r->x = 0;
