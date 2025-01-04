@@ -20,6 +20,14 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <getopt.h>
+#ifdef __APPLE__
+#include <libkern/OSByteOrder.h>
+#define le16toh(x) OSSwapLittleToHostInt16(x)
+#define le32toh(x) OSSwapLittleToHostInt32(x)
+#define htobe16(x) OSSwapHostToBigInt16(x)
+#define htobe32(x) OSSwapHostToBigInt32(x)
+#define be32toh(x) OSSwapBigToHostInt32(x)
+#endif
 
 /* __packed: Given struct should not include ABI-compliant padding. */
 #define __packed __attribute__((packed))

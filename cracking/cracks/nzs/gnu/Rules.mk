@@ -1,4 +1,15 @@
-TOOL_PREFIX = m68k-unknown-elf-
+# Default to m68k-elf- as TOOL_PREFIX
+TOOL_PREFIX ?= m68k-elf-
+
+# Autodetect TOOL_PREFIX
+ifeq ($(shell which $(TOOL_PREFIX)gcc 2>/dev/null),)
+    # Try m68k-unknown-elf-
+    TOOL_PREFIX := m68k-unknown-elf-
+    ifeq ($(shell which $(TOOL_PREFIX)gcc 2>/dev/null),)
+        $(error Neither m68k-elf-gcc nor m68k-unknown-elf-gcc found in PATH)
+    endif
+endif
+
 CC = $(TOOL_PREFIX)gcc
 OBJCOPY = $(TOOL_PREFIX)objcopy
 

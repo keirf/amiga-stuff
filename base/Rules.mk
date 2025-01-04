@@ -3,7 +3,18 @@
 #  4.9.2/2.24, 5.3.0/2.26, 7.1.0/2.28, 9.3.0/2.34*
 # Target is m68k-unknown-elf
 
-TOOL_PREFIX = m68k-unknown-elf-
+# Default to m68k-elf- as TOOL_PREFIX
+TOOL_PREFIX ?= m68k-elf-
+
+# Autodetect TOOL_PREFIX
+ifeq ($(shell which $(TOOL_PREFIX)gcc 2>/dev/null),)
+    # Try m68k-unknown-elf-
+    TOOL_PREFIX := m68k-unknown-elf-
+    ifeq ($(shell which $(TOOL_PREFIX)gcc 2>/dev/null),)
+        $(error Neither m68k-elf-gcc nor m68k-unknown-elf-gcc found in PATH)
+    endif
+endif
+
 CC = $(TOOL_PREFIX)gcc
 OBJCOPY = $(TOOL_PREFIX)objcopy
 PYTHON = python3

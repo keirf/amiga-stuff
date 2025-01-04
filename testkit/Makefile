@@ -29,7 +29,11 @@ all: $(NAME)-$(VER).zip
 
 build.o: CFLAGS += -DVER="\"$(VER)\""
 
+crash.o: CFLAGS += -Wno-error=array-bounds=
+
 entry.o: AFLAGS += -DDETECT_MEMORY
+
+memory.o: CFLAGS += -Wno-error=array-bounds=
 
 $(NAME)-$(VER).zip: $(NAME).adf $(NAME) $(NAME).info README.md $(NAME).elf
 	$(RM) -r $(NAME)-$(VER)
