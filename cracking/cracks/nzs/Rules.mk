@@ -10,7 +10,7 @@ FLAGS  = -Os -nostdlib -std=gnu99 -iquote inc
 FLAGS += -Wall -Werror -Wno-format -Wdeclaration-after-statement
 FLAGS += -Wstrict-prototypes -Wredundant-decls -Wnested-externs
 FLAGS += -fno-common -fno-exceptions -fno-strict-aliasing -fomit-frame-pointer
-FLAGS += -fno-delete-null-pointer-checks -Wno-array-bounds -m68000 -msoft-float
+FLAGS += -fno-delete-null-pointer-checks -m68000 -msoft-float
 
 FLAGS += -MMD -MF .$(@F).d
 DEPS = .*.d

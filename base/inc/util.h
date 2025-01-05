@@ -21,6 +21,9 @@
 
 #define barrier() asm volatile("" ::: "memory")
 
+/* Suppresses unwanted array-bounds compiler warnings. */
+#define arrayptr_launder(x) ({ typeof(x) _x; asm("":"=r"(_x):"0"(x)); _x; })
+
 #ifndef offsetof
 #define offsetof(a,b) __builtin_offsetof(a,b)
 #endif

@@ -424,7 +424,7 @@ static void memcheck_direct_scan(void)
     for (i = 0; i < 27; i++) {
         if (aliased_slots & (1u << i))
             continue;
-        p = (volatile uint16_t *)&s[0] + (i << 18);
+        p = (volatile uint16_t *)arrayptr_launder(&s[0]) + (i << 18);
         p[0] = 0x5555;
         p[1<<17] = 0xaaaa;
         if ((p[0] != 0x5555) || (p[1<<17] != 0xaaaa)) {
@@ -432,7 +432,7 @@ static void memcheck_direct_scan(void)
             continue;
         }
         for (j = 0; j < i; j++) {
-            q = (volatile uint16_t *)s + (j << 18);
+            q = (volatile uint16_t *)arrayptr_launder(&s[0]) + (j << 18);
             if ((ram_slots & (1u << j)) && (*q == 0x5555))
                 break;
         }

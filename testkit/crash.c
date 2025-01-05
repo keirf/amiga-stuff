@@ -99,13 +99,14 @@ struct frame {
 /* Fix up one 68000 unrecoverable fault handler. */
 static void fixup_68000(void *new_fn, volatile uint32_t *vec)
 {
-    uint32_t old_fn = *vec;
+    volatile uint32_t *_vec = arrayptr_launder(vec);
+    uint32_t old_fn = *_vec;
     /* Search for the JMP instruction in the shim handler, and patch it. */
     uint16_t *p = new_fn;
     while (*p != 0x4ef9) p++;
     *(uint32_t *)(p+1) = old_fn;
     /* Install our shim handler. */
-    *vec = (uint32_t)new_fn;
+    *_vec = (uint32_t)new_fn;
 }
 
 /* 68000 (only) has weird stack formats for unrecoverable faults. These cause 
