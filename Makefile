@@ -1,6 +1,7 @@
 include base/Rules.mk
 
 SUBDIRS := base inflate host_tools overscan testkit inflate
+SUBDIRS += cracking/cracks/nzs/gnu cracking/cracks/nzs/gnu_c
 
 .PHONY: $(SUBDIRS)
 
