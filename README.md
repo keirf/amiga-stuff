@@ -31,12 +31,12 @@ use `rjnorthrow/atk:v1.10`.
 ### Build From Source (Manual Method)
 
 Requires a GCC cross-compiler toolchain targetting
-`m68k-unknown-elf`. I recommend binutils-2.28 and gcc-7.1.0, built
+`m68k-elf`. I recommend binutils-2.34 and gcc-9.3.0, built
 with the following configuration lines on a Linux host or VM (note these are
 not exhaustive toolchain build instructions!):
 ```
-../binutils-2.28/configure --prefix=/path/to/install --target=m68k-unknown-elf
-../gcc-7.1.0/configure --prefix=/path/to/install --target=m68k-unknown-elf --enable-languages=c --disable-libssp
+../binutils-2.34/configure --prefix=/path/to/install --target=m68k-elf
+../gcc-9.3.0/configure --prefix=/path/to/install --target=m68k-elf --enable-languages=c --disable-libssp
 ```
 
 Note that `/path/to/install/bin` must be on your PATH both when building

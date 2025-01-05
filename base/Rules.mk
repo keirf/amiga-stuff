@@ -1,9 +1,9 @@
 # GNU Make cross-dev build rules
 # Tested cross-dev setups (gcc/binutils) (*=recommended):
-#  4.9.2/2.24, 5.3.0/2.26, 7.1.0/2.28, 9.3.0/2.34*
-# Target is m68k-unknown-elf
+#  4.9.2/2.24, 5.3.0/2.26, 7.1.0/2.28, 9.3.0/2.34*, 14.2.0/2.43.1
+# Target is m68k-elf
 
-TOOL_PREFIX = m68k-unknown-elf-
+TOOL_PREFIX = m68k-elf-
 CC = $(TOOL_PREFIX)gcc
 OBJCOPY = $(TOOL_PREFIX)objcopy
 PYTHON = python3
@@ -23,7 +23,7 @@ FLAGS  = $(OPT_FLAGS) -nostdlib -std=gnu99 -iquote ../base/inc -fno-builtin
 FLAGS += -Wall -Werror -Wno-format -Wdeclaration-after-statement
 FLAGS += -Wstrict-prototypes -Wredundant-decls -Wnested-externs
 FLAGS += -fno-common -fno-exceptions -fno-strict-aliasing -fomit-frame-pointer
-FLAGS += -fno-delete-null-pointer-checks -m68000 -msoft-float
+FLAGS += -fno-delete-null-pointer-checks -Wno-array-bounds -m68000 -msoft-float
 
 FLAGS += -MMD -MF .$(@F).d
 DEPS = .*.d
