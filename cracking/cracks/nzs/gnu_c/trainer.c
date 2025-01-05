@@ -9,6 +9,8 @@
  * See the file COPYING for more details, or visit <http://unlicense.org>.
  */
 
+static volatile struct m68k_vector_table * const m68k_vec =
+    (struct m68k_vector_table *)0x0;
 static volatile struct amiga_custom * const cust =
     (struct amiga_custom *)0xdff000;
 static volatile struct amiga_cia * const ciaa =
@@ -269,8 +271,8 @@ static void update_option(uint8_t nr)
     print_option(opt, nr);
 }
 
-IRQ(CIA_IRQ);
-static void c_CIA_IRQ(void)
+IRQ(CIAA_IRQ);
+static void c_CIAA_IRQ(void)
 {
     uint16_t i;
     uint8_t icr = ciaa->icr;
@@ -333,7 +335,7 @@ uint32_t trainer(void)
 
     unpack_font();
 
-    *(volatile void **)0x68 = CIA_IRQ;
+    m68k_vec->level2_autovector.p = CIAA_IRQ;
     cust->cop1lc.p = copper;
 
     print_screen();

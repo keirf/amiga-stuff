@@ -16,6 +16,7 @@
 #include "types.h"
 #include "util.h"
 #include "amiga_hw.h"
+#include "../../../../../base/inc/m68k.h"
 
 /*
  * Local variables:

@@ -1,4 +1,4 @@
-TOOL_PREFIX = m68k-unknown-elf-
+TOOL_PREFIX = m68k-elf-
 CC = $(TOOL_PREFIX)gcc
 OBJCOPY = $(TOOL_PREFIX)objcopy
 
@@ -6,16 +6,16 @@ ifneq ($(VERBOSE),1)
 TOOL_PREFIX := @$(TOOL_PREFIX)
 endif
 
-FLAGS  = -Os -nostdlib -std=gnu99
+FLAGS  = -Os -nostdlib -std=gnu99 -iquote inc
 FLAGS += -Wall -Werror -Wno-format -Wdeclaration-after-statement
 FLAGS += -Wstrict-prototypes -Wredundant-decls -Wnested-externs
 FLAGS += -fno-common -fno-exceptions -fno-strict-aliasing -fomit-frame-pointer
-FLAGS += -m68000 -msoft-float
+FLAGS += -fno-delete-null-pointer-checks -Wno-array-bounds -m68000 -msoft-float
 
 FLAGS += -MMD -MF .$(@F).d
 DEPS = .*.d
 
-CFLAGS += $(FLAGS)
+CFLAGS += $(FLAGS) -include decls.h
 AFLAGS += $(FLAGS) -D__ASSEMBLY__ -Wa,--register-prefix-optional
 AFLAGS += -Wa,-l -Wa,--bitwise-or -Wa,--base-size-default-16
 AFLAGS += -Wa,--disp-size-default-16 -Wa,--pcrel
