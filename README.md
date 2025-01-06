@@ -30,31 +30,54 @@ use `rjnorthrow/atk:v1.10`.
 
 ### Build From Source (Manual Method)
 
-Requires a GCC cross-compiler toolchain targetting
-`m68k-elf`. I recommend binutils-2.34 and gcc-9.3.0, built
-with the following configuration lines on a Linux host or VM (note these are
-not exhaustive toolchain build instructions!):
+This is as simple as `make all` when all prerequisites are
+installed. The ADF and distribution ZIP file will then be in the
+testkit/ folder.
+
+### Build Prerequisites
+
+Pick a location to install your locally-built toolchains, and make sure it is
+on your PATH. For example:
+```
+mkdir -p $HOME/install/bin
+export PATH=$PATH:$HOME/install/bin
+```
+
+#### 1. m68k-elf toolchain
+
+I recommend binutils-2.34 and gcc-9.3.0, or newer, built with the following
+configuration lines on a Linux host or VM. Note these are not
+exhaustive toolchain build instructions, as GCC itself has a large number
+of prerequisites. You can use the `.github/workflow` scripts for further
+hints.
 ```
 ../binutils-2.34/configure --prefix=/path/to/install --target=m68k-elf
 ../gcc-9.3.0/configure --prefix=/path/to/install --target=m68k-elf --enable-languages=c --disable-libssp
 ```
 
-Note that `/path/to/install/bin` must be on your PATH both when building
-and using the cross compiler. For example:
+On macOS you can instead straightforwardly install from Homebrew:
 ```
-mkdir -p $HOME/cross/bin
-export PATH=$PATH:$HOME/cross/bin
-... --prefix=$HOME/cross ...
+brew install m68k-elf-gcc
 ```
 
-The build also depends on Google's Zopfli (a gzip replacement). This can
-be installed in Ubuntu Linux as follows:
-```
-sudo apt install zopfli
-```
+#### 2. m68k-amigaos toolchain
 
-To build Amiga Test Kit: `make testkit`. The ADF and distribution ZIP file
-are now in the testkit/ folder.
+Clone, build and install bebbo's [amiga-gcc toolchain
+(GitHub)][bebbo]. Please follow the README instructions very
+carefully. This is especially important if building on macOS, where
+careful use of Homebrew-installed tools (including bison!) is required
+to avoid cryptic build failures.
+
+#### 3. Zopfli
+
+Google's Zopfli is a gzip replacement. It can be installed using your OS package manager, for example `apt` (Ubuntu) or `brew` (macOS).
+
+#### 4. amitools/xdftool
+
+This is a Python package which can be installed using pip or pipx. For example:
+```
+pipx install amitools
+```
 
 ## Summary
 
@@ -99,3 +122,4 @@ file header comments and run-time help info.
 [ci-badge]: https://github.com/keirf/amiga-stuff/workflows/CI/badge.svg
 [downloads-badge]: https://img.shields.io/github/downloads/keirf/amiga-stuff/total
 [version-badge]: https://img.shields.io/github/v/release/keirf/amiga-stuff
+[bebbo]: https://github.com/bebbo/amiga-gcc
