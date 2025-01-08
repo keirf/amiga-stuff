@@ -34,7 +34,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/cross
-        key: ${{ runner.os }}-${{ env.BINUTILS_RELEASE }}-${{ env.GCC_RELEASE }}-3
+        key: ${{ runner.os }}-${{ env.BINUTILS_RELEASE }}-${{ env.GCC_RELEASE }}-4
 
     - name: Build toolchain
       if: steps.cache-toolchain.outputs.cache-hit != 'true'
@@ -56,7 +56,6 @@ jobs:
         make ${MAKE_OPTS}
         make install
         cd ../gcc-${GCC_RELEASE}
-        sed -i 's/--check/-c/g' contrib/download_prerequisites
         ./contrib/download_prerequisites
         mkdir ../gcc-build && cd ../gcc-build
         ../gcc-${GCC_RELEASE}/configure --prefix=$MDIR --target=m68k-elf --enable-languages=c --disable-libssp
