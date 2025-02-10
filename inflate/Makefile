@@ -20,7 +20,7 @@ all: depacker degzip
 # Test harness for inflate.S
 test_inflate: degzip test_inflate.o
 	$(CC) -o $@ $@.o $(LDFLAGS)
-	$(PYTHON) test_inflate.py *.[cSo] *.asm ../cracking/protections/* ../cracking/cracks/nzs/gnu_c/* ../testkit/*
+	$(PYTHON) test_inflate.py *.[cSo] *.asm ../cracking/protections/* ../cracking/cracks/nzs/gnu_c/* ../testkit/* test_assets/*
 
 %.o: %.S
 	$(CC) -o $@ -c $< $(AFLAGS)

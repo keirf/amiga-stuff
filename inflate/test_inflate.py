@@ -13,6 +13,7 @@ import struct, sys, os
 # Command for creating gzip files.
 GZIP = "zopfli --i32 -c"
 #GZIP = "gzip -c9"
+GUNZIP = "gunzip -c"
 
 HUNK_HEADER = 0x3f3
 HUNK_CODE   = 0x3e9
@@ -34,14 +35,21 @@ def main(argv):
 def test(name):
     print("Testing '%s'..." % name)
 
-    # _test_0: Local copy of original file
-    os.system('cp "' + name + '" ' + PREFIX + '0')
+    if name.endswith('.gz'):
+        # _test_1: Local copy of original gzipped file
+        os.system('cp "' + name + '" ' + PREFIX + '1')
+        # _test_0: Uncompressed file
+        os.system(GUNZIP + ' ' + PREFIX + '1 >' + PREFIX + '0')
+    else:
+        # _test_0: Local copy of original uncompressed file
+        os.system('cp "' + name + '" ' + PREFIX + '0')
+        # _test_1: Gzipped file
+        os.system(GZIP + ' ' + PREFIX + '0 >' + PREFIX + '1')
+
+    # CRC of uncompressed data
     crc16 = crcmod.predefined.Crc('crc-ccitt-false')
     with open(PREFIX + '0', 'rb') as f:
         crc16.update(f.read())
-
-    # _test_1: Gzipped file
-    os.system(GZIP + ' ' + PREFIX + '0 >' + PREFIX + '1')
 
     # _test_2: DEFLATE stream + custom header/footer
     os.system('degzip -H ' + PREFIX + '1 ' + PREFIX + '2')
