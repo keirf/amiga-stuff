@@ -433,9 +433,9 @@ uncompressed_block:
         moveq   #16,d1
         bsr     stream_next_bits ; LEN
         addq.w  #2,a5           ; skip NLEN
-        subq.w  #1,d0           ; d0.w = len-1 (for dbf)
+        bra     .2              ; decrement LEN for DBF loop
 .1:     move.b  (a5)+,(a4)+
-        dbf     d0,.1
+.2:     dbf     d0,.1
         rts
 
 o_hdist = 0
