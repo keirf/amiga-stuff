@@ -493,16 +493,37 @@ void ciacheck(void)
         print_line(&r);
 
         /* Chipset IDs. */
+        lisaid = cust->deniseid;
+        aliceid = (cust->vposr >> 8) & 0x7f;
         r.y += 2;
         sprintf(s, "-- Chipset IDs --");
         print_line(&r);
         r.y++;
-        lisaid = cust->deniseid;
-        sprintf(s, "Denise/Lisa: %04x", lisaid);
+        if (aliceid >= 0x22)
+            sprintf(s, "Lisa: %04x", lisaid);
+        else if (lisaid & 2)
+            sprintf(s, "Denise (OCS): %04x", lisaid);
+        else
+            sprintf(s, "Super Denise (ECS): %04x", lisaid);
         print_line(&r);
         r.y++;
-        aliceid = (cust->vposr >> 8) & 0x7f;
-        sprintf(s, "Agnus/Alice: %04x", aliceid);
+        switch (aliceid) {
+        case 0x00:
+        case 0x10:
+            sprintf(s, "Agnus (OCS): %04x", aliceid);
+            break;
+        case 0x20:
+        case 0x21:
+            sprintf(s, "Agnus (ECS): %04x", aliceid);
+            break;
+        case 0x22:
+        case 0x23:
+            sprintf(s, "Alice: %04x", aliceid);
+            break;
+        default:
+            sprintf(s, "Agnus/Alice (unknown): %04x", aliceid);
+            break;
+        }
         print_line(&r);
         if (/* Detect AGA Alice IDs: 0x22, 0x23, 0x32, 0x33. */
             ((aliceid & 0x6e) == 0x22)
