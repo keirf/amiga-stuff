@@ -1,6 +1,9 @@
 NAME := AmigaTestKit
 VER := $(shell git rev-parse --short HEAD)
 
+# Year to set when RTC is reset (F1 in battery clock test)
+RTC_RESET_YEAR ?= $(shell date +%Y)
+
 OBJS += entry.o
 OBJS += cancellation.o
 OBJS += util.o
@@ -28,7 +31,7 @@ include ../base/Rules.mk
 all: $(NAME)-$(VER).zip
 
 build.o: CFLAGS += -DVER="\"$(VER)\""
-
+battclock.o: CFLAGS += -DRTC_RESET_YEAR=$(RTC_RESET_YEAR)
 entry.o: AFLAGS += -DDETECT_MEMORY
 
 $(NAME)-$(VER).zip: $(NAME).adf $(NAME) $(NAME).info README.md $(NAME).elf

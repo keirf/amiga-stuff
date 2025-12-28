@@ -14,6 +14,10 @@
 
 #include "testkit.h"
 
+#ifndef RTC_RESET_YEAR
+#define RTC_RESET_YEAR 2016
+#endif
+
 struct time {
     uint8_t sec;   /* 0-59 */
     uint8_t min;   /* 0-59 */
@@ -541,10 +545,10 @@ redisplay:
             break;
         switch (key) {
         case K_F1:
-            /* Fri Jan 1 00:00:00 2016 */
+            /* Reset to Jan 1 00:00:00 of configured year */
             memset(&time, 0, sizeof(time));
             time.mday = 1;
-            time.year = 2016;
+            time.year = RTC_RESET_YEAR;
             bc_set_time(&bc, &time);
             is_bogus = 0;
             clear_text_rows(6, 1);
