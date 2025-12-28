@@ -468,6 +468,77 @@ static void cia_port_test(void)
     }
 }
 
+/* SDMAC register addresses */
+#define SDMAC_ISTR      ((volatile uint8_t *)0xDD001F)
+#define SDMAC_REVISION  ((volatile uint32_t *)0xDD0020)
+#define SDMAC_WTC       ((volatile uint32_t *)0xDD0024)
+#define SDMAC_WTC_ALT   ((volatile uint32_t *)0xDD0028)
+#define RAMSEY_VER      ((volatile uint8_t *)0xDE0043)
+
+/* ISTR bits */
+#define SDMAC_ISTR_FIFOE  0x01
+#define SDMAC_ISTR_FIFOF  0x02
+
+/* Returns 2 for SDMAC-02, 4 for SDMAC-04/ReSDMAC, 0 if not present/detection fails */
+static uint8_t get_sdmac_version(void)
+{
+    uint32_t ovalue, rvalue, wvalue;
+    uint8_t sdmac_version = 2;
+    uint8_t istr;
+    int pass;
+
+    /* Quick check: ISTR bits - FIFO cannot be both empty and full */
+    istr = *SDMAC_ISTR;
+    if (istr == 0xff)
+        return 0;
+    if ((istr & SDMAC_ISTR_FIFOE) && (istr & SDMAC_ISTR_FIFOF))
+        return 0;
+
+    /* Probe WTC registers to distinguish SDMAC-02 from SDMAC-04 */
+    for (pass = 0; pass < 6; pass++) {
+        switch (pass) {
+            case 0: wvalue = 0x00000000; break;
+            case 1: wvalue = 0xffffffff; break;
+            case 2: wvalue = 0xa5a5a5a5; break;
+            case 3: wvalue = 0x5a5a5a5a; break;
+            case 4: wvalue = 0xc2c2c3c3; break;
+            case 5: wvalue = 0x3c3c3c3c; break;
+        }
+
+        ovalue = *SDMAC_WTC_ALT;
+        *SDMAC_WTC_ALT = wvalue;
+        (void)*RAMSEY_VER; /* Push write to bus */
+        rvalue = *SDMAC_WTC;
+        *SDMAC_WTC_ALT = ovalue;
+
+        if (rvalue == wvalue) {
+            if ((wvalue != 0x00000000) && (wvalue != 0xffffffff))
+                return 0; /* Detection failed */
+        } else if (((rvalue ^ wvalue) & 0x00ffffff) == 0) {
+            /* SDMAC-02: only upper byte differs */
+        } else if ((rvalue & (1 << 2)) == 0) {
+            /* SDMAC-04: bit 2 is always 0 */
+            if (wvalue & (1 << 2))
+                sdmac_version = 4;
+        } else {
+            return 0; /* Detection failed */
+        }
+    }
+    return sdmac_version;
+}
+
+/* Get ReSDMAC revision register (format: 'v' major '.' minor) */
+static uint32_t get_sdmac_revision_reg(void)
+{
+    return *SDMAC_REVISION;
+}
+
+/* Get Ramsey version: 0x7f=Rev1, 0x0d=Rev4, 0x0f=Rev7, 0xff=not present */
+static uint8_t get_ramsey_version(void)
+{
+    return *RAMSEY_VER;
+}
+
 void ciacheck(void)
 {
     char s[80];
@@ -532,6 +603,37 @@ void ciacheck(void)
             sprintf(s, "WARNING: AGA Alice with bad Lisa ID");
             r.y++;
             print_line(&r);
+        }
+
+        {
+            uint8_t ver = get_sdmac_version();
+            if (ver) {
+                uint32_t rev = get_sdmac_revision_reg();
+                uint8_t ramsey = get_ramsey_version();
+                int ramsey_rev;
+                r.y++;
+                if (ver == 4 && (rev >> 24) == 'v' && ((rev >> 8) & 0xff) == '.') {
+                    /* ReSDMAC: revision format is 'v' major '.' minor */
+                    sprintf(s, "SDMAC-04 (ReSDMAC %c%c%c%c) $%08lx",
+                            (char)(rev >> 24), (char)(rev >> 16),
+                            (char)(rev >> 8), (char)rev, rev);
+                } else {
+                    sprintf(s, "SDMAC-%02d $%08lx", ver, rev);
+                }
+                print_line(&r);
+                /* Ramsey detection */
+                switch (ramsey) {
+                    case 0x7f: ramsey_rev = 1; break;
+                    case 0x0d: ramsey_rev = 4; break;
+                    case 0x0f: ramsey_rev = 7; break;
+                    default: ramsey_rev = 0; break;
+                }
+                if (ramsey_rev) {
+                    r.y++;
+                    sprintf(s, "Ramsey-0%d $%02x", ramsey_rev, ramsey);
+                    print_line(&r);
+                }
+            }
         }
 
         r.y += 2;
