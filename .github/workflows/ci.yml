@@ -59,7 +59,7 @@ jobs:
         make ${MAKE_OPTS}
         make install
         cd ..
-        git clone https://github.com/bebbo/amiga-gcc.git
+        git clone https://franke.ms/git/bebbo/amiga-gcc
         cd amiga-gcc
         make update
         make all ${MAKE_OPTS} PREFIX=$MDIR

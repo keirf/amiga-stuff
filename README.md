@@ -112,4 +112,4 @@ file header comments and run-time help info.
 [ci-badge]: https://github.com/keirf/amiga-stuff/workflows/CI/badge.svg
 [downloads-badge]: https://img.shields.io/github/downloads/keirf/amiga-stuff/total
 [version-badge]: https://img.shields.io/github/v/release/keirf/amiga-stuff
-[bebbo]: https://github.com/bebbo/amiga-gcc
+[bebbo]: https://franke.ms/git/bebbo/amiga-gcc
